@@ -1,0 +1,15 @@
+*
+
+!*.c
+!*.cpp
+!*.h
+!Makefile
+!.gitignore
+!*.conf
+!*.example
+
+!loader/
+!src/
+!kmod/
+
+ghost.conf
