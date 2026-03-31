@@ -13,6 +13,7 @@
  */
 
 #include "tachyon.h"
+#include <cerrno>
 
 /* ══════════════════════════════════════════════════════════════════════════
  * QUIC Mimicry - Padded Packet Transmission
@@ -93,8 +94,8 @@ static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id,
     if (!prog) { LOG_ERR("BPF program 'ghost_key_init' not found"); return; }
     int prog_fd = bpf_program__fd(prog);
     if (prog_fd >= 0) {
-        DECLARE_LIBBPF_OPTS(bpf_test_run_opts, topts,
-                            .ctx_in = NULL, .ctx_size_in = 0);
+        struct bpf_test_run_opts topts{};
+        topts.sz = sizeof(topts);
         bpf_prog_test_run_opts(prog_fd, &topts);
     }
 
