@@ -10,10 +10,11 @@
 /* RAII temp config file - auto-deleted when scope exits (even on ASSERT failure) */
 struct TempConfig {
     std::string path;
-    TempConfig(const std::string &content) {
+    TempConfig(const std::string &content)
+    {
         static int counter = 0;
-        path = "/tmp/tachyon_test_" + std::to_string(getpid()) +
-               "_" + std::to_string(counter++) + ".conf";
+        path = "/tmp/tachyon_test_" + std::to_string(getpid()) + "_" + std::to_string(counter++) +
+               ".conf";
         std::ofstream f(path);
         f << content;
     }
@@ -24,25 +25,30 @@ struct TempConfig {
 
 /* ── tunnel_name_from_conf Tests ── */
 
-TEST(name_from_simple_path) {
+TEST(name_from_simple_path)
+{
     ASSERT_TRUE(tunnel_name_from_conf("test.conf") == "test");
 }
 
-TEST(name_from_dir_path) {
+TEST(name_from_dir_path)
+{
     ASSERT_TRUE(tunnel_name_from_conf("/etc/tachyon/prod.conf") == "prod");
 }
 
-TEST(name_from_no_extension) {
+TEST(name_from_no_extension)
+{
     ASSERT_TRUE(tunnel_name_from_conf("tunnel") == "tunnel");
 }
 
-TEST(name_from_nested_path) {
+TEST(name_from_nested_path)
+{
     ASSERT_TRUE(tunnel_name_from_conf("/a/b/c/wg0.conf") == "wg0");
 }
 
 /* ── parse_config Tests ── */
 
-TEST(parse_valid_config) {
+TEST(parse_valid_config)
+{
     TempConfig conf(
         "[Interface]\n"
         "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n"
@@ -56,8 +62,7 @@ TEST(parse_valid_config) {
         "[Peer]\n"
         "EndpointIP = 192.168.1.20\n"
         "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
-        "InnerIP = 10.8.0.2\n"
-    );
+        "InnerIP = 10.8.0.2\n");
 
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, 5555);
@@ -68,26 +73,26 @@ TEST(parse_valid_config) {
     ASSERT_TRUE(cfg.virtual_ip == "10.8.0.1/24");
 }
 
-TEST(parse_comments_and_empty_lines) {
+TEST(parse_comments_and_empty_lines)
+{
     TempConfig conf(
         "# This is a comment\n"
         "; Another comment style\n"
         "\n"
         "[Interface]\n"
         "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n"
-        "ListenPort = 443\n"
-    );
+        "ListenPort = 443\n");
 
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, 443);
     ASSERT_TRUE(cfg.private_key.size() == 64);
 }
 
-TEST(parse_default_port) {
+TEST(parse_default_port)
+{
     TempConfig conf(
         "[Interface]\n"
-        "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n"
-    );
+        "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n");
 
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, TACHYON_DEFAULT_PORT);
@@ -95,7 +100,8 @@ TEST(parse_default_port) {
 
 /* ── validate_config Tests ── */
 
-TEST(validate_complete_config) {
+TEST(validate_complete_config)
+{
     TunnelConfig cfg;
     cfg.private_key = "aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa";
     cfg.peer_public_key = "1122334455667788990011223344556677889900aabbccddeeff00112233aabb";
@@ -110,7 +116,8 @@ TEST(validate_complete_config) {
     ASSERT_TRUE(validate_config(cfg));
 }
 
-TEST(validate_missing_private_key) {
+TEST(validate_missing_private_key)
+{
     TunnelConfig cfg;
     cfg.peer_public_key = "1122334455667788990011223344556677889900aabbccddeeff00112233aabb";
     cfg.virtual_ip = "10.8.0.1/24";
@@ -123,7 +130,8 @@ TEST(validate_missing_private_key) {
     ASSERT_FALSE(validate_config(cfg));
 }
 
-TEST(validate_invalid_key_length) {
+TEST(validate_invalid_key_length)
+{
     TunnelConfig cfg;
     cfg.private_key = "tooshort";
     cfg.peer_public_key = "1122334455667788990011223344556677889900aabbccddeeff00112233aabb";
@@ -137,7 +145,8 @@ TEST(validate_invalid_key_length) {
     ASSERT_FALSE(validate_config(cfg));
 }
 
-TEST(validate_invalid_mac) {
+TEST(validate_invalid_mac)
+{
     TunnelConfig cfg;
     cfg.private_key = "aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa";
     cfg.peer_public_key = "1122334455667788990011223344556677889900aabbccddeeff00112233aabb";
@@ -151,7 +160,8 @@ TEST(validate_invalid_mac) {
     ASSERT_FALSE(validate_config(cfg));
 }
 
-TEST(validate_invalid_port) {
+TEST(validate_invalid_port)
+{
     TunnelConfig cfg;
     cfg.private_key = "aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa";
     cfg.peer_public_key = "1122334455667788990011223344556677889900aabbccddeeff00112233aabb";
@@ -168,7 +178,8 @@ TEST(validate_invalid_port) {
 
 /* ── Runner ── */
 
-int main() {
+int main()
+{
     printf("\n  Tachyon Config Tests\n");
     printf("  ─────────────────────────────────\n");
 
