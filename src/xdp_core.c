@@ -390,9 +390,10 @@ int xdp_tx_path(struct xdp_md *ctx)
 	__u64 final_seq = ((__u64)cpu_id << TACHYON_SEQ_CPU_SHIFT) |
 			  (local_seq & TACHYON_SEQ_NUM_MASK);
 
-	/* Save source MAC before head adjustment overwrites it */
+	/* Save fields from inner packet before buffer adjustments invalidate pointers */
 	__u8 src_mac[6];
 	__builtin_memcpy(src_mac, eth->h_source, 6);
+	__u8 inner_tos = iph_inner->tos;  /* For DSCP/ECN copy to outer header */
 
 	/* --- Load global config --- */
 	struct tachyon_config *cfg = get_config();
@@ -492,7 +493,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 	/* Outer IPv4 - copy inner DSCP+ECN to outer per RFC 6040 */
 	oip->version  = 4;
 	oip->ihl      = 5;
-	oip->tos      = iph_inner->tos;  /* Preserve DSCP and ECN from inner */
+	oip->tos      = inner_tos;       /* Preserve DSCP and ECN from inner */
 	oip->tot_len  = bpf_htons(data_end - (void *)oip);
 	oip->id       = 0;
 	oip->frag_off = bpf_htons(IP_DF);
