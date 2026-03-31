@@ -1,0 +1,37 @@
+# Tachyon XDP Tunnel - Code Coverage Configuration
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: down
+  range: "60...90"
+
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 2%
+        flags:
+          - unit
+    patch:
+      default:
+        target: 75%
+        threshold: 5%
+
+flags:
+  unit:
+    paths:
+      - loader/
+    carryforward: true
+
+ignore:
+  - "tests/**"
+  - "docker/**"
+  - "kmod/**"
+  - "src/xdp_core.c"
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false

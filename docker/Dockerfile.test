@@ -1,0 +1,58 @@
+# Tachyon XDP Tunnel - Privileged Test Environment
+#
+# Extends the build image with networking tools and kernel module
+# support needed for XDP/BPF and integration tests.
+#
+# Build:
+#   docker build -t tachyon-test -f docker/Dockerfile.test .
+#
+# Usage (requires --privileged for BPF and netns):
+#   docker run --rm --privileged -v $(pwd):/src -w /src tachyon-test make test-all
+
+FROM tachyon-build:latest
+
+LABEL description="Privileged test environment for Tachyon XDP Tunnel"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── Networking and Test Dependencies ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Network namespace and routing tools
+    iproute2 \
+    iputils-ping \
+    iptables \
+    bridge-utils \
+    # Kernel module tools
+    kmod \
+    dkms \
+    # Process management
+    procps \
+    psmisc \
+    # Performance testing
+    iperf3 \
+    netperf \
+    # Packet capture and analysis
+    tcpdump \
+    tshark \
+    # JSON processing for benchmark results
+    jq \
+    # Misc utilities
+    uuid-runtime \
+    strace \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Mount points for kernel modules ──
+# These must be bind-mounted from the host at runtime:
+#   -v /lib/modules:/lib/modules:ro
+#   -v /sys/fs/bpf:/sys/fs/bpf
+
+# ── Ensure BPF filesystem is available ──
+RUN mkdir -p /sys/fs/bpf
+
+# ── Set capabilities hint ──
+# Container must run with: --privileged
+# Or at minimum: --cap-add=NET_ADMIN --cap-add=BPF --cap-add=SYS_ADMIN --cap-add=NET_RAW
+
+WORKDIR /src
+
+CMD ["make", "test-all"]
