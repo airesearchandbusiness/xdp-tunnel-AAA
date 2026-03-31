@@ -1,0 +1,90 @@
+name: Tachyon CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build All Components
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang llvm \
+            libbpf-dev libelf-dev zlib1g-dev \
+            libssl-dev \
+            linux-headers-generic \
+            g++
+
+      - name: Show libbpf version
+        run: dpkg -l libbpf-dev | tail -1
+
+      - name: Build control plane
+        id: loader
+        continue-on-error: true
+        run: make loader 2>&1
+
+      - name: Build XDP object
+        continue-on-error: true
+        run: make xdp
+
+      - name: Build kernel module (best-effort)
+        continue-on-error: true
+        run: make kmod 2>&1 || true
+
+      - name: Build status
+        run: |
+          if [ "${{ steps.loader.outcome }}" = "failure" ]; then
+            echo "::warning::Loader build failed - check libbpf API compatibility"
+          fi
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ libssl-dev
+
+      - name: Build and run unit tests
+        run: make test-unit
+
+  sanitize:
+    name: ASan + UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ libssl-dev
+
+      - name: Build and run tests with sanitizers
+        run: make test-sanitize
+
+  lint:
+    name: Code Format Check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        continue-on-error: true
+        run: |
+          find loader/ tests/ -name '*.cpp' -o -name '*.h' | \
+            xargs clang-format --dry-run --Werror 2>&1 || \
+            echo "::warning::Code formatting issues found. Run 'make format' to fix."

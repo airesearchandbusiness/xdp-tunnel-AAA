@@ -141,15 +141,19 @@ void command_up(const std::string &conf_file)
     if (ipsess_m)
         bpf_map_update_elem(bpf_map__fd(ipsess_m), &inner_net, &session_id, BPF_ANY);
 
-    /* Attach XDP programs */
+    /* Attach XDP programs (libbpf 1.0+ API: bpf_xdp_attach) */
     auto attach_xdp = [&](const char *prog_name, unsigned int ifidx, const char *pin_name) {
         struct bpf_program *prog = bpf_object__find_program_by_name(obj, prog_name);
         if (!prog) { LOG_ERR("BPF program '%s' not found", prog_name); return; }
-        struct bpf_link *link = bpf_program__attach_xdp(prog, ifidx);
-        if (!link) { LOG_ERR("Failed to attach '%s' to ifindex %u", prog_name, ifidx); return; }
+        int prog_fd = bpf_program__fd(prog);
+        if (prog_fd < 0) { LOG_ERR("Invalid fd for '%s'", prog_name); return; }
+        if (bpf_xdp_attach(ifidx, prog_fd, 0, NULL) < 0) {
+            LOG_ERR("Failed to attach '%s' to ifindex %u", prog_name, ifidx);
+            return;
+        }
+        /* Pin program fd for later detach */
         std::string pin_path = bpf_dir + "/" + pin_name;
-        if (bpf_link__pin(link, pin_path.c_str()))
-            LOG_WARN("Failed to pin link '%s'", pin_path.c_str());
+        bpf_program__pin(prog, pin_path.c_str());
     };
 
     attach_xdp("xdp_rx_path", p_idx, "rx");
@@ -240,8 +244,11 @@ void command_show(const std::string &conf_file)
         total.rx_invalid_session += per_cpu[i].rx_invalid_session;
         total.rx_malformed       += per_cpu[i].rx_malformed;
         total.rx_ratelimit_drops += per_cpu[i].rx_ratelimit_drops;
-        total.tx_crypto_errors   += per_cpu[i].tx_crypto_errors;
-        total.tx_headroom_errors += per_cpu[i].tx_headroom_errors;
+        total.tx_crypto_errors      += per_cpu[i].tx_crypto_errors;
+        total.tx_headroom_errors    += per_cpu[i].tx_headroom_errors;
+        total.tx_ratelimit_drops    += per_cpu[i].tx_ratelimit_drops;
+        total.rx_ratelimit_data_drops += per_cpu[i].rx_ratelimit_data_drops;
+        total.rx_roam_events        += per_cpu[i].rx_roam_events;
     }
 
     printf("\n  Tachyon Tunnel: %s\n", name.c_str());
@@ -252,12 +259,15 @@ void command_show(const std::string &conf_file)
     printf("  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n",
            "RX:", total.rx_packets, total.rx_bytes);
     printf("\n  Errors:\n");
-    printf("    %-22s %" PRIu64 "\n", "Replay drops:",     total.rx_replay_drops);
-    printf("    %-22s %" PRIu64 "\n", "RX crypto errors:",  total.rx_crypto_errors);
-    printf("    %-22s %" PRIu64 "\n", "TX crypto errors:",  total.tx_crypto_errors);
-    printf("    %-22s %" PRIu64 "\n", "Invalid session:",   total.rx_invalid_session);
-    printf("    %-22s %" PRIu64 "\n", "Malformed packets:", total.rx_malformed);
-    printf("    %-22s %" PRIu64 "\n", "Rate-limited:",      total.rx_ratelimit_drops);
-    printf("    %-22s %" PRIu64 "\n", "TX headroom:",       total.tx_headroom_errors);
+    printf("    %-22s %" PRIu64 "\n", "Replay drops:",       total.rx_replay_drops);
+    printf("    %-22s %" PRIu64 "\n", "RX crypto errors:",   total.rx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "TX crypto errors:",   total.tx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "Invalid session:",    total.rx_invalid_session);
+    printf("    %-22s %" PRIu64 "\n", "Malformed packets:",  total.rx_malformed);
+    printf("    %-22s %" PRIu64 "\n", "CP rate-limited:",    total.rx_ratelimit_drops);
+    printf("    %-22s %" PRIu64 "\n", "TX rate-limited:",    total.tx_ratelimit_drops);
+    printf("    %-22s %" PRIu64 "\n", "RX rate-limited:",    total.rx_ratelimit_data_drops);
+    printf("    %-22s %" PRIu64 "\n", "TX headroom:",        total.tx_headroom_errors);
+    printf("    %-22s %" PRIu64 "\n", "Roaming events:",     total.rx_roam_events);
     printf("\n");
 }

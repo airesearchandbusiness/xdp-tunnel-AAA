@@ -13,6 +13,7 @@
  */
 
 #include "tachyon.h"
+#include <cerrno>
 
 /* ══════════════════════════════════════════════════════════════════════════
  * QUIC Mimicry - Padded Packet Transmission
@@ -93,8 +94,8 @@ static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id,
     if (!prog) { LOG_ERR("BPF program 'ghost_key_init' not found"); return; }
     int prog_fd = bpf_program__fd(prog);
     if (prog_fd >= 0) {
-        DECLARE_LIBBPF_OPTS(bpf_test_run_opts, topts,
-                            .ctx_in = NULL, .ctx_size_in = 0);
+        struct bpf_test_run_opts topts{};
+        topts.sz = sizeof(topts);
         bpf_prog_test_run_opts(prog_fd, &topts);
     }
 
@@ -126,6 +127,33 @@ static void reset_bpf_replay_state(struct bpf_object *obj, uint32_t session_id,
 
 /* Zero IKM for KDF expand-only derivations (file-scope for stable lifetime) */
 static const uint8_t ZERO_IKM[TACHYON_AEAD_KEY_LEN] = {0};
+
+/* Build the 44-byte transcript associated data for PKT_AUTH messages */
+static void build_transcript_ad(uint8_t *out, uint32_t session_id_net,
+                                uint64_t client_nonce, const uint8_t *cookie)
+{
+    memcpy(out, &session_id_net, 4);
+    memcpy(out + 4, &client_nonce, 8);
+    memcpy(out + 12, cookie, TACHYON_HMAC_LEN);
+}
+
+/* Derive session TX/RX keys from session master secret */
+static void derive_session_keys(const uint8_t *early_secret, const uint8_t *eph_ss,
+                                bool is_initiator,
+                                uint8_t *tx_key, uint8_t *rx_key)
+{
+    uint8_t session_master[32];
+    derive_kdf(early_secret, 32, eph_ss, 32,
+               TACHYON_KDF_SESSION_MASTER, session_master);
+
+    /* Initiator's TX = Client-TX, Responder's TX = Server-TX */
+    const char *my_tx_label  = is_initiator ? TACHYON_KDF_CLIENT_TX : TACHYON_KDF_SERVER_TX;
+    const char *my_rx_label  = is_initiator ? TACHYON_KDF_SERVER_TX : TACHYON_KDF_CLIENT_TX;
+
+    derive_kdf(session_master, 32, ZERO_IKM, 32, my_tx_label, tx_key);
+    derive_kdf(session_master, 32, ZERO_IKM, 32, my_rx_label, rx_key);
+    OPENSSL_cleanse(session_master, 32);
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Constant-Time Role Determination
@@ -395,9 +423,7 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 memcpy(amsg.cookie, msg->cookie, TACHYON_HMAC_LEN);
 
                 uint8_t transcript_ad[44];
-                memcpy(transcript_ad, &amsg.session_id, 4);
-                memcpy(transcript_ad + 4, &amsg.client_nonce, 8);
-                memcpy(transcript_ad + 12, amsg.cookie, TACHYON_HMAC_LEN);
+                build_transcript_ad(transcript_ad, amsg.session_id, amsg.client_nonce, amsg.cookie);
 
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &my_nonce, 8);
@@ -428,9 +454,7 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 /* Decrypt peer ephemeral public key */
                 uint8_t peer_eph_pub[32];
                 uint8_t transcript_ad[44];
-                memcpy(transcript_ad, &msg->session_id, 4);
-                memcpy(transcript_ad + 4, &msg->client_nonce, 8);
-                memcpy(transcript_ad + 12, msg->cookie, TACHYON_HMAC_LEN);
+                build_transcript_ad(transcript_ad, msg->session_id, msg->client_nonce, msg->cookie);
 
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &msg->client_nonce, 8);
@@ -448,18 +472,13 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 /* Generate our ephemeral keypair */
                 if (!generate_x25519_keypair(my_eph_priv, my_eph_pub)) continue;
 
-                /* Derive session keys */
-                uint8_t eph_ss[32], session_master[32], tx_key[32], rx_key[32];
+                /* Derive session keys (responder: is_initiator=false) */
+                uint8_t eph_ss[32], tx_key[32], rx_key[32];
                 if (!do_ecdh(my_eph_priv, peer_eph_pub, eph_ss)) {
                     LOG_ERR("Ephemeral ECDH failed in PKT_AUTH");
                     continue;
                 }
-                derive_kdf(early_secret, 32, eph_ss, 32,
-                           TACHYON_KDF_SESSION_MASTER, session_master);
-                derive_kdf(session_master, 32, ZERO_IKM, 32,
-                           TACHYON_KDF_SERVER_TX, tx_key);
-                derive_kdf(session_master, 32, ZERO_IKM, 32,
-                           TACHYON_KDF_CLIENT_TX, rx_key);
+                derive_session_keys(early_secret, eph_ss, false, tx_key, rx_key);
 
                 inject_keys_to_kernel(obj, session_id, tx_key, rx_key);
 
@@ -485,7 +504,6 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
 
                 OPENSSL_cleanse(eph_ss, 32);
                 OPENSSL_cleanse(my_eph_priv, 32);
-                OPENSSL_cleanse(session_master, 32);
                 LOG_INFO("Handshake complete (responder). Datapath armed.");
             }
             /* ── Handle PKT_FINISH (initiator only) ── */
@@ -507,18 +525,13 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
-                /* Derive session keys (initiator swaps TX/RX labels) */
-                uint8_t eph_ss[32], session_master[32], tx_key[32], rx_key[32];
+                /* Derive session keys (initiator: is_initiator=true) */
+                uint8_t eph_ss[32], tx_key[32], rx_key[32];
                 if (!do_ecdh(my_eph_priv, peer_eph_pub, eph_ss)) {
                     LOG_ERR("Ephemeral ECDH failed in PKT_FINISH");
                     continue;
                 }
-                derive_kdf(early_secret, 32, eph_ss, 32,
-                           TACHYON_KDF_SESSION_MASTER, session_master);
-                derive_kdf(session_master, 32, ZERO_IKM, 32,
-                           TACHYON_KDF_CLIENT_TX, tx_key);
-                derive_kdf(session_master, 32, ZERO_IKM, 32,
-                           TACHYON_KDF_SERVER_TX, rx_key);
+                derive_session_keys(early_secret, eph_ss, true, tx_key, rx_key);
 
                 inject_keys_to_kernel(obj, session_id, tx_key, rx_key);
 

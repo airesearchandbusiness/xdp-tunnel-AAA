@@ -48,7 +48,12 @@ MODULE_VERSION("1.1");
 #define TACHYON_KEY_LEN         32       /* ChaCha20 key size              */
 #define TACHYON_IV_LEN          12       /* ChaCha20-Poly1305 nonce size   */
 #define TACHYON_MIN_PACKET_LEN  (TACHYON_OUTER_HDR_LEN + TACHYON_GHOST_HDR_LEN + TACHYON_TAG_LEN)
-#define TACHYON_CIPHER_NAME     "rfc7539(chacha20,poly1305)"
+#define TACHYON_CIPHER_CHACHA    "rfc7539(chacha20,poly1305)"
+#define TACHYON_CIPHER_AES_GCM   "gcm(aes)"
+
+#define TACHYON_CIPHER_TYPE_CHACHA20    0
+#define TACHYON_CIPHER_TYPE_AES128_GCM  1
+#define TACHYON_CIPHER_TYPE_AES256_GCM  2
 
 #define TACHYON_LOG_PREFIX      "tachyon_crypto: "
 
@@ -62,6 +67,7 @@ int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 		      u8 *rx_key, u32 rx_key__sz);
 int bpf_ghost_encrypt(struct xdp_md *ctx, u32 session_id);
 int bpf_ghost_decrypt(struct xdp_md *ctx, u32 session_id);
+int bpf_ghost_set_cipher(u32 session_id, u32 cipher_type);
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Session Engine - Per-Session Crypto State
@@ -82,7 +88,8 @@ struct session_engine {
 
 	spinlock_t lock;                       /* Protects key rotation          */
 	u8  key_set;                           /* Non-zero after first key load  */
-	u8  _pad[3];
+	u8  cipher_type;                       /* TACHYON_CIPHER_TYPE_*          */
+	u8  _pad[2];
 } ____cacheline_aligned;
 
 static struct session_engine engines[TACHYON_MAX_SESSIONS];
@@ -199,7 +206,7 @@ __bpf_kfunc int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 			"session %u: TX key set failed (%d)\n", session_id, ret);
 		goto out;
 	}
-	crypto_aead_setauthsize(standby_tx, TACHYON_TAG_LEN);
+	/* authsize already set at allocation time in alloc_aead_tfm() */
 
 	ret = crypto_aead_setkey(standby_rx, rx_key, TACHYON_KEY_LEN);
 	if (ret) {
@@ -207,7 +214,6 @@ __bpf_kfunc int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 			"session %u: RX key set failed (%d)\n", session_id, ret);
 		goto out;
 	}
-	crypto_aead_setauthsize(standby_rx, TACHYON_TAG_LEN);
 
 	/* Atomic switchover - zero downtime */
 	rcu_assign_pointer(se->active_tx_tfm, standby_tx);
@@ -219,6 +225,98 @@ __bpf_kfunc int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 
 out:
 	spin_unlock_irqrestore(&se->lock, flags);
+	return ret;
+}
+
+/*
+ * bpf_ghost_set_cipher - Change the cipher algorithm for a session
+ *
+ * @session_id: Target session
+ * @cipher_type: TACHYON_CIPHER_TYPE_CHACHA20, _AES128_GCM, or _AES256_GCM
+ *
+ * Reallocates all four AEAD transforms with the new cipher algorithm.
+ * Must be called before bpf_ghost_set_key when changing ciphers.
+ * Uses spinlock to ensure atomicity with key rotation.
+ */
+__bpf_kfunc int bpf_ghost_set_cipher(u32 session_id, u32 cipher_type)
+{
+	struct session_engine *se;
+	const char *cipher_name;
+	u32 key_len;
+	unsigned long flags;
+	int ret = 0;
+
+	if (unlikely(session_id >= TACHYON_MAX_SESSIONS))
+		return -EINVAL;
+
+	switch (cipher_type) {
+	case TACHYON_CIPHER_TYPE_CHACHA20:
+		cipher_name = TACHYON_CIPHER_CHACHA;
+		key_len = 32;
+		break;
+	case TACHYON_CIPHER_TYPE_AES128_GCM:
+		cipher_name = TACHYON_CIPHER_AES_GCM;
+		key_len = 16;
+		break;
+	case TACHYON_CIPHER_TYPE_AES256_GCM:
+		cipher_name = TACHYON_CIPHER_AES_GCM;
+		key_len = 32;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	se = &engines[session_id];
+	spin_lock_irqsave(&se->lock, flags);
+
+	/* Only reallocate if cipher actually changed */
+	if (se->cipher_type == cipher_type) {
+		spin_unlock_irqrestore(&se->lock, flags);
+		return 0;
+	}
+
+	/* Deactivate current transforms */
+	RCU_INIT_POINTER(se->active_tx_tfm, NULL);
+	RCU_INIT_POINTER(se->active_rx_tfm, NULL);
+	se->key_set = 0;
+
+	spin_unlock_irqrestore(&se->lock, flags);
+	synchronize_rcu();
+
+	/* Free old transforms */
+	destroy_session_engine(se);
+
+	/* Allocate new transforms with the selected cipher */
+	spin_lock_init(&se->lock);
+
+	se->tfm_tx_primary = crypto_alloc_aead(cipher_name, 0, 0);
+	if (IS_ERR(se->tfm_tx_primary)) { ret = PTR_ERR(se->tfm_tx_primary); se->tfm_tx_primary = NULL; goto err; }
+	crypto_aead_setauthsize(se->tfm_tx_primary, TACHYON_TAG_LEN);
+
+	se->tfm_tx_secondary = crypto_alloc_aead(cipher_name, 0, 0);
+	if (IS_ERR(se->tfm_tx_secondary)) { ret = PTR_ERR(se->tfm_tx_secondary); se->tfm_tx_secondary = NULL; goto err; }
+	crypto_aead_setauthsize(se->tfm_tx_secondary, TACHYON_TAG_LEN);
+
+	se->tfm_rx_primary = crypto_alloc_aead(cipher_name, 0, 0);
+	if (IS_ERR(se->tfm_rx_primary)) { ret = PTR_ERR(se->tfm_rx_primary); se->tfm_rx_primary = NULL; goto err; }
+	crypto_aead_setauthsize(se->tfm_rx_primary, TACHYON_TAG_LEN);
+
+	se->tfm_rx_secondary = crypto_alloc_aead(cipher_name, 0, 0);
+	if (IS_ERR(se->tfm_rx_secondary)) { ret = PTR_ERR(se->tfm_rx_secondary); se->tfm_rx_secondary = NULL; goto err; }
+	crypto_aead_setauthsize(se->tfm_rx_secondary, TACHYON_TAG_LEN);
+
+	RCU_INIT_POINTER(se->active_tx_tfm, NULL);
+	RCU_INIT_POINTER(se->active_rx_tfm, NULL);
+	se->cipher_type = cipher_type;
+
+	pr_info(TACHYON_LOG_PREFIX "session %u: cipher changed to %s\n",
+		session_id, cipher_name);
+	return 0;
+
+err:
+	destroy_session_engine(se);
+	pr_err(TACHYON_LOG_PREFIX "session %u: cipher change failed (%d)\n",
+	       session_id, ret);
 	return ret;
 }
 
@@ -369,6 +467,7 @@ BTF_SET8_START(tachyon_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_ghost_encrypt)
 BTF_ID_FLAGS(func, bpf_ghost_decrypt)
 BTF_ID_FLAGS(func, bpf_ghost_set_key)
+BTF_ID_FLAGS(func, bpf_ghost_set_cipher)
 BTF_SET8_END(tachyon_kfunc_ids)
 
 static const struct btf_kfunc_id_set tachyon_kfunc_set = {

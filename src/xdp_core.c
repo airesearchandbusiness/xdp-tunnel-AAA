@@ -135,6 +135,31 @@ struct {
 	__type(value, __u64);
 } cp_ratelimit_map SEC(".maps");
 
+/* Per-session rate limit configuration */
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, TACHYON_MAX_SESSIONS);
+	__type(key, __u32);
+	__type(value, struct tachyon_rate_cfg);
+} rate_limit_map SEC(".maps");
+
+/* LPM trie for multi-peer allowed-IP routing (Phase 3) */
+struct {
+	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
+	__uint(max_entries, 1024);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, struct tachyon_lpm_key_v4);
+	__type(value, __u32);
+} lpm_route_v4 SEC(".maps");
+
+/* AF_XDP socket map for zero-copy control plane (Phase 4) */
+struct {
+	__uint(type, BPF_MAP_TYPE_XSKMAP);
+	__uint(max_entries, 64);
+	__type(key, __u32);
+	__type(value, __u32);
+} xsk_map SEC(".maps");
+
 /* ══════════════════════════════════════════════════════════════════════════
  * External Kfuncs (provided by tachyon-crypto kernel module)
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -144,6 +169,8 @@ extern int bpf_ghost_decrypt(struct xdp_md *ctx, __u32 session_id) __ksym;
 extern int bpf_ghost_set_key(__u32 session_id,
 			     __u8 *tx_key, __u32 tx_key__sz,
 			     __u8 *rx_key, __u32 rx_key__sz) __ksym;
+extern int bpf_ghost_set_cipher(__u32 session_id,
+				__u32 cipher_type) __ksym;
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Inline Helpers
@@ -262,6 +289,12 @@ static __always_inline struct tachyon_stats *get_stats(void)
 	return bpf_map_lookup_elem(&stats_map, &zero);
 }
 
+/* Increment a stats counter (deferred map lookup, safe if map missing) */
+#define STAT_INC(field) do {                        \
+	struct tachyon_stats *_s = get_stats();      \
+	if (_s) _s->field++;                         \
+} while (0)
+
 /* Retrieve global config pointer */
 static __always_inline struct tachyon_config *get_config(void)
 {
@@ -303,24 +336,53 @@ int xdp_tx_path(struct xdp_md *ctx)
 	/* Clamp MSS before encapsulation to prevent inner fragmentation */
 	tcp_mss_clamp(iph_inner, data_end);
 
-	/* --- Session lookup by destination IP --- */
-	__u32 *sid_p = bpf_map_lookup_elem(&ip_to_session_map, &iph_inner->daddr);
-	if (!sid_p)
-		return XDP_PASS;  /* Not a tunnel destination */
+	/* --- Session lookup by destination IP (LPM trie for multi-peer routing) --- */
+	struct tachyon_lpm_key_v4 lpm_key = {
+		.prefixlen = 32,
+		.addr      = iph_inner->daddr,
+	};
+	__u32 *sid_p = bpf_map_lookup_elem(&lpm_route_v4, &lpm_key);
+	if (!sid_p) {
+		/* Fallback to legacy direct-IP map for backward compatibility */
+		sid_p = bpf_map_lookup_elem(&ip_to_session_map, &iph_inner->daddr);
+		if (!sid_p)
+			return XDP_PASS;  /* Not a tunnel destination */
+	}
 	__u32 session_id = *sid_p;
 
 	struct tachyon_session *sess = bpf_map_lookup_elem(&session_map, &session_id);
 	if (!sess) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->rx_invalid_session++;
+		STAT_INC(rx_invalid_session);
 		return XDP_DROP;
+	}
+
+	/* --- TX Rate Limiting (token bucket, under session spinlock) --- */
+	struct tachyon_rate_cfg *rl = bpf_map_lookup_elem(&rate_limit_map, &session_id);
+	if (rl && rl->tx_rate_bps > 0) {
+		__u64 pkt_len = (__u64)(data_end - data);
+		__u64 now_ns  = bpf_ktime_get_ns();
+
+		bpf_spin_lock(&sess->replay_lock);
+		__u64 elapsed = now_ns - sess->tx_rl_last_ns;
+		__u64 refill  = (rl->tx_rate_bps * elapsed) / 1000000000ULL;
+		sess->tx_rl_tokens += refill;
+		if (sess->tx_rl_tokens > rl->tx_burst)
+			sess->tx_rl_tokens = rl->tx_burst;
+		sess->tx_rl_last_ns = now_ns;
+
+		if (sess->tx_rl_tokens < pkt_len) {
+			bpf_spin_unlock(&sess->replay_lock);
+			STAT_INC(tx_ratelimit_drops);
+			return XDP_DROP;
+		}
+		sess->tx_rl_tokens -= pkt_len;
+		bpf_spin_unlock(&sess->replay_lock);
 	}
 
 	/* --- Per-CPU sequence number generation --- */
 	__u64 *tx_seq_ptr = bpf_map_lookup_elem(&session_tx_seq, &session_id);
 	if (!tx_seq_ptr) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 
@@ -331,9 +393,10 @@ int xdp_tx_path(struct xdp_md *ctx)
 	__u64 final_seq = ((__u64)cpu_id << TACHYON_SEQ_CPU_SHIFT) |
 			  (local_seq & TACHYON_SEQ_NUM_MASK);
 
-	/* Save source MAC before head adjustment overwrites it */
+	/* Save fields from inner packet before buffer adjustments invalidate pointers */
 	__u8 src_mac[6];
 	__builtin_memcpy(src_mac, eth->h_source, 6);
+	__u8 inner_tos = iph_inner->tos;  /* For DSCP/ECN copy to outer header */
 
 	/* --- Load global config --- */
 	struct tachyon_config *cfg = get_config();
@@ -377,13 +440,11 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	/* --- Adjust buffer: add tail for AEAD tag + padding, prepend outer headers --- */
 	if (bpf_xdp_adjust_tail(ctx, TACHYON_AEAD_TAG_LEN + pad_len)) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 	if (bpf_xdp_adjust_head(ctx, -(int)TACHYON_TX_HEAD_ADJUST)) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 
@@ -392,8 +453,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 	data_end = (void *)(long)ctx->data_end;
 
 	if (data + TACHYON_OUTER_HDR_LEN > data_end) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 
@@ -430,10 +490,10 @@ int xdp_tx_path(struct xdp_md *ctx)
 	__builtin_memcpy(oeth->h_source, src_mac, 6);
 	oeth->h_proto = ETH_P_IP_BE;
 
-	/* Outer IPv4 */
+	/* Outer IPv4 - copy inner DSCP+ECN to outer per RFC 6040 */
 	oip->version  = 4;
 	oip->ihl      = 5;
-	oip->tos      = 0;
+	oip->tos      = inner_tos;       /* Preserve DSCP and ECN from inner */
 	oip->tot_len  = bpf_htons(data_end - (void *)oip);
 	oip->id       = 0;
 	oip->frag_off = bpf_htons(IP_DF);
@@ -451,8 +511,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	/* --- Encrypt payload --- */
 	if (bpf_ghost_encrypt(ctx, session_id) != 0) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_crypto_errors++;
+		STAT_INC(tx_crypto_errors);
 		emit_event(ctx, TACHYON_EVT_CRYPTO_ERROR, session_id, final_seq);
 		return XDP_DROP;
 	}
@@ -510,15 +569,21 @@ int xdp_rx_path(struct xdp_md *ctx)
 
 	struct tachyon_ghost_hdr *gh = (void *)(udph + 1);
 	if ((void *)(gh + 1) > data_end) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->rx_malformed++;
+		STAT_INC(rx_malformed);
 		return XDP_DROP;
 	}
 
 	/* Stats lookup deferred past fast-reject path (saves map lookup on non-tunnel pkts) */
 	struct tachyon_stats *stats = get_stats();
 
-	/* --- Control plane packet routing --- */
+	/* Save outer header fields before they are stripped (for DSCP/ECN and roaming) */
+	__u8  saved_outer_tos = iph->tos;
+	__u32 saved_src_ip    = iph->saddr;
+	__u16 saved_src_port  = udph->source;
+	__u8  saved_src_mac[6];
+	__builtin_memcpy(saved_src_mac, eth->h_source, 6);
+
+	/* --- Control plane packet routing (with AF_XDP fast-path) --- */
 	if ((gh->quic_flags & TACHYON_CP_FLAG_MASK) == TACHYON_CP_FLAG_PREFIX) {
 		__u32 src_ip = iph->saddr;
 		__u64 now = bpf_ktime_get_ns();
@@ -533,7 +598,9 @@ int xdp_rx_path(struct xdp_md *ctx)
 		} else {
 			bpf_map_update_elem(&cp_ratelimit_map, &src_ip, &now, BPF_ANY);
 		}
-		return XDP_PASS;
+
+		/* Try AF_XDP zero-copy path first; fall back to XDP_PASS (kernel socket) */
+		return bpf_redirect_map(&xsk_map, ctx->rx_queue_index, XDP_PASS);
 	}
 
 	/* --- Session validation --- */
@@ -660,6 +727,41 @@ int xdp_rx_path(struct xdp_md *ctx)
 	}
 	bpf_spin_unlock(&sess->replay_lock);
 
+	/* ── RX Rate Limiting (after auth to prevent amplification) ── */
+	{
+		struct tachyon_rate_cfg *rl = bpf_map_lookup_elem(&rate_limit_map, &session_id);
+		if (rl && rl->rx_rate_bps > 0) {
+			__u64 pkt_len = (__u64)(data_end - data);
+			__u64 now_ns  = bpf_ktime_get_ns();
+
+			bpf_spin_lock(&sess->replay_lock);
+			__u64 elapsed = now_ns - sess->rx_rl_last_ns;
+			__u64 refill  = (rl->rx_rate_bps * elapsed) / 1000000000ULL;
+			sess->rx_rl_tokens += refill;
+			if (sess->rx_rl_tokens > rl->rx_burst)
+				sess->rx_rl_tokens = rl->rx_burst;
+			sess->rx_rl_last_ns = now_ns;
+
+			if (sess->rx_rl_tokens < pkt_len) {
+				bpf_spin_unlock(&sess->replay_lock);
+				if (stats) stats->rx_ratelimit_data_drops++;
+				return XDP_DROP;
+			}
+			sess->rx_rl_tokens -= pkt_len;
+			bpf_spin_unlock(&sess->replay_lock);
+		}
+	}
+
+	/* ── Peer Roaming Detection (after successful auth) ── */
+	if (saved_src_ip != sess->peer_ip || saved_src_port != sess->peer_port) {
+		/* Authenticated packet from a new endpoint - peer has roamed */
+		sess->peer_ip   = saved_src_ip;
+		sess->peer_port = saved_src_port;
+		__builtin_memcpy(sess->peer_mac, saved_src_mac, 6);
+		if (stats) stats->rx_roam_events++;
+		emit_event(ctx, TACHYON_EVT_PEER_ROAM, session_id, pkt_seq);
+	}
+
 	/* ── Strip Outer Headers and Trim Dynamic Padding ── */
 	if (bpf_xdp_adjust_head(ctx, TACHYON_TX_HEAD_ADJUST)) {
 		if (stats) stats->rx_malformed++;
@@ -716,8 +818,19 @@ int xdp_rx_path(struct xdp_md *ctx)
 
 	/* Clamp MSS on decrypted SYN packets too */
 	decrypted_iph = (void *)(eth + 1);
-	if ((void *)(decrypted_iph + 1) <= data_end)
+	if ((void *)(decrypted_iph + 1) <= data_end) {
 		tcp_mss_clamp(decrypted_iph, data_end);
+
+		/* RFC 6040: Propagate ECN Congestion Experienced from outer to inner */
+		__u8 outer_ecn = saved_outer_tos & 0x03;
+		__u8 inner_ecn = decrypted_iph->tos & 0x03;
+		if (outer_ecn == 0x03 && inner_ecn != 0x00) {
+			/* Outer experienced congestion, inner is ECN-capable: set CE */
+			decrypted_iph->tos = (decrypted_iph->tos & 0xFC) | 0x03;
+			/* Incremental IPv4 checksum update not needed here since
+			 * the inner packet will be rechecked by the receiving stack */
+		}
+	}
 
 	/* Rewrite Ethernet: broadcast dest, zero source (for local delivery) */
 	__builtin_memset(eth->h_dest, 0xff, ETH_ALEN);
@@ -752,6 +865,19 @@ int ghost_key_init(void *ctx)
 	return bpf_ghost_set_key(kid->session_id,
 				 kid->tx_key, TACHYON_AEAD_KEY_LEN,
 				 kid->rx_key, TACHYON_AEAD_KEY_LEN);
+}
+
+/* Cipher selection syscall program (called before ghost_key_init for AES-GCM) */
+SEC("syscall")
+int ghost_cipher_init(void *ctx)
+{
+	__u32 zero = 0;
+	struct tachyon_key_init *kid = bpf_map_lookup_elem(&key_init_map, &zero);
+
+	if (!kid)
+		return -1;
+
+	return bpf_ghost_set_cipher(kid->session_id, 0 /* cipher_type from config */);
 }
 
 /* Dummy XDP program for the ingress veth (prevents kernel stack processing) */
