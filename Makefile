@@ -40,9 +40,10 @@ LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
                loader/network.cpp loader/tunnel.cpp
 LOADER_BIN  := loader/tachyon
 
-# Test source files (each has its own main)
-TEST_CXXFLAGS := -O0 -g -Wall -Wextra -std=c++17 -I. -DTACHYON_VERSION=\"$(VERSION)\"
-TEST_LDFLAGS  := -lbpf -lcrypto
+# Test build flags (TACHYON_NO_BPF avoids libbpf dependency for unit tests)
+TEST_CXXFLAGS := -O0 -g -Wall -Wextra -std=c++17 -I. \
+                 -DTACHYON_VERSION=\"$(VERSION)\" -DTACHYON_NO_BPF
+TEST_LDFLAGS  := -lcrypto
 TEST_SRCS     := loader/crypto.cpp loader/config.cpp
 
 # ── Build Targets ──

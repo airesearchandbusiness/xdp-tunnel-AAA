@@ -36,11 +36,11 @@ TEST(msg_cookie_size) {
 }
 
 TEST(msg_auth_size) {
-    ASSERT_EQ(sizeof(MsgAuth), 96);  /* 4+4+8+4+32+48 = actually depends on packing */
+    ASSERT_EQ(sizeof(MsgAuth), 100);  /* 1+3+4+8+1+3+32+48 = 100 */
 }
 
 TEST(msg_finish_size) {
-    ASSERT_EQ(sizeof(MsgFinish), 60);  /* 4+4+8+48 = 64? Check packing */
+    ASSERT_EQ(sizeof(MsgFinish), 64);  /* 1+3+4+8+48 = 64 */
 }
 
 TEST(msg_keepalive_size) {

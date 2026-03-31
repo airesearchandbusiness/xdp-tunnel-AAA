@@ -31,9 +31,11 @@
 #include <sys/stat.h>
 #include <linux/limits.h>
 
-/* ── BPF ── */
+/* ── BPF (optional - define TACHYON_NO_BPF to exclude for unit tests) ── */
+#ifndef TACHYON_NO_BPF
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#endif
 
 /* ── OpenSSL ── */
 #include <openssl/evp.h>
@@ -269,6 +271,7 @@ TunnelConfig parse_config(const std::string &filename);
 bool         validate_config(const TunnelConfig &cfg);
 std::string  tunnel_name_from_conf(const std::string &conf_path);
 
+#ifndef TACHYON_NO_BPF
 void  command_up(const std::string &conf_file);
 void  command_down(const std::string &conf_file);
 void  command_show(const std::string &conf_file);
@@ -280,6 +283,7 @@ void  command_show(const std::string &conf_file);
 void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                        uint32_t session_id, uint32_t peer_ip_net,
                        uint32_t local_ip_net, const uint8_t *peer_mac);
+#endif /* TACHYON_NO_BPF */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Utility Helpers

@@ -54,14 +54,14 @@ static const char *g_current_test = nullptr;
 
 #define ASSERT_EQ(a, b)                                     \
     do {                                                    \
-        auto _a = (a); auto _b = (b);                      \
+        auto _a = (long long)(a);                           \
+        auto _b = (long long)(b);                           \
         if (_a != _b) {                                     \
             printf("  \033[31mFAIL\033[0m  %s:%d: "         \
                    "ASSERT_EQ(%s, %s) => %lld != %lld "     \
                    "in %s\n",                               \
                    __FILE__, __LINE__, #a, #b,              \
-                   (long long)_a, (long long)_b,            \
-                   g_current_test);                         \
+                   _a, _b, g_current_test);                 \
             g_tests_failed++;                               \
             return;                                         \
         }                                                   \
