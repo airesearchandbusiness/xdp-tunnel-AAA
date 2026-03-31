@@ -23,7 +23,6 @@
 #include <linux/tcp.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
-#include <netinet/in.h>
 
 #include "common.h"
 

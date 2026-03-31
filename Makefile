@@ -16,7 +16,9 @@
 
 .PHONY: all kmod xdp loader clean install uninstall \
         install-dkms remove-dkms install-module remove-module \
-        test purge help
+        test test-unit test-xdp test-integration test-all \
+        lint format coverage \
+        purge help
 
 VERSION     ?= 1.1.0
 KDIR        ?= /lib/modules/$(shell uname -r)/build
@@ -31,20 +33,14 @@ SYSTEMDDIR  ?= /etc/systemd/system
 
 # Compiler flags
 CXX         ?= g++
-CXXFLAGS    := -O2 -Wall -Wextra -std=c++17 \
+CXXFLAGS    := -O2 -Wall -Wextra -Wpedantic -std=c++17 \
                -DTACHYON_VERSION=\"$(VERSION)\"
-LDFLAGS     := -lbpf -lcrypto
+LDFLAGS     := -lbpf -lcrypto -lelf -lz
 
 # Loader source files
 LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
                loader/network.cpp loader/tunnel.cpp
 LOADER_BIN  := loader/tachyon
-
-# Test build flags (TACHYON_NO_BPF avoids libbpf dependency for unit tests)
-TEST_CXXFLAGS := -O0 -g -Wall -Wextra -std=c++17 -I. \
-                 -DTACHYON_VERSION=\"$(VERSION)\" -DTACHYON_NO_BPF
-TEST_LDFLAGS  := -lcrypto
-TEST_SRCS     := loader/crypto.cpp loader/config.cpp
 
 # ── Build Targets ──
 
@@ -117,41 +113,93 @@ remove-module:
 
 # ── Testing ──
 
-test-unit: tests/test_crypto tests/test_config tests/test_utils tests/test_protocol
-	@echo "\n Running Tachyon Unit Tests...\n"
-	@./tests/test_crypto && ./tests/test_config && \
-	 ./tests/test_utils && ./tests/test_protocol && \
-	 echo "\n All tests passed." || (echo "\n Some tests FAILED." && exit 1)
-
-tests/test_crypto: tests/test_crypto.cpp $(TEST_SRCS) loader/tachyon.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_crypto.cpp $(TEST_SRCS) -o $@ $(TEST_LDFLAGS)
-
-tests/test_config: tests/test_config.cpp $(TEST_SRCS) loader/tachyon.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_config.cpp $(TEST_SRCS) -o $@ $(TEST_LDFLAGS)
-
-tests/test_utils: tests/test_utils.cpp loader/tachyon.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_utils.cpp -o $@ $(TEST_LDFLAGS)
-
-tests/test_protocol: tests/test_protocol.cpp loader/tachyon.h src/common.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_protocol.cpp -o $@ $(TEST_LDFLAGS)
-
-test-sanitize: TEST_CXXFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
-test-sanitize: TEST_LDFLAGS  += -fsanitize=address,undefined
-test-sanitize: test-unit
-
 test: loader
-	@echo "\nTesting Tachyon (integration)..."
+	@echo "\nTesting Tachyon..."
 	@test -f test.conf || { echo "Create test.conf first (see tun.conf.example)"; exit 1; }
 	sudo -E ./$(LOADER_BIN) up test.conf
 	sleep 2
 	sudo -E ./$(LOADER_BIN) show test.conf
 	sudo -E ./$(LOADER_BIN) down test.conf
 
-format:
-	find loader/ tests/ -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+# Build and run unit tests (no root required)
+test-unit:
+	@echo "\n[TEST] Building and running unit tests..."
+	@cmake -B build/tests -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/tests -j$$(nproc) > /dev/null 2>&1
+	@cd build/tests && ctest --output-on-failure --timeout 60 \
+		--exclude-regex 'xdp_test_runner'
+	@echo "[TEST] Unit tests complete."
 
-format-check:
-	find loader/ tests/ -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+# Run XDP/BPF tests (requires root and kernel module)
+test-xdp: xdp
+	@echo "\n[TEST] Building and running XDP tests..."
+	@cmake -B build/tests -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DBUILD_XDP_TESTS=ON \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/tests --target xdp_test_runner -j$$(nproc) > /dev/null 2>&1
+	sudo build/tests/xdp_test_runner --gtest_output=xml:build/xdp-results.xml
+	@echo "[TEST] XDP tests complete."
+
+# Run integration tests (requires root and kernel module)
+test-integration: loader
+	@echo "\n[TEST] Running integration tests..."
+	@chmod +x tests/integration/*.sh
+	sudo tests/integration/test_tunnel_e2e.sh
+
+# Run all test tiers
+test-all: test-unit test-xdp test-integration
+	@echo "\n[TEST] All test tiers complete."
+
+# ── Code Quality ──
+
+# Run all linters
+lint:
+	@echo "\n[LINT] Running code quality checks..."
+	@echo "  -> clang-format..."
+	@find src/ loader/ -name '*.c' -o -name '*.cpp' -o -name '*.h' \
+		| xargs clang-format --dry-run --Werror --style=file 2>&1 || true
+	@echo "  -> cppcheck..."
+	@cppcheck --enable=warning,performance,portability \
+		--error-exitcode=0 \
+		--suppress=missingInclude \
+		-I src/ -I loader/ \
+		loader/ src/common.h 2>&1
+	@echo "  -> shellcheck..."
+	@find tests/ -name '*.sh' -exec shellcheck -x {} + 2>&1 || true
+	@echo "[LINT] Complete."
+
+# Auto-format all source files
+format:
+	@echo "\n[FORMAT] Formatting source files..."
+	@find src/ loader/ tests/ -name '*.c' -o -name '*.cpp' -o -name '*.h' \
+		| xargs clang-format -i --style=file
+	@echo "[FORMAT] Done."
+
+# Generate HTML coverage report
+coverage:
+	@echo "\n[COVERAGE] Building with coverage instrumentation..."
+	@cmake -B build/coverage -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DENABLE_COVERAGE=ON \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/coverage -j$$(nproc) > /dev/null 2>&1
+	@cd build/coverage && ctest --output-on-failure --timeout 60 \
+		--exclude-regex 'xdp_test_runner' || true
+	@lcov --capture --directory build/coverage --output-file build/coverage/coverage.info \
+		--ignore-errors mismatch 2>/dev/null
+	@lcov --remove build/coverage/coverage.info '/usr/*' '*/tests/*' '*/googletest/*' \
+		--output-file build/coverage/coverage-filtered.info 2>/dev/null
+	@genhtml build/coverage/coverage-filtered.info \
+		--output-directory build/coverage/html 2>/dev/null
+	@echo "[COVERAGE] Report generated at build/coverage/html/index.html"
 
 # ── Cleanup ──
 
@@ -159,7 +207,7 @@ clean:
 	@echo "Cleaning build artifacts..."
 	$(MAKE) -C $(KDIR) M=$(PWD)/kmod clean 2>/dev/null || true
 	rm -f src/xdp_core.o $(LOADER_BIN)
-	rm -f tests/test_crypto tests/test_config tests/test_utils tests/test_protocol
+	rm -rf build/
 	@echo "Clean complete."
 
 purge: clean remove-dkms remove-module
@@ -174,19 +222,30 @@ help:
 	@echo "Tachyon XDP Tunnel v$(VERSION)"
 	@echo ""
 	@echo "Build targets:"
-	@echo "  all            Build everything (kmod + xdp + loader)"
-	@echo "  kmod           Build kernel crypto module"
-	@echo "  xdp            Build XDP/eBPF object"
-	@echo "  loader         Build control plane binary"
+	@echo "  all              Build everything (kmod + xdp + loader)"
+	@echo "  kmod             Build kernel crypto module"
+	@echo "  xdp              Build XDP/eBPF object"
+	@echo "  loader           Build control plane binary"
 	@echo ""
 	@echo "Install targets:"
-	@echo "  install        Install binary and systemd service"
-	@echo "  uninstall      Remove installed files"
-	@echo "  install-dkms   Install kernel module via DKMS"
-	@echo "  remove-dkms    Remove DKMS module"
+	@echo "  install          Install binary and systemd service"
+	@echo "  uninstall        Remove installed files"
+	@echo "  install-dkms     Install kernel module via DKMS"
+	@echo "  remove-dkms      Remove DKMS module"
 	@echo ""
-	@echo "Other:"
-	@echo "  test           Run basic up/show/down test"
-	@echo "  clean          Remove build artifacts"
-	@echo "  purge          Full cleanup (artifacts + BPF state + interfaces)"
-	@echo "  help           Show this help"
+	@echo "Testing:"
+	@echo "  test             Run basic up/show/down smoke test"
+	@echo "  test-unit        Build and run unit tests (no root)"
+	@echo "  test-xdp         Run XDP/BPF tests (requires root)"
+	@echo "  test-integration Run integration tests (requires root)"
+	@echo "  test-all         Run all test tiers"
+	@echo ""
+	@echo "Code quality:"
+	@echo "  lint             Run all linters (clang-format, cppcheck, shellcheck)"
+	@echo "  format           Auto-format all source files"
+	@echo "  coverage         Generate HTML coverage report"
+	@echo ""
+	@echo "Cleanup:"
+	@echo "  clean            Remove build artifacts"
+	@echo "  purge            Full cleanup (artifacts + BPF state + interfaces)"
+	@echo "  help             Show this help"

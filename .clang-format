@@ -1,12 +1,58 @@
+---
+# Tachyon XDP Tunnel - Code Formatting Configuration
+#
+# Usage:
+#   clang-format -i <file>           # Format in-place
+#   clang-format --dry-run --Werror  # Check (CI mode)
+
 BasedOnStyle: LLVM
+Language: Cpp
+
+# Indentation
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
+IndentCaseLabels: false
+IndentPPDirectives: None
+NamespaceIndentation: None
+
+# Line width
 ColumnLimit: 100
-BreakBeforeBraces: Attach
+
+# Braces
+BreakBeforeBraces: Linux
+AllowShortBlocksOnASingleLine: Empty
 AllowShortFunctionsOnASingleLine: Inline
-AllowShortIfStatementsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
-SortIncludes: false
-PointerAlignment: Right
+AllowShortCaseLabelsOnASingleLine: false
+
+# Alignment
+AlignConsecutiveMacros: Consecutive
+AlignConsecutiveAssignments: None
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Includes
+SortIncludes: Never
+IncludeBlocks: Preserve
+
+# Spacing
+SpaceAfterCStyleCast: false
 SpaceBeforeParens: ControlStatements
+SpaceInEmptyBlock: false
+SpacesInContainerLiterals: false
+
+# Pointers and references
+PointerAlignment: Right
+ReferenceAlignment: Right
+
+# Other
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackArguments: true
+BinPackParameters: true
+BreakStringLiterals: true
+MaxEmptyLinesToKeep: 2
+ReflowComments: false
+---
