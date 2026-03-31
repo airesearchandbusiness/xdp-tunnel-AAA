@@ -35,14 +35,20 @@ static void send_mimic_quic(int sock, const void *msg, size_t msg_len,
 
     /* Fake Connection ID in header padding bytes */
     uint32_t cid_fake;
-    RAND_bytes(reinterpret_cast<uint8_t *>(&cid_fake), 4);
+    if (RAND_bytes(reinterpret_cast<uint8_t *>(&cid_fake), 4) != 1) {
+        LOG_ERR("RAND_bytes failed for CID entropy");
+        return;
+    }
     buffer[1] = cid_fake & 0xFF;
     buffer[2] = (cid_fake >> 8) & 0xFF;
     buffer[3] = (cid_fake >> 16) & 0xFF;
 
     /* Determine padded size based on packet type */
     uint32_t rnd;
-    RAND_bytes(reinterpret_cast<uint8_t *>(&rnd), 4);
+    if (RAND_bytes(reinterpret_cast<uint8_t *>(&rnd), 4) != 1) {
+        LOG_ERR("RAND_bytes failed for padding size");
+        return;
+    }
 
     size_t total_len;
     if (type == TACHYON_PKT_INIT) {
@@ -59,8 +65,9 @@ static void send_mimic_quic(int sock, const void *msg, size_t msg_len,
     if (total_len > msg_len)
         RAND_bytes(buffer + msg_len, total_len - msg_len);
 
-    sendto(sock, buffer, total_len, 0,
-           reinterpret_cast<const struct sockaddr *>(dest), sizeof(*dest));
+    if (sendto(sock, buffer, total_len, 0,
+               reinterpret_cast<const struct sockaddr *>(dest), sizeof(*dest)) < 0)
+        LOG_WARN("sendto failed: %s", strerror(errno));
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -116,6 +123,9 @@ static void reset_bpf_replay_state(struct bpf_object *obj, uint32_t session_id,
 
     LOG_INFO("Session %u: replay window reset (peer restart)", session_id);
 }
+
+/* Zero IKM for KDF expand-only derivations (file-scope for stable lifetime) */
+static const uint8_t ZERO_IKM[TACHYON_AEAD_KEY_LEN] = {0};
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Constant-Time Role Determination
@@ -191,8 +201,7 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
     std::string safe_psk = cfg.psk.empty() ? TACHYON_KDF_DEFAULT_PSK : cfg.psk;
     derive_kdf(reinterpret_cast<const uint8_t *>(safe_psk.data()), safe_psk.size(),
                static_ss, 32, TACHYON_KDF_EARLY_SECRET, early_secret);
-    uint8_t zero_ikm[32] = {0};
-    derive_kdf(early_secret, 32, zero_ikm, 32, TACHYON_KDF_CP_AEAD, cp_enc_key);
+    derive_kdf(early_secret, 32, ZERO_IKM, 32, TACHYON_KDF_CP_AEAD, cp_enc_key);
 
     OPENSSL_cleanse(static_ss, 32);
     OPENSSL_cleanse(static_priv, 32);
@@ -290,7 +299,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
 
                 send_mimic_quic(sock, &kmsg, sizeof(kmsg), TACHYON_PKT_KEEPALIVE, &p_addr);
                 last_tx_time = now;
-                keepalive_interval = TACHYON_KEEPALIVE_BASE + (rand() % TACHYON_KEEPALIVE_JITTER);
+                { uint32_t _j; RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
+                  keepalive_interval = TACHYON_KEEPALIVE_BASE + (_j % TACHYON_KEEPALIVE_JITTER); }
             }
 
             /* Rekey trigger (initiator only) */
@@ -316,7 +326,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 send_mimic_quic(sock, &msg, sizeof(msg), TACHYON_PKT_INIT, &p_addr);
                 last_init_send = now;
                 last_tx_time = now;
-                retry_interval = TACHYON_RETRY_BASE + (rand() % TACHYON_RETRY_JITTER);
+                { uint32_t _j; RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
+                  retry_interval = TACHYON_RETRY_BASE + (_j % TACHYON_RETRY_JITTER); }
             }
 
             /* Receive incoming packet */
@@ -445,9 +456,9 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 }
                 derive_kdf(early_secret, 32, eph_ss, 32,
                            TACHYON_KDF_SESSION_MASTER, session_master);
-                derive_kdf(session_master, 32, zero_ikm, 32,
+                derive_kdf(session_master, 32, ZERO_IKM, 32,
                            TACHYON_KDF_SERVER_TX, tx_key);
-                derive_kdf(session_master, 32, zero_ikm, 32,
+                derive_kdf(session_master, 32, ZERO_IKM, 32,
                            TACHYON_KDF_CLIENT_TX, rx_key);
 
                 inject_keys_to_kernel(obj, session_id, tx_key, rx_key);
@@ -504,9 +515,9 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 }
                 derive_kdf(early_secret, 32, eph_ss, 32,
                            TACHYON_KDF_SESSION_MASTER, session_master);
-                derive_kdf(session_master, 32, zero_ikm, 32,
+                derive_kdf(session_master, 32, ZERO_IKM, 32,
                            TACHYON_KDF_CLIENT_TX, tx_key);
-                derive_kdf(session_master, 32, zero_ikm, 32,
+                derive_kdf(session_master, 32, ZERO_IKM, 32,
                            TACHYON_KDF_SERVER_TX, rx_key);
 
                 inject_keys_to_kernel(obj, session_id, tx_key, rx_key);

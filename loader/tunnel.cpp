@@ -7,11 +7,9 @@
  */
 
 #include "tachyon.h"
+#include <cerrno>
 
-/* Forward declaration from network.cpp */
-void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
-                       uint32_t session_id, uint32_t peer_ip_net,
-                       uint32_t local_ip_net, const uint8_t *peer_mac);
+static void sig_handler(int) { g_exiting = 1; }
 
 /* ══════════════════════════════════════════════════════════════════════════
  * command_up - Create tunnel and start control plane
@@ -75,6 +73,12 @@ void command_up(const std::string &conf_file)
     std::string base_dir(exe_path);
     base_dir = base_dir.substr(0, base_dir.find_last_of('/'));
     std::string xdp_obj_path = base_dir + "/../src/xdp_core.o";
+    struct stat xdp_st;
+    if (stat(xdp_obj_path.c_str(), &xdp_st) != 0) {
+        xdp_obj_path = base_dir + "/xdp_core.o";
+        if (stat(xdp_obj_path.c_str(), &xdp_st) != 0)
+            xdp_obj_path = "/usr/lib/tachyon/xdp_core.o";
+    }
 
     /* Load BPF object */
     struct bpf_object *obj = bpf_object__open_file(xdp_obj_path.c_str(), nullptr);
@@ -157,8 +161,8 @@ void command_up(const std::string &conf_file)
              cfg.physical_interface.c_str(), cfg.listen_port);
 
     /* Install signal handlers and run control plane */
-    signal(SIGINT,  [](int) { g_exiting = 1; });
-    signal(SIGTERM, [](int) { g_exiting = 1; });
+    signal(SIGINT,  sig_handler);
+    signal(SIGTERM, sig_handler);
 
     uint32_t peer_ip_net = sess.peer_ip;
     uint32_t local_ip_net = sess.local_ip;
@@ -243,17 +247,17 @@ void command_show(const std::string &conf_file)
     printf("\n  Tachyon Tunnel: %s\n", name.c_str());
     printf("  %-24s %s\n", "Interface:",
            ("t_" + name + "_in").c_str());
-    printf("\n  %-24s %lu packets, %lu bytes\n",
+    printf("\n  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n",
            "TX:", total.tx_packets, total.tx_bytes);
-    printf("  %-24s %lu packets, %lu bytes\n",
+    printf("  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n",
            "RX:", total.rx_packets, total.rx_bytes);
     printf("\n  Errors:\n");
-    printf("    %-22s %lu\n", "Replay drops:",     total.rx_replay_drops);
-    printf("    %-22s %lu\n", "RX crypto errors:",  total.rx_crypto_errors);
-    printf("    %-22s %lu\n", "TX crypto errors:",  total.tx_crypto_errors);
-    printf("    %-22s %lu\n", "Invalid session:",   total.rx_invalid_session);
-    printf("    %-22s %lu\n", "Malformed packets:", total.rx_malformed);
-    printf("    %-22s %lu\n", "Rate-limited:",      total.rx_ratelimit_drops);
-    printf("    %-22s %lu\n", "TX headroom:",       total.tx_headroom_errors);
+    printf("    %-22s %" PRIu64 "\n", "Replay drops:",     total.rx_replay_drops);
+    printf("    %-22s %" PRIu64 "\n", "RX crypto errors:",  total.rx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "TX crypto errors:",  total.tx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "Invalid session:",   total.rx_invalid_session);
+    printf("    %-22s %" PRIu64 "\n", "Malformed packets:", total.rx_malformed);
+    printf("    %-22s %" PRIu64 "\n", "Rate-limited:",      total.rx_ratelimit_drops);
+    printf("    %-22s %" PRIu64 "\n", "TX headroom:",       total.tx_headroom_errors);
     printf("\n");
 }

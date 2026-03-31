@@ -284,7 +284,7 @@ __bpf_kfunc int bpf_ghost_encrypt(struct xdp_md *ctx, u32 session_id)
 	}
 
 	aead_request_set_tfm(req, tfm);
-	aead_request_set_callback(req, 0, NULL, NULL);
+	/* Callback set once at module init — no per-packet overhead */
 	aead_request_set_crypt(req, &sg, &sg, cryptlen, iv);
 	aead_request_set_ad(req, TACHYON_GHOST_HDR_LEN);
 
@@ -351,7 +351,7 @@ __bpf_kfunc int bpf_ghost_decrypt(struct xdp_md *ctx, u32 session_id)
 	}
 
 	aead_request_set_tfm(req, tfm);
-	aead_request_set_callback(req, 0, NULL, NULL);
+	/* Callback set once at module init — no per-packet overhead */
 	aead_request_set_crypt(req, &sg, &sg, cryptlen, iv);
 	aead_request_set_ad(req, TACHYON_GHOST_HDR_LEN);
 
@@ -461,7 +461,7 @@ static int __init tachyon_crypto_init(void)
 		return PTR_ERR(req_template_tfm);
 	}
 
-	/* Allocate per-CPU AEAD requests */
+	/* Allocate per-CPU AEAD requests with callback pre-set (avoids per-packet overhead) */
 	for_each_possible_cpu(cpu) {
 		struct aead_request *req = aead_request_alloc(req_template_tfm, GFP_KERNEL);
 		if (!req) {
@@ -469,6 +469,7 @@ static int __init tachyon_crypto_init(void)
 			ret = -ENOMEM;
 			goto err_free_requests;
 		}
+		aead_request_set_callback(req, 0, NULL, NULL);
 		per_cpu(tachyon_aead_req, cpu) = req;
 	}
 

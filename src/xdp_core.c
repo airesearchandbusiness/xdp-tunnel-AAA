@@ -47,6 +47,9 @@
 #define ETH_ALEN 6
 #endif
 
+/* Compile-time endian conversion to avoid per-packet bpf_htons() calls */
+#define ETH_P_IP_BE  __bpf_constant_htons(ETH_P_IP)
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Debug Logging
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -285,13 +288,12 @@ int xdp_tx_path(struct xdp_md *ctx)
 {
 	void *data     = (void *)(long)ctx->data;
 	void *data_end = (void *)(long)ctx->data_end;
-	struct tachyon_stats *stats = get_stats();
 
-	/* --- Validate inner packet --- */
+	/* --- Validate inner packet (fast reject, no stats needed) --- */
 	struct ethhdr *eth = data;
 	if ((void *)(eth + 1) > data_end)
 		return XDP_PASS;
-	if (eth->h_proto != bpf_htons(ETH_P_IP))
+	if (eth->h_proto != ETH_P_IP_BE)
 		return XDP_PASS;
 
 	struct iphdr *iph_inner = (void *)(eth + 1);
@@ -309,14 +311,16 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	struct tachyon_session *sess = bpf_map_lookup_elem(&session_map, &session_id);
 	if (!sess) {
-		if (stats) stats->rx_invalid_session++;
+		struct tachyon_stats *s = get_stats();
+		if (s) s->rx_invalid_session++;
 		return XDP_DROP;
 	}
 
 	/* --- Per-CPU sequence number generation --- */
 	__u64 *tx_seq_ptr = bpf_map_lookup_elem(&session_tx_seq, &session_id);
 	if (!tx_seq_ptr) {
-		if (stats) stats->tx_headroom_errors++;
+		struct tachyon_stats *s = get_stats();
+		if (s) s->tx_headroom_errors++;
 		return XDP_DROP;
 	}
 
@@ -336,27 +340,33 @@ int xdp_tx_path(struct xdp_md *ctx)
 	__u16 tport  = cfg ? cfg->listen_port_net : bpf_htons(TACHYON_DEFAULT_PORT);
 	__u8 mimicry = cfg ? cfg->mimicry_type : TACHYON_MIMICRY_QUIC;
 
-	/* --- QUIC Mimicry: Bimodal packet-size shaping --- */
-	int current_inner_len = data_end - data;
+	/* --- QUIC Mimicry: Bimodal packet-size shaping ---
+	 * Pre-generate random values to minimize BPF helper calls.
+	 * rand_a: padding distribution + mimicry fields
+	 * rand_b: dedicated nonce_salt entropy (must be unique per-packet)
+	 */
+	__u32 rand_a = bpf_get_prandom_u32();
+	__u32 rand_b = bpf_get_prandom_u32();
+
+	__u32 current_inner_len = (__u32)(data_end - data);
 	__u16 pad_len = 0;
 
 	if (mimicry == TACHYON_MIMICRY_QUIC) {
-		int max_pad = TACHYON_TARGET_OUTER_LEN -
-			      (current_inner_len + TACHYON_TX_HEAD_ADJUST + TACHYON_AEAD_TAG_LEN);
+		__u32 max_pad = TACHYON_TARGET_OUTER_LEN -
+			        (current_inner_len + TACHYON_TX_HEAD_ADJUST + TACHYON_AEAD_TAG_LEN);
 
-		if (max_pad > 0 && max_pad < TACHYON_MAX_FRAME_LEN) {
-			__u32 rand_val = bpf_get_prandom_u32();
-			__u32 prob = rand_val % 100;
+		if (max_pad < TACHYON_MAX_FRAME_LEN) {  /* unsigned underflow = huge = skip */
+			__u32 prob = rand_a % 100;
 
 			if (prob < TACHYON_PAD_FULL_THRESH) {
 				/* 60%: Pad to near-MTU (mimic bulk transfer) */
-				pad_len = max_pad - (rand_val & TACHYON_PAD_JITTER_MASK);
+				pad_len = max_pad - (rand_a & TACHYON_PAD_JITTER_MASK);
 			} else if (prob < TACHYON_PAD_ACK_THRESH) {
 				/* 30%: Small padding (mimic QUIC ACKs) */
-				pad_len = rand_val & TACHYON_PAD_ACK_MAX;
+				pad_len = rand_a & TACHYON_PAD_ACK_MAX;
 			} else {
 				/* 10%: Random size (break statistical patterns) */
-				pad_len = rand_val % max_pad;
+				pad_len = rand_a % max_pad;
 			}
 
 			if (pad_len > (__u16)max_pad)
@@ -367,11 +377,13 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	/* --- Adjust buffer: add tail for AEAD tag + padding, prepend outer headers --- */
 	if (bpf_xdp_adjust_tail(ctx, TACHYON_AEAD_TAG_LEN + pad_len)) {
-		if (stats) stats->tx_headroom_errors++;
+		struct tachyon_stats *s = get_stats();
+		if (s) s->tx_headroom_errors++;
 		return XDP_DROP;
 	}
 	if (bpf_xdp_adjust_head(ctx, -(int)TACHYON_TX_HEAD_ADJUST)) {
-		if (stats) stats->tx_headroom_errors++;
+		struct tachyon_stats *s = get_stats();
+		if (s) s->tx_headroom_errors++;
 		return XDP_DROP;
 	}
 
@@ -380,7 +392,8 @@ int xdp_tx_path(struct xdp_md *ctx)
 	data_end = (void *)(long)ctx->data_end;
 
 	if (data + TACHYON_OUTER_HDR_LEN > data_end) {
-		if (stats) stats->tx_headroom_errors++;
+		struct tachyon_stats *s = get_stats();
+		if (s) s->tx_headroom_errors++;
 		return XDP_DROP;
 	}
 
@@ -391,17 +404,18 @@ int xdp_tx_path(struct xdp_md *ctx)
 	struct tachyon_ghost_hdr *gh = data + TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN +
 				       TACHYON_UDP_HDR_LEN;
 
-	/* Ghost header: QUIC mimicry flags + session + sequence + nonce */
+	/* Ghost header: QUIC mimicry flags + session + sequence + nonce
+	 * Derive spin_bit, pn_len, and CID entropy from rand_a (already fetched).
+	 * This avoids 3 extra bpf_get_prandom_u32() calls (~50 cycles saved). */
 	if (mimicry == TACHYON_MIMICRY_QUIC) {
-		__u8 spin_bit = (bpf_get_prandom_u32() & 1) << 5;
-		__u8 pn_len   = bpf_get_prandom_u32() & TACHYON_QUIC_PN_LEN_MASK;
+		__u8 spin_bit = (rand_a >> 8) & TACHYON_QUIC_SPIN_BIT;
+		__u8 pn_len   = (rand_a >> 16) & TACHYON_QUIC_PN_LEN_MASK;
 		gh->quic_flags = TACHYON_QUIC_FIXED_BIT | spin_bit | pn_len;
 
-		/* Randomize padding bytes as fake QUIC Connection ID */
-		__u32 cid_entropy = bpf_get_prandom_u32();
-		gh->pad[0] = cid_entropy & 0xFF;
-		gh->pad[1] = (cid_entropy >> 8) & 0xFF;
-		gh->pad[2] = (cid_entropy >> 16) & 0xFF;
+		/* Reuse rand_a bits as fake QUIC Connection ID */
+		gh->pad[0] = rand_a & 0xFF;
+		gh->pad[1] = (rand_a >> 8) & 0xFF;
+		gh->pad[2] = (rand_a >> 16) & 0xFF;
 	} else {
 		gh->quic_flags = TACHYON_QUIC_FIXED_BIT;
 		gh->pad[0] = gh->pad[1] = gh->pad[2] = 0;
@@ -409,12 +423,12 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	gh->session_id = bpf_htonl(session_id);
 	gh->seq        = bpf_cpu_to_be64(final_seq);
-	gh->nonce_salt = bpf_get_prandom_u32();
+	gh->nonce_salt = rand_b;  /* Dedicated entropy for IV uniqueness */
 
 	/* Outer Ethernet */
 	__builtin_memcpy(oeth->h_dest, sess->peer_mac, 6);
 	__builtin_memcpy(oeth->h_source, src_mac, 6);
-	oeth->h_proto = bpf_htons(ETH_P_IP);
+	oeth->h_proto = ETH_P_IP_BE;
 
 	/* Outer IPv4 */
 	oip->version  = 4;
@@ -437,15 +451,19 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	/* --- Encrypt payload --- */
 	if (bpf_ghost_encrypt(ctx, session_id) != 0) {
-		if (stats) stats->tx_crypto_errors++;
+		struct tachyon_stats *s = get_stats();
+		if (s) s->tx_crypto_errors++;
 		emit_event(ctx, TACHYON_EVT_CRYPTO_ERROR, session_id, final_seq);
 		return XDP_DROP;
 	}
 
-	/* --- Update TX statistics --- */
-	if (stats) {
-		stats->tx_packets++;
-		stats->tx_bytes += (data_end - data);
+	/* --- Update TX statistics (deferred lookup - only on success path) --- */
+	{
+		struct tachyon_stats *s = get_stats();
+		if (s) {
+			s->tx_packets++;
+			s->tx_bytes += (data_end - data);
+		}
 	}
 
 	return bpf_redirect_map(&tx_port, TACHYON_TXPORT_PHYS, 0);
@@ -469,13 +487,12 @@ int xdp_rx_path(struct xdp_md *ctx)
 {
 	void *data_end = (void *)(long)ctx->data_end;
 	void *data     = (void *)(long)ctx->data;
-	struct tachyon_stats *stats = get_stats();
 
-	/* --- Validate outer headers --- */
+	/* --- Validate outer headers (fast reject, no stats lookup needed) --- */
 	struct ethhdr *eth = data;
 	if ((void *)(eth + 1) > data_end)
 		return XDP_PASS;
-	if (eth->h_proto != bpf_htons(ETH_P_IP))
+	if (eth->h_proto != ETH_P_IP_BE)
 		return XDP_PASS;
 
 	struct iphdr *iph = (void *)(eth + 1);
@@ -493,9 +510,13 @@ int xdp_rx_path(struct xdp_md *ctx)
 
 	struct tachyon_ghost_hdr *gh = (void *)(udph + 1);
 	if ((void *)(gh + 1) > data_end) {
-		if (stats) stats->rx_malformed++;
+		struct tachyon_stats *s = get_stats();
+		if (s) s->rx_malformed++;
 		return XDP_DROP;
 	}
+
+	/* Stats lookup deferred past fast-reject path (saves map lookup on non-tunnel pkts) */
+	struct tachyon_stats *stats = get_stats();
 
 	/* --- Control plane packet routing --- */
 	if ((gh->quic_flags & TACHYON_CP_FLAG_MASK) == TACHYON_CP_FLAG_PREFIX) {
@@ -533,11 +554,9 @@ int xdp_rx_path(struct xdp_md *ctx)
 	__u32 sender_cpu = (raw_seq >> TACHYON_SEQ_CPU_SHIFT) & (TACHYON_MAX_TX_CPUS - 1);
 	__u64 pkt_seq    = raw_seq & TACHYON_SEQ_NUM_MASK;
 
-	/* Bounds check for verifier (sender_cpu is already masked) */
-	if (sender_cpu >= TACHYON_MAX_TX_CPUS) {
-		if (stats) stats->rx_malformed++;
+	/* Bounds check for verifier (sender_cpu is already masked, can't happen) */
+	if (sender_cpu >= TACHYON_MAX_TX_CPUS)
 		return XDP_DROP;
-	}
 
 	/* ── Unified Critical Section: Replay Check + Decrypt + Bitmap Commit ──
 	 *
@@ -608,7 +627,7 @@ int xdp_rx_path(struct xdp_md *ctx)
 					delta -= 64;
 				}
 			}
-			if (delta > 0) {
+			if (delta > 0 && delta < 64) {
 				w3 = (w3 << delta) | (w2 >> (64 - delta));
 				w2 = (w2 << delta) | (w1 >> (64 - delta));
 				w1 = (w1 << delta) | (w0 >> (64 - delta));
@@ -668,10 +687,15 @@ int xdp_rx_path(struct xdp_md *ctx)
 		return XDP_DROP;
 	}
 
-	/* Trim AEAD tag and padding from the tail */
-	int current_frame_len  = (int)(data_end - data);
-	int expected_frame_len = (int)(sizeof(struct ethhdr) + inner_ip_len);
-	int trim_amount        = current_frame_len - expected_frame_len;
+	/* Trim AEAD tag and padding from the tail (unsigned for verifier efficiency) */
+	__u32 current_frame_len  = (__u32)(data_end - data);
+	__u32 expected_frame_len = sizeof(struct ethhdr) + inner_ip_len;
+
+	if (current_frame_len < expected_frame_len + TACHYON_AEAD_TAG_LEN) {
+		if (stats) stats->rx_malformed++;
+		return XDP_DROP;
+	}
+	int trim_amount = (int)(current_frame_len - expected_frame_len);
 
 	if (trim_amount < TACHYON_AEAD_TAG_LEN || trim_amount > TACHYON_MAX_FRAME_LEN) {
 		if (stats) stats->rx_malformed++;
@@ -698,7 +722,7 @@ int xdp_rx_path(struct xdp_md *ctx)
 	/* Rewrite Ethernet: broadcast dest, zero source (for local delivery) */
 	__builtin_memset(eth->h_dest, 0xff, ETH_ALEN);
 	__builtin_memset(eth->h_source, 0x00, ETH_ALEN);
-	eth->h_proto = bpf_htons(ETH_P_IP);
+	eth->h_proto = ETH_P_IP_BE;
 
 	/* --- Update RX statistics --- */
 	if (stats) {

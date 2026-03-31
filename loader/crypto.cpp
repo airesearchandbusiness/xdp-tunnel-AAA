@@ -14,6 +14,11 @@
 
 #include "tachyon.h"
 
+#include <openssl/opensslv.h>
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+#error "Tachyon requires OpenSSL 3.0 or later"
+#endif
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Global Crypto State
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -165,10 +170,12 @@ bool derive_kdf(const uint8_t *salt, size_t salt_len,
         return false;
     }
 
+    int hkdf_mode = EVP_KDF_HKDF_MODE_EXTRACT_AND_EXPAND;
+
     OSSL_PARAM params[] = {
         OSSL_PARAM_construct_utf8_string("digest",
                                          const_cast<char *>("SHA256"), 0),
-        OSSL_PARAM_construct_int("mode", const_cast<int *>(&(const int &)(int){EVP_KDF_HKDF_MODE_EXTRACT_AND_EXPAND})),
+        OSSL_PARAM_construct_int("mode", &hkdf_mode),
         OSSL_PARAM_construct_octet_string("salt",
                                           const_cast<uint8_t *>(salt), salt_len),
         OSSL_PARAM_construct_octet_string("key",
