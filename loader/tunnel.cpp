@@ -240,8 +240,11 @@ void command_show(const std::string &conf_file)
         total.rx_invalid_session += per_cpu[i].rx_invalid_session;
         total.rx_malformed       += per_cpu[i].rx_malformed;
         total.rx_ratelimit_drops += per_cpu[i].rx_ratelimit_drops;
-        total.tx_crypto_errors   += per_cpu[i].tx_crypto_errors;
-        total.tx_headroom_errors += per_cpu[i].tx_headroom_errors;
+        total.tx_crypto_errors      += per_cpu[i].tx_crypto_errors;
+        total.tx_headroom_errors    += per_cpu[i].tx_headroom_errors;
+        total.tx_ratelimit_drops    += per_cpu[i].tx_ratelimit_drops;
+        total.rx_ratelimit_data_drops += per_cpu[i].rx_ratelimit_data_drops;
+        total.rx_roam_events        += per_cpu[i].rx_roam_events;
     }
 
     printf("\n  Tachyon Tunnel: %s\n", name.c_str());
@@ -252,12 +255,15 @@ void command_show(const std::string &conf_file)
     printf("  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n",
            "RX:", total.rx_packets, total.rx_bytes);
     printf("\n  Errors:\n");
-    printf("    %-22s %" PRIu64 "\n", "Replay drops:",     total.rx_replay_drops);
-    printf("    %-22s %" PRIu64 "\n", "RX crypto errors:",  total.rx_crypto_errors);
-    printf("    %-22s %" PRIu64 "\n", "TX crypto errors:",  total.tx_crypto_errors);
-    printf("    %-22s %" PRIu64 "\n", "Invalid session:",   total.rx_invalid_session);
-    printf("    %-22s %" PRIu64 "\n", "Malformed packets:", total.rx_malformed);
-    printf("    %-22s %" PRIu64 "\n", "Rate-limited:",      total.rx_ratelimit_drops);
-    printf("    %-22s %" PRIu64 "\n", "TX headroom:",       total.tx_headroom_errors);
+    printf("    %-22s %" PRIu64 "\n", "Replay drops:",       total.rx_replay_drops);
+    printf("    %-22s %" PRIu64 "\n", "RX crypto errors:",   total.rx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "TX crypto errors:",   total.tx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "Invalid session:",    total.rx_invalid_session);
+    printf("    %-22s %" PRIu64 "\n", "Malformed packets:",  total.rx_malformed);
+    printf("    %-22s %" PRIu64 "\n", "CP rate-limited:",    total.rx_ratelimit_drops);
+    printf("    %-22s %" PRIu64 "\n", "TX rate-limited:",    total.tx_ratelimit_drops);
+    printf("    %-22s %" PRIu64 "\n", "RX rate-limited:",    total.rx_ratelimit_data_drops);
+    printf("    %-22s %" PRIu64 "\n", "TX headroom:",        total.tx_headroom_errors);
+    printf("    %-22s %" PRIu64 "\n", "Roaming events:",     total.rx_roam_events);
     printf("\n");
 }
