@@ -1,21 +1,44 @@
-# Tunnel Configuration Example
-# Copy this file to '<YOUR_TUNNEL_NAME>.conf' and fill in your actual values.
+# Tachyon XDP Tunnel - Configuration Example
+#
+# Copy this to '<name>.conf' and fill in your values.
+# Generate keys:
+#   tachyon genkey                          -> private key (hex)
+#   echo <private_key> | tachyon pubkey     -> public key (hex)
 
 [Interface]
-# Generate a strong secret key for SHA256 hashing
-PrivateKey = YOUR_SECRET_KEY_HERE
+# X25519 private key (64 hex characters)
+PrivateKey = YOUR_PRIVATE_KEY_HEX_HERE
+
+# Peer's X25519 public key (64 hex characters)
+PeerPublicKey = PEER_PUBLIC_KEY_HEX_HERE
+
+# Optional pre-shared key for additional security
+# PresharedKey = optional_psk_string
+
+# UDP listen port (default: 443)
 ListenPort = 443
+
+# Virtual tunnel IP with subnet (assigned to local veth)
 VirtualIP = 10.8.0.1/24
+
+# Local physical IP (source for outer packets)
 LocalPhysicalIP = 192.168.1.10
+
+# Physical network interface for tunnel traffic
 PhysicalInterface = eth0
-# MimicryType: 0 = Standard UDP, 1 = QUIC Mimicry
+
+# Traffic obfuscation: 0 = Standard UDP, 1 = QUIC Mimicry (default: 1)
 MimicryType = 1
+
+# Enable AEAD encryption (default: true)
 EnableEncryption = true
 
 [Peer]
-# The public or local IP of the remote ghost node
+# Remote node's physical IP address
 EndpointIP = 192.168.1.20
-# Remote node physical MAC address (Required for XDP redirect)
-EndpointMAC = 00:00:00:00:00:00
-# The Virtual IP assigned to the remote peer
+
+# Remote node's physical MAC address (required for XDP L2 redirect)
+EndpointMAC = aa:bb:cc:dd:ee:ff
+
+# Virtual IP assigned to the remote peer (no subnet)
 InnerIP = 10.8.0.2

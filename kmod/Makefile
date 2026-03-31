@@ -1,9 +1,9 @@
 obj-m += mod.o
 
-KBUILD_CFLAGS += -g -O2 -fno-omit-frame-pointer
+KBUILD_CFLAGS += -g -O2 -Wall -Werror -fno-omit-frame-pointer
 
 KDIR := /lib/modules/$(shell uname -r)/build
-PWD := $(shell pwd)
+PWD  := $(shell pwd)
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
