@@ -289,6 +289,12 @@ static __always_inline struct tachyon_stats *get_stats(void)
 	return bpf_map_lookup_elem(&stats_map, &zero);
 }
 
+/* Increment a stats counter (deferred map lookup, safe if map missing) */
+#define STAT_INC(field) do {                        \
+	struct tachyon_stats *_s = get_stats();      \
+	if (_s) _s->field++;                         \
+} while (0)
+
 /* Retrieve global config pointer */
 static __always_inline struct tachyon_config *get_config(void)
 {
@@ -346,8 +352,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	struct tachyon_session *sess = bpf_map_lookup_elem(&session_map, &session_id);
 	if (!sess) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->rx_invalid_session++;
+		STAT_INC(rx_invalid_session);
 		return XDP_DROP;
 	}
 
@@ -367,8 +372,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 		if (sess->tx_rl_tokens < pkt_len) {
 			bpf_spin_unlock(&sess->replay_lock);
-			struct tachyon_stats *s = get_stats();
-			if (s) s->tx_ratelimit_drops++;
+			STAT_INC(tx_ratelimit_drops);
 			return XDP_DROP;
 		}
 		sess->tx_rl_tokens -= pkt_len;
@@ -378,8 +382,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 	/* --- Per-CPU sequence number generation --- */
 	__u64 *tx_seq_ptr = bpf_map_lookup_elem(&session_tx_seq, &session_id);
 	if (!tx_seq_ptr) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 
@@ -437,13 +440,11 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	/* --- Adjust buffer: add tail for AEAD tag + padding, prepend outer headers --- */
 	if (bpf_xdp_adjust_tail(ctx, TACHYON_AEAD_TAG_LEN + pad_len)) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 	if (bpf_xdp_adjust_head(ctx, -(int)TACHYON_TX_HEAD_ADJUST)) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 
@@ -452,8 +453,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 	data_end = (void *)(long)ctx->data_end;
 
 	if (data + TACHYON_OUTER_HDR_LEN > data_end) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_headroom_errors++;
+		STAT_INC(tx_headroom_errors);
 		return XDP_DROP;
 	}
 
@@ -511,8 +511,7 @@ int xdp_tx_path(struct xdp_md *ctx)
 
 	/* --- Encrypt payload --- */
 	if (bpf_ghost_encrypt(ctx, session_id) != 0) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->tx_crypto_errors++;
+		STAT_INC(tx_crypto_errors);
 		emit_event(ctx, TACHYON_EVT_CRYPTO_ERROR, session_id, final_seq);
 		return XDP_DROP;
 	}
@@ -570,8 +569,7 @@ int xdp_rx_path(struct xdp_md *ctx)
 
 	struct tachyon_ghost_hdr *gh = (void *)(udph + 1);
 	if ((void *)(gh + 1) > data_end) {
-		struct tachyon_stats *s = get_stats();
-		if (s) s->rx_malformed++;
+		STAT_INC(rx_malformed);
 		return XDP_DROP;
 	}
 

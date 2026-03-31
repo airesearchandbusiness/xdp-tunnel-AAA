@@ -206,7 +206,7 @@ __bpf_kfunc int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 			"session %u: TX key set failed (%d)\n", session_id, ret);
 		goto out;
 	}
-	crypto_aead_setauthsize(standby_tx, TACHYON_TAG_LEN);
+	/* authsize already set at allocation time in alloc_aead_tfm() */
 
 	ret = crypto_aead_setkey(standby_rx, rx_key, TACHYON_KEY_LEN);
 	if (ret) {
@@ -214,7 +214,6 @@ __bpf_kfunc int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 			"session %u: RX key set failed (%d)\n", session_id, ret);
 		goto out;
 	}
-	crypto_aead_setauthsize(standby_rx, TACHYON_TAG_LEN);
 
 	/* Atomic switchover - zero downtime */
 	rcu_assign_pointer(se->active_tx_tfm, standby_tx);

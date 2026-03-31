@@ -7,16 +7,20 @@
 #include "../loader/tachyon.h"
 #include <fstream>
 
-/* Helper: write a temp config file and return its path */
-static std::string write_temp_config(const std::string &content) {
-    static int counter = 0;
-    std::string path = "/tmp/tachyon_test_" + std::to_string(getpid()) +
-                       "_" + std::to_string(counter++) + ".conf";
-    std::ofstream f(path);
-    f << content;
-    f.close();
-    return path;
-}
+/* RAII temp config file - auto-deleted when scope exits (even on ASSERT failure) */
+struct TempConfig {
+    std::string path;
+    TempConfig(const std::string &content) {
+        static int counter = 0;
+        path = "/tmp/tachyon_test_" + std::to_string(getpid()) +
+               "_" + std::to_string(counter++) + ".conf";
+        std::ofstream f(path);
+        f << content;
+    }
+    ~TempConfig() { unlink(path.c_str()); }
+    const char *c_str() const { return path.c_str(); }
+    operator std::string() const { return path; }
+};
 
 /* ── tunnel_name_from_conf Tests ── */
 
@@ -39,7 +43,7 @@ TEST(name_from_nested_path) {
 /* ── parse_config Tests ── */
 
 TEST(parse_valid_config) {
-    std::string conf = write_temp_config(
+    TempConfig conf(
         "[Interface]\n"
         "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n"
         "PeerPublicKey = 1122334455667788990011223344556677889900aabbccddeeff00112233aabb\n"
@@ -62,11 +66,10 @@ TEST(parse_valid_config) {
     ASSERT_TRUE(cfg.peer_endpoint_mac == "aa:bb:cc:dd:ee:ff");
     ASSERT_TRUE(cfg.peer_inner_ip == "10.8.0.2");
     ASSERT_TRUE(cfg.virtual_ip == "10.8.0.1/24");
-    unlink(conf.c_str());
 }
 
 TEST(parse_comments_and_empty_lines) {
-    std::string conf = write_temp_config(
+    TempConfig conf(
         "# This is a comment\n"
         "; Another comment style\n"
         "\n"
@@ -78,18 +81,16 @@ TEST(parse_comments_and_empty_lines) {
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, 443);
     ASSERT_TRUE(cfg.private_key.size() == 64);
-    unlink(conf.c_str());
 }
 
 TEST(parse_default_port) {
-    std::string conf = write_temp_config(
+    TempConfig conf(
         "[Interface]\n"
         "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n"
     );
 
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, TACHYON_DEFAULT_PORT);
-    unlink(conf.c_str());
 }
 
 /* ── validate_config Tests ── */

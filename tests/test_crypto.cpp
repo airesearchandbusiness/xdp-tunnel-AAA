@@ -12,8 +12,6 @@
 /* ── HMAC-SHA256 Tests ── */
 
 TEST(hmac_basic) {
-    init_crypto_globals();
-
     /* RFC 4231 Test Case 2: HMAC-SHA256 with "Jefe" key */
     uint8_t key[] = "Jefe";
     uint8_t data[] = "what do ya want for nothing?";
@@ -28,12 +26,9 @@ TEST(hmac_basic) {
     ASSERT_TRUE(calc_hmac(key, 4, data, 28, mac));
     ASSERT_MEM_EQ(mac, expected, 32);
 
-    free_crypto_globals();
 }
 
 TEST(hmac_empty_data) {
-    init_crypto_globals();
-
     uint8_t key[32] = {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
                        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
                        0x0b, 0x0b, 0x0b, 0x0b, 0, 0, 0, 0,
@@ -45,14 +40,11 @@ TEST(hmac_empty_data) {
     /* Just verify it returns successfully and produces 32 bytes */
     ASSERT_TRUE(mac[0] != 0 || mac[1] != 0);
 
-    free_crypto_globals();
 }
 
 /* ── Cookie Generation Tests ── */
 
 TEST(cookie_deterministic) {
-    init_crypto_globals();
-
     uint8_t secret[32];
     memset(secret, 0xAA, 32);
     uint32_t ip = 0x0A000001;  /* 10.0.0.1 */
@@ -69,7 +61,6 @@ TEST(cookie_deterministic) {
     generate_cookie(secret, ip, nonce + 1, window, cookie3);
     ASSERT_TRUE(memcmp(cookie1, cookie3, 32) != 0);
 
-    free_crypto_globals();
 }
 
 /* ── X25519 ECDH Tests ── */
@@ -106,8 +97,6 @@ TEST(ecdh_pubkey_derivation) {
 /* ── HKDF Tests ── */
 
 TEST(hkdf_basic) {
-    init_crypto_globals();
-
     uint8_t salt[13] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
                         0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c};
     uint8_t ikm[22] = {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
@@ -130,7 +119,6 @@ TEST(hkdf_basic) {
     ASSERT_TRUE(derive_kdf(salt, 13, ikm, 22, "different-info", out3));
     ASSERT_TRUE(memcmp(out, out3, 32) != 0);
 
-    free_crypto_globals();
 }
 
 /* ── AEAD Encrypt/Decrypt Tests ── */
@@ -223,6 +211,7 @@ TEST(keygen_produces_valid_output) {
 /* ── Runner ── */
 
 int main() {
+    init_crypto_globals();
     printf("\n  Tachyon Crypto Tests\n");
     printf("  ─────────────────────────────────\n");
 
@@ -239,5 +228,7 @@ int main() {
     RUN_TEST(aead_wrong_key_fails);
     RUN_TEST(keygen_produces_valid_output);
 
-    return test_summary();
+    int rc = test_summary();
+    free_crypto_globals();
+    return rc;
 }
