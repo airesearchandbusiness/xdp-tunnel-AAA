@@ -1,0 +1,22 @@
+[Unit]
+Description=Tachyon XDP Tunnel (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/tachyon up /etc/tachyon/%i.conf
+ExecStop=/usr/bin/tachyon down /etc/tachyon/%i.conf
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/sys/fs/bpf
+NoNewPrivileges=false
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

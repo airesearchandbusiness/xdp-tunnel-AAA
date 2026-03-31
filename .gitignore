@@ -1,15 +1,27 @@
-*
+# Build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.order
+*.symvers
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+loader/tachyon
 
-!*.c
-!*.cpp
-!*.h
-!Makefile
-!.gitignore
-!*.conf
-!*.example
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+compile_commands.json
 
-!loader/
-!src/
-!kmod/
-
+# Config files with secrets
 ghost.conf
+*.conf
+!tun.conf.example
+!dkms.conf
