@@ -23,6 +23,9 @@ jobs:
             linux-headers-generic \
             g++
 
+      - name: Show libbpf version
+        run: dpkg -l libbpf-dev | tail -1
+
       - name: Build control plane
         run: make loader
 

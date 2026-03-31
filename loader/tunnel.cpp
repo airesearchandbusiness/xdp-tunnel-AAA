@@ -141,15 +141,19 @@ void command_up(const std::string &conf_file)
     if (ipsess_m)
         bpf_map_update_elem(bpf_map__fd(ipsess_m), &inner_net, &session_id, BPF_ANY);
 
-    /* Attach XDP programs */
+    /* Attach XDP programs (libbpf 1.0+ API: bpf_xdp_attach) */
     auto attach_xdp = [&](const char *prog_name, unsigned int ifidx, const char *pin_name) {
         struct bpf_program *prog = bpf_object__find_program_by_name(obj, prog_name);
         if (!prog) { LOG_ERR("BPF program '%s' not found", prog_name); return; }
-        struct bpf_link *link = bpf_program__attach_xdp(prog, ifidx);
-        if (!link) { LOG_ERR("Failed to attach '%s' to ifindex %u", prog_name, ifidx); return; }
+        int prog_fd = bpf_program__fd(prog);
+        if (prog_fd < 0) { LOG_ERR("Invalid fd for '%s'", prog_name); return; }
+        if (bpf_xdp_attach(ifidx, prog_fd, 0, NULL) < 0) {
+            LOG_ERR("Failed to attach '%s' to ifindex %u", prog_name, ifidx);
+            return;
+        }
+        /* Pin program fd for later detach */
         std::string pin_path = bpf_dir + "/" + pin_name;
-        if (bpf_link__pin(link, pin_path.c_str()))
-            LOG_WARN("Failed to pin link '%s'", pin_path.c_str());
+        bpf_program__pin(prog, pin_path.c_str());
     };
 
     attach_xdp("xdp_rx_path", p_idx, "rx");
