@@ -10,6 +10,10 @@
 modules.order
 Module.symvers
 loader/tachyon
+tests/test_crypto
+tests/test_config
+tests/test_utils
+tests/test_protocol
 
 # IDE and editor files
 .vscode/

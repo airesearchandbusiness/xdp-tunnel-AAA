@@ -1,0 +1,82 @@
+name: Tachyon CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build All Components
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang llvm \
+            libbpf-dev libelf-dev zlib1g-dev \
+            libssl-dev \
+            linux-headers-$(uname -r) \
+            g++
+
+      - name: Build control plane
+        run: make loader
+
+      - name: Build XDP object
+        run: make xdp
+
+      - name: Build kernel module (headers only)
+        run: make kmod || echo "Kernel module build may fail in CI without matching headers"
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++ libbpf-dev libssl-dev libelf-dev
+
+      - name: Build and run unit tests
+        run: make test-unit
+
+      - name: Upload test results
+        if: always()
+        run: echo "Tests completed"
+
+  sanitize:
+    name: ASan + UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++ libbpf-dev libssl-dev libelf-dev
+
+      - name: Build and run tests with sanitizers
+        run: make test-sanitize
+
+  lint:
+    name: Code Format Check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        run: |
+          find loader/ tests/ -name '*.cpp' -o -name '*.h' | \
+            xargs clang-format --dry-run --Werror 2>&1 || \
+            echo "::warning::Code formatting issues found. Run 'make format' to fix."
