@@ -1,0 +1,44 @@
+---
+# Tachyon XDP Tunnel - Static Analysis Configuration
+#
+# Run: clang-tidy -p build <file>
+
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  cppcoreguidelines-avoid-magic-numbers,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  misc-redundant-expression,
+  misc-unused-parameters,
+  modernize-use-auto,
+  modernize-use-nullptr,
+  modernize-use-override,
+  performance-*,
+  readability-braces-around-statements,
+  readability-duplicate-include,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  -bugprone-easily-swappable-parameters,
+  -cert-err58-cpp
+
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  bugprone-undefined-memory-manipulation,
+  cert-err34-c,
+  cert-mem57-cpp
+
+HeaderFilterRegex: '(loader|src)/.*\.h$'
+
+CheckOptions:
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+---

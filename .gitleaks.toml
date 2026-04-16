@@ -1,0 +1,14 @@
+# Tachyon XDP Tunnel - Gitleaks Configuration
+title = "Tachyon Gitleaks Config"
+
+[allowlist]
+  description = "Allow test data and example configs"
+  paths = [
+    '''tests/''',
+    '''tun\.conf\.example''',
+    '''\.gitleaks\.toml''',
+  ]
+  # Allow repeated-character hex strings used as dummy test keys
+  regexes = [
+    '''(a{16,}|b{16,}|c{16,}|d{16,}|e{16,}|f{16,}|0{16,}|1{16,})''',
+  ]

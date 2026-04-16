@@ -16,7 +16,9 @@
 
 .PHONY: all kmod xdp loader clean install uninstall \
         install-dkms remove-dkms install-module remove-module \
-        test purge help
+        test test-unit test-xdp test-integration test-all \
+        lint format coverage \
+        purge help
 
 VERSION     ?= 1.1.0
 KDIR        ?= /lib/modules/$(shell uname -r)/build
@@ -33,7 +35,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 CXX         ?= g++
 CXXFLAGS    := -O2 -Wall -Wextra -std=c++17 \
                -DTACHYON_VERSION=\"$(VERSION)\"
-LDFLAGS     := -lbpf -lcrypto
+LDFLAGS     := -lbpf -lcrypto -lelf -lz
 
 # Loader source files
 LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
@@ -174,19 +176,30 @@ help:
 	@echo "Tachyon XDP Tunnel v$(VERSION)"
 	@echo ""
 	@echo "Build targets:"
-	@echo "  all            Build everything (kmod + xdp + loader)"
-	@echo "  kmod           Build kernel crypto module"
-	@echo "  xdp            Build XDP/eBPF object"
-	@echo "  loader         Build control plane binary"
+	@echo "  all              Build everything (kmod + xdp + loader)"
+	@echo "  kmod             Build kernel crypto module"
+	@echo "  xdp              Build XDP/eBPF object"
+	@echo "  loader           Build control plane binary"
 	@echo ""
 	@echo "Install targets:"
-	@echo "  install        Install binary and systemd service"
-	@echo "  uninstall      Remove installed files"
-	@echo "  install-dkms   Install kernel module via DKMS"
-	@echo "  remove-dkms    Remove DKMS module"
+	@echo "  install          Install binary and systemd service"
+	@echo "  uninstall        Remove installed files"
+	@echo "  install-dkms     Install kernel module via DKMS"
+	@echo "  remove-dkms      Remove DKMS module"
 	@echo ""
-	@echo "Other:"
-	@echo "  test           Run basic up/show/down test"
-	@echo "  clean          Remove build artifacts"
-	@echo "  purge          Full cleanup (artifacts + BPF state + interfaces)"
-	@echo "  help           Show this help"
+	@echo "Testing:"
+	@echo "  test             Run basic up/show/down smoke test"
+	@echo "  test-unit        Build and run unit tests (no root)"
+	@echo "  test-xdp         Run XDP/BPF tests (requires root)"
+	@echo "  test-integration Run integration tests (requires root)"
+	@echo "  test-all         Run all test tiers"
+	@echo ""
+	@echo "Code quality:"
+	@echo "  lint             Run all linters (clang-format, cppcheck, shellcheck)"
+	@echo "  format           Auto-format all source files"
+	@echo "  coverage         Generate HTML coverage report"
+	@echo ""
+	@echo "Cleanup:"
+	@echo "  clean            Remove build artifacts"
+	@echo "  purge            Full cleanup (artifacts + BPF state + interfaces)"
+	@echo "  help             Show this help"

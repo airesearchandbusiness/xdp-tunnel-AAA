@@ -1,0 +1,84 @@
+# Tachyon XDP Tunnel - Build Environment
+#
+# Provides all dependencies needed to build the kernel module,
+# XDP/eBPF object, and C++17 control plane with test infrastructure.
+#
+# Build:
+#   docker build -t tachyon-build -f docker/Dockerfile.build .
+#
+# Usage:
+#   docker run --rm -v $(pwd):/src -w /src tachyon-build make all
+
+FROM ubuntu:24.04 AS base
+
+LABEL maintainer="Tachyon XDP Tunnel Project"
+LABEL description="Build environment for Tachyon XDP Tunnel"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# ── Core Build Dependencies ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    clang-18 \
+    llvm-18 \
+    lld-18 \
+    cmake \
+    ninja-build \
+    pkg-config \
+    ccache \
+    git \
+    ca-certificates \
+    curl \
+    wget \
+    gnupg \
+    # BPF/XDP dependencies
+    libbpf-dev \
+    libelf-dev \
+    # Crypto dependencies
+    libssl-dev \
+    # Kernel headers for kmod build
+    linux-headers-generic \
+    # Static analysis tools
+    cppcheck \
+    clang-tidy-18 \
+    clang-format-18 \
+    sparse \
+    shellcheck \
+    # Google Test
+    libgtest-dev \
+    libgmock-dev \
+    # Python for test orchestration
+    python3 \
+    python3-pip \
+    python3-pytest \
+    # Coverage
+    lcov \
+    gcovr \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Symlink clang tools to unversioned names ──
+RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 && \
+    update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100 && \
+    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-18 100 && \
+    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-18 100 && \
+    update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-18 100
+
+# ── Install gitleaks for secrets detection ──
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_${ARCH}.tar.gz \
+    | tar xz -C /usr/local/bin gitleaks
+
+# ── Install checksec for binary hardening checks ──
+RUN curl -sSfL https://raw.githubusercontent.com/slimm609/checksec.sh/master/checksec \
+    -o /usr/local/bin/checksec && chmod +x /usr/local/bin/checksec
+
+# ── ccache configuration ──
+ENV CCACHE_DIR=/ccache
+ENV CCACHE_MAXSIZE=500M
+ENV PATH="/usr/lib/ccache:${PATH}"
+
+# ── Default working directory ──
+WORKDIR /src
+
+CMD ["make", "all"]

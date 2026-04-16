@@ -1,0 +1,20 @@
+# Tachyon XDP Tunnel - Dependabot Configuration
+# Automatically creates PRs for outdated GitHub Actions versions.
+
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "airesearchandbusiness"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "ci"
+    open-pull-requests-limit: 10

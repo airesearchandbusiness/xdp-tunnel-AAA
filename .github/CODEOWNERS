@@ -1,0 +1,25 @@
+# Tachyon XDP Tunnel - Code Ownership
+#
+# Each line is a file pattern followed by one or more owners.
+# Order matters: later patterns override earlier ones.
+
+# Default: all changes require review
+*                           @airesearchandbusiness
+
+# Kernel module (critical security component)
+/kmod/                      @airesearchandbusiness
+
+# XDP/eBPF data plane (critical performance/security)
+/src/                       @airesearchandbusiness
+
+# Cryptographic operations (security-sensitive)
+/loader/crypto.cpp          @airesearchandbusiness
+/loader/network.cpp         @airesearchandbusiness
+
+# CI/CD and build system
+/.github/                   @airesearchandbusiness
+/Makefile                   @airesearchandbusiness
+/docker/                    @airesearchandbusiness
+
+# Tests
+/tests/                     @airesearchandbusiness

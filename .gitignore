@@ -29,3 +29,8 @@ ghost.conf
 *.conf
 !tun.conf.example
 !dkms.conf
+!tests/fixtures/*.conf
+!tests/fuzz/corpus/**/*.conf.seed
+
+# Test build artifacts
+build/

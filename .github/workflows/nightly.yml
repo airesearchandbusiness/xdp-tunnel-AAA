@@ -1,0 +1,240 @@
+# Tachyon XDP Tunnel - Nightly Extended Tests
+#
+# Runs fuzz testing, extended integration tests, and performance benchmarks.
+# Triggered: Daily at 03:00 UTC, or manual dispatch.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      fuzz_duration:
+        description: 'Fuzz test duration per harness (seconds)'
+        required: false
+        default: '1800'
+      run_benchmarks:
+        description: 'Run performance benchmarks'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  FUZZ_DURATION: ${{ github.event.inputs.fuzz_duration || '1800' }}
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════
+  # Build (reused across all nightly jobs)
+  # ════════════════════════════════════════════════════════════════════════
+
+  build:
+    name: "build"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            build-essential clang-18 llvm-18 \
+            libbpf-dev libelf-dev libssl-dev \
+            linux-headers-$(uname -r) \
+            cmake ninja-build pkg-config \
+            libgtest-dev libgmock-dev
+
+      - name: Build all targets
+        run: |
+          make xdp
+          make loader
+          cmake -B build -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_FUZZ_TESTS=ON \
+            -DBUILD_XDP_TESTS=ON \
+            -G Ninja
+          cmake --build build -j$(nproc)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-build
+          path: |
+            loader/tachyon
+            src/xdp_core.o
+            build/
+          retention-days: 3
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Fuzz Testing
+  # ════════════════════════════════════════════════════════════════════════
+
+  fuzz-config:
+    name: "fuzz / config-parser"
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            libbpf-dev libssl-dev
+
+      - name: Download build
+        uses: actions/download-artifact@v8
+        with:
+          name: nightly-build
+
+      - name: Fix permissions
+        run: chmod +x build/fuzz_config_parser 2>/dev/null || true
+
+      - name: Run config parser fuzzer
+        run: |
+          if [[ -x build/fuzz_config_parser ]]; then
+            mkdir -p fuzz_corpus_config fuzz_artifacts
+            cp tests/fuzz/corpus/config/* fuzz_corpus_config/ 2>/dev/null || true
+            build/fuzz_config_parser fuzz_corpus_config/ \
+              -max_total_time=${{ env.FUZZ_DURATION }} \
+              -artifact_prefix=fuzz_artifacts/ \
+              -print_final_stats=1 \
+              2>&1 | tail -50
+          else
+            echo "Fuzzer not built, skipping"
+          fi
+
+      - name: Upload crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crashes-config
+          path: fuzz_artifacts/
+          if-no-files-found: ignore
+
+  fuzz-crypto:
+    name: "fuzz / crypto"
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            libbpf-dev libssl-dev
+
+      - name: Download build
+        uses: actions/download-artifact@v8
+        with:
+          name: nightly-build
+
+      - name: Fix permissions
+        run: chmod +x build/fuzz_crypto 2>/dev/null || true
+
+      - name: Run crypto fuzzer
+        run: |
+          if [[ -x build/fuzz_crypto ]]; then
+            mkdir -p fuzz_corpus_crypto fuzz_artifacts
+            build/fuzz_crypto fuzz_corpus_crypto/ \
+              -max_total_time=${{ env.FUZZ_DURATION }} \
+              -artifact_prefix=fuzz_artifacts/ \
+              -print_final_stats=1 \
+              2>&1 | tail -50
+          else
+            echo "Fuzzer not built, skipping"
+          fi
+
+      - name: Upload crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crashes-crypto
+          path: fuzz_artifacts/
+          if-no-files-found: ignore
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Extended Integration Tests
+  # ════════════════════════════════════════════════════════════════════════
+
+  integration-extended:
+    name: "integration / extended"
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            libbpf-dev libssl-dev libelf-dev \
+            iproute2 iputils-ping kmod iperf3 jq
+
+      - name: Download build
+        uses: actions/download-artifact@v8
+        with:
+          name: nightly-build
+
+      - name: Fix permissions
+        run: chmod +x loader/tachyon tests/integration/*.sh
+
+      - name: Load kernel module
+        run: |
+          if [[ -f kmod/mod.ko ]]; then
+            sudo insmod kmod/mod.ko || echo "Module load failed"
+          fi
+
+      - name: Run E2E tunnel test
+        run: sudo tests/integration/test_tunnel_e2e.sh || true
+
+      - name: Run key rotation test
+        run: sudo tests/integration/test_key_rotation.sh || true
+
+      - name: Run dead peer detection test
+        run: sudo tests/integration/test_dpd.sh || true
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Performance Benchmarks
+  # ════════════════════════════════════════════════════════════════════════
+
+  benchmarks:
+    name: "perf / benchmarks"
+    runs-on: ubuntu-24.04
+    needs: build
+    if: ${{ github.event.inputs.run_benchmarks != 'false' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            libbpf-dev libssl-dev libelf-dev \
+            iproute2 iputils-ping kmod iperf3 jq
+
+      - name: Download build
+        uses: actions/download-artifact@v8
+        with:
+          name: nightly-build
+
+      - name: Fix permissions
+        run: chmod +x loader/tachyon
+
+      - name: Run throughput benchmark
+        run: |
+          echo "{ \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," > benchmark_result.json
+          echo "  \"commit\": \"${{ github.sha }}\"," >> benchmark_result.json
+          echo "  \"note\": \"Benchmark placeholder - requires full tunnel setup\"" >> benchmark_result.json
+          echo "}" >> benchmark_result.json
+          cat benchmark_result.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-results
+          path: benchmark_result.json

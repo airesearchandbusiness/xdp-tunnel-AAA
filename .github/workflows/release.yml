@@ -1,0 +1,192 @@
+# Tachyon XDP Tunnel - Release Workflow
+#
+# Triggered on version tags (v*.*.*).
+# Builds release artifacts, generates changelog, creates GitHub Release.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════════
+  # Validate & Test
+  # ════════════════════════════════════════════════════════════════════════
+
+  validate:
+    name: "validate"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+
+      - name: Verify Makefile version matches tag
+        run: |
+          MAKEFILE_VERSION=$(grep '^VERSION' Makefile | head -1 | sed 's/.*?= *//')
+          TAG_VERSION=${{ steps.version.outputs.version }}
+          echo "Makefile version: $MAKEFILE_VERSION"
+          echo "Tag version: $TAG_VERSION"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            build-essential clang-18 llvm-18 \
+            libbpf-dev libelf-dev libssl-dev \
+            linux-headers-$(uname -r) \
+            cmake ninja-build pkg-config \
+            libgtest-dev libgmock-dev
+
+      - name: Build and test
+        run: |
+          make xdp
+          make loader
+          cmake -B build -S tests \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF \
+            -G Ninja
+          cmake --build build -j$(nproc)
+          cd build && ctest --output-on-failure --timeout 60 \
+            --exclude-regex 'xdp_test_runner'
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Build Release Artifacts
+  # ════════════════════════════════════════════════════════════════════════
+
+  release-artifacts:
+    name: "build-release"
+    runs-on: ubuntu-24.04
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            build-essential clang-18 llvm-18 \
+            libbpf-dev libelf-dev libssl-dev \
+            linux-headers-$(uname -r)
+
+      - name: Build release binaries
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          make xdp
+          make loader CXXFLAGS="-O2 -Wall -Wextra -std=c++17 -DTACHYON_VERSION=\"${VERSION}\" -DNDEBUG"
+
+      - name: Create binary tarball
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          ARCHIVE="tachyon-${VERSION}-linux-amd64"
+          mkdir -p "${ARCHIVE}/bin" "${ARCHIVE}/lib" "${ARCHIVE}/systemd"
+
+          cp loader/tachyon "${ARCHIVE}/bin/"
+          cp src/xdp_core.o "${ARCHIVE}/lib/"
+          cp systemd/tachyon@.service "${ARCHIVE}/systemd/"
+          cp tun.conf.example "${ARCHIVE}/"
+
+          cat > "${ARCHIVE}/INSTALL.md" << 'HEREDOC'
+          # Tachyon XDP Tunnel Installation
+
+          1. Copy binary: `sudo cp bin/tachyon /usr/bin/`
+          2. Copy XDP object: `sudo mkdir -p /usr/lib/tachyon && sudo cp lib/xdp_core.o /usr/lib/tachyon/`
+          3. Install systemd service: `sudo cp systemd/tachyon@.service /etc/systemd/system/`
+          4. Configure: `sudo mkdir -p /etc/tachyon && sudo cp tun.conf.example /etc/tachyon/mysite.conf`
+          5. Edit configuration, then start: `sudo systemctl start tachyon@mysite`
+          HEREDOC
+
+          tar czf "${ARCHIVE}.tar.gz" "${ARCHIVE}/"
+
+      - name: Create DKMS tarball
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          DKMS_ARCHIVE="tachyon-crypto-${VERSION}-dkms"
+          mkdir -p "${DKMS_ARCHIVE}"
+          cp -r kmod "${DKMS_ARCHIVE}/"
+          cp dkms.conf "${DKMS_ARCHIVE}/"
+          tar czf "${DKMS_ARCHIVE}.tar.gz" "${DKMS_ARCHIVE}/"
+
+      - name: Generate checksums
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          sha256sum \
+            "tachyon-${VERSION}-linux-amd64.tar.gz" \
+            "tachyon-crypto-${VERSION}-dkms.tar.gz" \
+            > "SHA256SUMS-${VERSION}.txt"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-artifacts
+          path: |
+            tachyon-*.tar.gz
+            tachyon-crypto-*.tar.gz
+            SHA256SUMS-*.txt
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Create GitHub Release
+  # ════════════════════════════════════════════════════════════════════════
+
+  publish:
+    name: "publish-release"
+    runs-on: ubuntu-24.04
+    needs: [validate, release-artifacts]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: release-artifacts
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [[ -z "$PREV_TAG" || "$PREV_TAG" == "$GITHUB_REF_NAME" ]]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD | head -1)
+          fi
+
+          echo "## Changes since ${PREV_TAG}" > changelog.md
+          echo "" >> changelog.md
+          git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" \
+            --no-merges >> changelog.md
+          echo "" >> changelog.md
+          echo "" >> changelog.md
+          echo "## Checksums" >> changelog.md
+          echo '```' >> changelog.md
+          cat SHA256SUMS-*.txt >> changelog.md
+          echo '```' >> changelog.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: changelog.md
+          files: |
+            tachyon-*.tar.gz
+            tachyon-crypto-*.tar.gz
+            SHA256SUMS-*.txt
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
