@@ -1,0 +1,7 @@
+[Interface]
+PrivateKey = äöüñ€£¥©®™×÷±∞≠≈∑∏∫√∂∆πΩαβγδ
+PeerPublicKey = 🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑
+VirtualIP = 10.8.0.1/24
+[Peer]
+EndpointIP = 192.168.1.20
+EndpointMAC = aa:bb:cc:dd:ee:ff

@@ -1,0 +1,12 @@
+[Interface]
+PrivateKey = 0000000000000000000000000000000000000000000000000000000000000000
+PeerPublicKey = ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+ListenPort = 65535
+VirtualIP = 0.0.0.0/0
+LocalPhysicalIP = 255.255.255.255
+PhysicalInterface = lo
+MimicryType = 2147483647
+[Peer]
+EndpointIP = 0.0.0.0
+EndpointMAC = 00:00:00:00:00:00
+InnerIP = 255.255.255.255

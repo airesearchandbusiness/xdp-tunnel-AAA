@@ -1,0 +1,12 @@
+[Interface]
+PrivateKey =
+PeerPublicKey=
+VirtualIP=
+=orphanvalue
+LocalPhysicalIP
+PhysicalInterface =
+ListenPort = -1
+[Peer]
+EndpointIP =
+EndpointMAC = not:a:mac
+InnerIP = not.an.ip

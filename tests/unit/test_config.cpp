@@ -455,6 +455,15 @@ TEST_F(ConfigTest, ParseConfigWithUtf8Comment) {
     EXPECT_TRUE(validate_config(cfg));
 }
 
+TEST_F(ConfigTest, ParseConfigRejectsOversizedFile) {
+    /* 70KB exceeds the 64KB config file size guard */
+    std::string huge(70000, 'x');
+    auto path = write_config("huge.conf", huge);
+    TunnelConfig cfg = parse_config(path);
+    /* All fields should be empty since parse_ini returned early */
+    EXPECT_TRUE(cfg.private_key.empty());
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Tunnel name sanitization - block shell metacharacters, enforce IFNAMSIZ
  * ══════════════════════════════════════════════════════════════════════════ */

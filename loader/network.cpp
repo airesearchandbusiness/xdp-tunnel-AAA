@@ -474,8 +474,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &my_nonce, 8);
-                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
-                                amsg.ciphertext, amsg.ciphertext + 32);
+                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
+                                     amsg.ciphertext, amsg.ciphertext + 32)) {
+                    LOG_ERR("PKT_AUTH encrypt failed");
+                    continue;
+                }
 
                 send_mimic_quic(sock, &amsg, sizeof(amsg), TACHYON_PKT_AUTH, &p_addr);
                 last_tx_time = now;
@@ -550,8 +553,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &srv_nonce, 8);
 
-                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
-                                fmsg.ciphertext + 32);
+                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
+                                     fmsg.ciphertext + 32)) {
+                    LOG_ERR("PKT_FINISH encrypt failed");
+                    OPENSSL_cleanse(eph_ss, 32);
+                    OPENSSL_cleanse(my_eph_priv, 32);
+                    continue;
+                }
                 send_mimic_quic(sock, &fmsg, sizeof(fmsg), TACHYON_PKT_FINISH, &src);
                 last_tx_time = now;
 
