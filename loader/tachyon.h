@@ -52,9 +52,9 @@
  * Logging
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#define LOG_INFO(fmt, ...)  fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...)  fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_ERR(fmt, ...)   fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...) fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__)
+#define LOG_ERR(fmt, ...) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
 #define LOG_CRYPTO(fmt, ...) fprintf(stderr, "[CRYPTO] " fmt "\n", ##__VA_ARGS__)
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -66,15 +66,15 @@
 
 struct userspace_config {
     uint16_t listen_port_net;
-    uint8_t  mimicry_type;
-    uint8_t  pad;
+    uint8_t mimicry_type;
+    uint8_t pad;
 };
 
 struct userspace_session {
     uint32_t lock_pad;
     uint32_t peer_ip;
     uint32_t local_ip;
-    uint8_t  peer_mac[6];
+    uint8_t peer_mac[6];
     uint16_t peer_port;
     uint32_t _pad2;
     /* Rate limiting state */
@@ -89,8 +89,8 @@ struct userspace_session {
 
 struct userspace_key_init {
     uint32_t session_id;
-    uint8_t  tx_key[TACHYON_AEAD_KEY_LEN];
-    uint8_t  rx_key[TACHYON_AEAD_KEY_LEN];
+    uint8_t tx_key[TACHYON_AEAD_KEY_LEN];
+    uint8_t rx_key[TACHYON_AEAD_KEY_LEN];
 };
 
 struct userspace_stats {
@@ -117,47 +117,47 @@ struct userspace_stats {
 #pragma pack(push, 1)
 
 struct MsgInit {
-    uint8_t  flags;
-    uint8_t  pad[3];
+    uint8_t flags;
+    uint8_t pad[3];
     uint32_t session_id;
     uint64_t client_nonce;
-    uint8_t  is_rekey;
-    uint8_t  _reserved[3];
+    uint8_t is_rekey;
+    uint8_t _reserved[3];
 };
 
 struct MsgCookie {
-    uint8_t  flags;
-    uint8_t  pad[3];
+    uint8_t flags;
+    uint8_t pad[3];
     uint32_t session_id;
     uint64_t client_nonce;
-    uint8_t  cookie[TACHYON_HMAC_LEN];
+    uint8_t cookie[TACHYON_HMAC_LEN];
 };
 
 struct MsgAuth {
-    uint8_t  flags;
-    uint8_t  pad[3];
+    uint8_t flags;
+    uint8_t pad[3];
     uint32_t session_id;
     uint64_t client_nonce;
-    uint8_t  is_rekey;
-    uint8_t  _reserved[3];
-    uint8_t  cookie[TACHYON_HMAC_LEN];
-    uint8_t  ciphertext[TACHYON_X25519_KEY_LEN + TACHYON_AEAD_TAG_LEN];
+    uint8_t is_rekey;
+    uint8_t _reserved[3];
+    uint8_t cookie[TACHYON_HMAC_LEN];
+    uint8_t ciphertext[TACHYON_X25519_KEY_LEN + TACHYON_AEAD_TAG_LEN];
 };
 
 struct MsgFinish {
-    uint8_t  flags;
-    uint8_t  pad[3];
+    uint8_t flags;
+    uint8_t pad[3];
     uint32_t session_id;
     uint64_t server_nonce;
-    uint8_t  ciphertext[TACHYON_X25519_KEY_LEN + TACHYON_AEAD_TAG_LEN];
+    uint8_t ciphertext[TACHYON_X25519_KEY_LEN + TACHYON_AEAD_TAG_LEN];
 };
 
 struct MsgKeepalive {
-    uint8_t  flags;
-    uint8_t  pad[3];
+    uint8_t flags;
+    uint8_t pad[3];
     uint32_t session_id;
     uint64_t timestamp;
-    uint8_t  ciphertext[TACHYON_AEAD_TAG_LEN + TACHYON_AEAD_TAG_LEN];
+    uint8_t ciphertext[TACHYON_AEAD_TAG_LEN + TACHYON_AEAD_TAG_LEN];
 };
 
 #pragma pack(pop)
@@ -177,9 +177,9 @@ struct TunnelConfig {
     std::string peer_endpoint_ip;
     std::string peer_endpoint_mac;
     std::string peer_inner_ip;
-    int         listen_port   = TACHYON_DEFAULT_PORT;
-    int         mimicry_type  = TACHYON_MIMICRY_QUIC;
-    bool        encryption    = true;
+    int listen_port = TACHYON_DEFAULT_PORT;
+    int mimicry_type = TACHYON_MIMICRY_QUIC;
+    bool encryption = true;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -190,12 +190,12 @@ struct TunnelConfig {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 class NonceCache {
-public:
+  public:
     void add(uint64_t nonce, uint64_t now_sec) {
         /* Evict expired entries from the front (oldest first) */
         while (!order_.empty()) {
             auto &front = order_.front();
-            if (now_sec - front.second > TACHYON_NONCE_EXPIRY)  {
+            if (now_sec - front.second > TACHYON_NONCE_EXPIRY) {
                 map_.erase(front.first);
                 order_.pop_front();
             } else {
@@ -211,13 +211,11 @@ public:
         order_.push_back({nonce, now_sec});
     }
 
-    bool exists(uint64_t nonce) const {
-        return map_.count(nonce) > 0;
-    }
+    bool exists(uint64_t nonce) const { return map_.count(nonce) > 0; }
 
-private:
+  private:
     std::unordered_map<uint64_t, uint64_t> map_;
-    std::list<std::pair<uint64_t, uint64_t>> order_;  /* front=oldest */
+    std::list<std::pair<uint64_t, uint64_t>> order_; /* front=oldest */
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -232,57 +230,48 @@ extern EVP_KDF *g_kdf;
  * Function Declarations - crypto.cpp
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void  init_crypto_globals();
-void  free_crypto_globals();
+void init_crypto_globals();
+void free_crypto_globals();
 
-bool  calc_hmac(const uint8_t *key, size_t key_len,
-                const uint8_t *data, size_t data_len,
-                uint8_t *out_mac);
+bool calc_hmac(const uint8_t *key, size_t key_len, const uint8_t *data, size_t data_len,
+               uint8_t *out_mac);
 
-void  generate_cookie(const uint8_t *secret, uint32_t client_ip,
-                      uint64_t nonce, uint64_t window,
-                      uint8_t *out_cookie);
+void generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, uint64_t window,
+                     uint8_t *out_cookie);
 
-bool  do_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub,
-              uint8_t *out_shared_secret);
+bool do_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_shared_secret);
 
-bool  derive_kdf(const uint8_t *salt, size_t salt_len,
-                 const uint8_t *ikm, size_t ikm_len,
-                 const char *info, uint8_t *out_key);
+bool derive_kdf(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
+                const char *info, uint8_t *out_key);
 
-bool  cp_aead_encrypt(const uint8_t *key, const uint8_t *pt, size_t pt_len,
-                      const uint8_t *ad, size_t ad_len,
-                      const uint8_t *nonce,
-                      uint8_t *ct, uint8_t *tag);
+bool cp_aead_encrypt(const uint8_t *key, const uint8_t *pt, size_t pt_len, const uint8_t *ad,
+                     size_t ad_len, const uint8_t *nonce, uint8_t *ct, uint8_t *tag);
 
-bool  cp_aead_decrypt(const uint8_t *key, const uint8_t *ct, size_t ct_len,
-                      const uint8_t *ad, size_t ad_len,
-                      const uint8_t *nonce, const uint8_t *tag,
-                      uint8_t *pt);
+bool cp_aead_decrypt(const uint8_t *key, const uint8_t *ct, size_t ct_len, const uint8_t *ad,
+                     size_t ad_len, const uint8_t *nonce, const uint8_t *tag, uint8_t *pt);
 
-bool  generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out);
-bool  get_public_key(const uint8_t *priv, uint8_t *pub_out);
+bool generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out);
+bool get_public_key(const uint8_t *priv, uint8_t *pub_out);
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Function Declarations - tunnel.cpp
  * ══════════════════════════════════════════════════════════════════════════ */
 
 TunnelConfig parse_config(const std::string &filename);
-bool         validate_config(const TunnelConfig &cfg);
-std::string  tunnel_name_from_conf(const std::string &conf_path);
+bool validate_config(const TunnelConfig &cfg);
+std::string tunnel_name_from_conf(const std::string &conf_path);
 
 #ifndef TACHYON_NO_BPF
-void  command_up(const std::string &conf_file);
-void  command_down(const std::string &conf_file);
-void  command_show(const std::string &conf_file);
+void command_up(const std::string &conf_file);
+void command_down(const std::string &conf_file);
+void command_show(const std::string &conf_file);
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Function Declarations - network.cpp
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
-                       uint32_t session_id, uint32_t peer_ip_net,
-                       uint32_t local_ip_net, const uint8_t *peer_mac);
+void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t session_id,
+                       uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac);
 #endif /* TACHYON_NO_BPF */
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -290,7 +279,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
  * ══════════════════════════════════════════════════════════════════════════ */
 
 inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len) {
-    if (hex.size() != bin_len * 2) return false;
+    if (hex.size() != bin_len * 2)
+        return false;
     for (size_t i = 0; i < bin_len; i++) {
         if (sscanf(&hex[i * 2], "%2hhx", &bin[i]) != 1)
             return false;
@@ -299,8 +289,8 @@ inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len) {
 }
 
 inline bool parse_mac(const std::string &str, uint8_t mac[6]) {
-    return sscanf(str.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-                  &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]) == 6;
+    return sscanf(str.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0], &mac[1], &mac[2], &mac[3],
+                  &mac[4], &mac[5]) == 6;
 }
 
 inline std::string trim(std::string s) {
