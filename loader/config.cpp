@@ -70,8 +70,7 @@ static std::string get_val(const std::unordered_map<std::string, std::string> &k
     return "";
 }
 
-TunnelConfig parse_config(const std::string &filename)
-{
+TunnelConfig parse_config(const std::string &filename) {
     auto kv = parse_ini(filename);
     TunnelConfig cfg;
 
@@ -117,8 +116,7 @@ TunnelConfig parse_config(const std::string &filename)
  * Config Validation
  * ══════════════════════════════════════════════════════════════════════════ */
 
-bool validate_config(const TunnelConfig &cfg)
-{
+bool validate_config(const TunnelConfig &cfg) {
     bool ok = true;
     auto check = [&](bool cond, const char *msg) {
         if (!cond) {
@@ -162,8 +160,7 @@ bool validate_config(const TunnelConfig &cfg)
  * Tunnel Name Extraction
  * ══════════════════════════════════════════════════════════════════════════ */
 
-std::string tunnel_name_from_conf(const std::string &conf_path)
-{
+std::string tunnel_name_from_conf(const std::string &conf_path) {
     std::string name = conf_path;
 
     /* Strip directory prefix */

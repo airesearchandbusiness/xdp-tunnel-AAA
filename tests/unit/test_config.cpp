@@ -18,29 +18,25 @@
  * Test Fixture - Creates and cleans up temp config files
  * ══════════════════════════════════════════════════════════════════════════ */
 
-class ConfigTest : public ::testing::Test
-{
+class ConfigTest : public ::testing::Test {
   protected:
     std::string tmp_dir_;
     std::vector<std::string> tmp_files_;
 
-    void SetUp() override
-    {
+    void SetUp() override {
         tmp_dir_ = std::filesystem::temp_directory_path().string() + "/tachyon_test_XXXXXX";
         char *dir = mkdtemp(tmp_dir_.data());
         ASSERT_NE(dir, nullptr) << "Failed to create temp directory";
         tmp_dir_ = dir;
     }
 
-    void TearDown() override
-    {
+    void TearDown() override {
         for (const auto &f : tmp_files_)
             std::remove(f.c_str());
         std::filesystem::remove_all(tmp_dir_);
     }
 
-    std::string write_config(const std::string &name, const std::string &content)
-    {
+    std::string write_config(const std::string &name, const std::string &content) {
         std::string path = tmp_dir_ + "/" + name;
         std::ofstream ofs(path);
         EXPECT_TRUE(ofs.is_open()) << "Failed to create " << path;
@@ -76,8 +72,7 @@ class ConfigTest : public ::testing::Test
  * parse_config tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(ConfigTest, ParseValidFullConfig)
-{
+TEST_F(ConfigTest, ParseValidFullConfig) {
     auto path = write_config("valid.conf", VALID_CONFIG);
     TunnelConfig cfg = parse_config(path);
 
@@ -96,8 +91,7 @@ TEST_F(ConfigTest, ParseValidFullConfig)
     EXPECT_TRUE(cfg.encryption);
 }
 
-TEST_F(ConfigTest, ParseMinimalConfigDefaults)
-{
+TEST_F(ConfigTest, ParseMinimalConfigDefaults) {
     const char *minimal = "PrivateKey = "
                           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
                           "PeerPublicKey = "
@@ -120,24 +114,21 @@ TEST_F(ConfigTest, ParseMinimalConfigDefaults)
     EXPECT_TRUE(cfg.psk.empty());
 }
 
-TEST_F(ConfigTest, ParseEncryptionDisabled)
-{
+TEST_F(ConfigTest, ParseEncryptionDisabled) {
     std::string content = std::string(VALID_CONFIG) + "EnableEncryption = false\n";
     auto path = write_config("noenc.conf", content);
     TunnelConfig cfg = parse_config(path);
     EXPECT_FALSE(cfg.encryption);
 }
 
-TEST_F(ConfigTest, ParseEncryptionDisabledNumeric)
-{
+TEST_F(ConfigTest, ParseEncryptionDisabledNumeric) {
     std::string content = std::string(VALID_CONFIG) + "EnableEncryption = 0\n";
     auto path = write_config("noenc0.conf", content);
     TunnelConfig cfg = parse_config(path);
     EXPECT_FALSE(cfg.encryption);
 }
 
-TEST_F(ConfigTest, ParseCustomPort)
-{
+TEST_F(ConfigTest, ParseCustomPort) {
     auto path = write_config(
         "port.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -214,8 +205,7 @@ TEST_F(ConfigTest, ParseCommentsAndWhitespace)
               "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
 }
 
-TEST_F(ConfigTest, ParseEmptyFile)
-{
+TEST_F(ConfigTest, ParseEmptyFile) {
     auto path = write_config("empty.conf", "");
     TunnelConfig cfg = parse_config(path);
     EXPECT_TRUE(cfg.private_key.empty());
@@ -223,15 +213,13 @@ TEST_F(ConfigTest, ParseEmptyFile)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ParseNonexistentFile)
-{
+TEST_F(ConfigTest, ParseNonexistentFile) {
     TunnelConfig cfg = parse_config("/nonexistent/path/does_not_exist.conf");
     EXPECT_TRUE(cfg.private_key.empty());
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ParseMimicryTypeNone)
-{
+TEST_F(ConfigTest, ParseMimicryTypeNone) {
     std::string content =
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
         "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
@@ -252,15 +240,13 @@ TEST_F(ConfigTest, ParseMimicryTypeNone)
  * validate_config tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(ConfigTest, ValidateFullConfig)
-{
+TEST_F(ConfigTest, ValidateFullConfig) {
     auto path = write_config("full.conf", VALID_CONFIG);
     TunnelConfig cfg = parse_config(path);
     EXPECT_TRUE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidateMissingPrivateKey)
-{
+TEST_F(ConfigTest, ValidateMissingPrivateKey) {
     auto path = write_config(
         "no_privkey.conf",
         "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
@@ -275,8 +261,7 @@ TEST_F(ConfigTest, ValidateMissingPrivateKey)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidateMissingPeerPublicKey)
-{
+TEST_F(ConfigTest, ValidateMissingPeerPublicKey) {
     auto path = write_config(
         "no_peerpub.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -291,8 +276,7 @@ TEST_F(ConfigTest, ValidateMissingPeerPublicKey)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidateMissingVirtualIP)
-{
+TEST_F(ConfigTest, ValidateMissingVirtualIP) {
     auto path = write_config(
         "no_vip.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -307,8 +291,7 @@ TEST_F(ConfigTest, ValidateMissingVirtualIP)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidateMissingPhysicalInterface)
-{
+TEST_F(ConfigTest, ValidateMissingPhysicalInterface) {
     auto path = write_config(
         "no_iface.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -323,8 +306,7 @@ TEST_F(ConfigTest, ValidateMissingPhysicalInterface)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidateShortPrivateKey)
-{
+TEST_F(ConfigTest, ValidateShortPrivateKey) {
     auto path = write_config(
         "short_key.conf",
         "PrivateKey = aabbccdd\n"
@@ -340,8 +322,7 @@ TEST_F(ConfigTest, ValidateShortPrivateKey)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidateInvalidMACFormat)
-{
+TEST_F(ConfigTest, ValidateInvalidMACFormat) {
     auto path = write_config(
         "bad_mac.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -357,8 +338,7 @@ TEST_F(ConfigTest, ValidateInvalidMACFormat)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidateInvalidEndpointIP)
-{
+TEST_F(ConfigTest, ValidateInvalidEndpointIP) {
     auto path = write_config(
         "bad_ip.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -374,8 +354,7 @@ TEST_F(ConfigTest, ValidateInvalidEndpointIP)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidatePortZero)
-{
+TEST_F(ConfigTest, ValidatePortZero) {
     auto path = write_config(
         "port0.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -392,8 +371,7 @@ TEST_F(ConfigTest, ValidatePortZero)
     EXPECT_FALSE(validate_config(cfg));
 }
 
-TEST_F(ConfigTest, ValidatePortTooHigh)
-{
+TEST_F(ConfigTest, ValidatePortTooHigh) {
     auto path = write_config(
         "port_high.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -414,32 +392,26 @@ TEST_F(ConfigTest, ValidatePortTooHigh)
  * tunnel_name_from_conf tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(ConfigTest, TunnelNameFromFullPath)
-{
+TEST_F(ConfigTest, TunnelNameFromFullPath) {
     EXPECT_EQ(tunnel_name_from_conf("/etc/tachyon/test.conf"), "test");
 }
 
-TEST_F(ConfigTest, TunnelNameFromRelativePath)
-{
+TEST_F(ConfigTest, TunnelNameFromRelativePath) {
     EXPECT_EQ(tunnel_name_from_conf("./test.conf"), "test");
 }
 
-TEST_F(ConfigTest, TunnelNameFromBareName)
-{
+TEST_F(ConfigTest, TunnelNameFromBareName) {
     EXPECT_EQ(tunnel_name_from_conf("mytest.conf"), "mytest");
 }
 
-TEST_F(ConfigTest, TunnelNameFromMultipleDots)
-{
+TEST_F(ConfigTest, TunnelNameFromMultipleDots) {
     EXPECT_EQ(tunnel_name_from_conf("/path/to/foo.bar.conf"), "foo");
 }
 
-TEST_F(ConfigTest, TunnelNameNoExtension)
-{
+TEST_F(ConfigTest, TunnelNameNoExtension) {
     EXPECT_EQ(tunnel_name_from_conf("/path/to/tunnelname"), "tunnelname");
 }
 
-TEST_F(ConfigTest, TunnelNameDeepPath)
-{
+TEST_F(ConfigTest, TunnelNameDeepPath) {
     EXPECT_EQ(tunnel_name_from_conf("/a/b/c/d/e/tunnel.conf"), "tunnel");
 }

@@ -27,8 +27,7 @@
 
 #include "tachyon.h"
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
-{
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     /* Limit input size to avoid OOM on huge inputs */
     if (size > 65536)
         return 0;

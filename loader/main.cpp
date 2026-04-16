@@ -12,8 +12,7 @@
 
 #include "tachyon.h"
 
-static void print_usage(const char *prog)
-{
+static void print_usage(const char *prog) {
     fprintf(stderr,
             "Tachyon XDP Tunnel v%d.0\n\n"
             "Usage:\n"
@@ -25,8 +24,7 @@ static void print_usage(const char *prog)
             TACHYON_PROTO_VERSION, prog, prog, prog, prog, prog);
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;

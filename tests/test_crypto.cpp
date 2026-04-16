@@ -15,31 +15,25 @@ TEST(hmac_basic) {
     /* RFC 4231 Test Case 2: HMAC-SHA256 with "Jefe" key */
     uint8_t key[] = "Jefe";
     uint8_t data[] = "what do ya want for nothing?";
-    uint8_t expected[] = {
-        0x5b, 0xdc, 0xc1, 0x46, 0xbf, 0x60, 0x75, 0x4e,
-        0x6a, 0x04, 0x24, 0x26, 0x08, 0x95, 0x75, 0xc7,
-        0x5a, 0x00, 0x3f, 0x08, 0x9d, 0x27, 0x39, 0x83,
-        0x9d, 0xec, 0x58, 0xb9, 0x64, 0xec, 0x38, 0x43
-    };
+    uint8_t expected[] = {0x5b, 0xdc, 0xc1, 0x46, 0xbf, 0x60, 0x75, 0x4e, 0x6a, 0x04, 0x24,
+                          0x26, 0x08, 0x95, 0x75, 0xc7, 0x5a, 0x00, 0x3f, 0x08, 0x9d, 0x27,
+                          0x39, 0x83, 0x9d, 0xec, 0x58, 0xb9, 0x64, 0xec, 0x38, 0x43};
 
     uint8_t mac[32];
     ASSERT_TRUE(calc_hmac(key, 4, data, 28, mac));
     ASSERT_MEM_EQ(mac, expected, 32);
-
 }
 
 TEST(hmac_empty_data) {
-    uint8_t key[32] = {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
-                       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
-                       0x0b, 0x0b, 0x0b, 0x0b, 0, 0, 0, 0,
-                       0, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t key[32] = {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+                       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0,    0,
+                       0,    0,    0,    0,    0,    0,    0,    0,    0,    0};
     uint8_t data[] = "Hi There";
     uint8_t mac[32];
 
     ASSERT_TRUE(calc_hmac(key, 20, data, 8, mac));
     /* Just verify it returns successfully and produces 32 bytes */
     ASSERT_TRUE(mac[0] != 0 || mac[1] != 0);
-
 }
 
 /* ── Cookie Generation Tests ── */
@@ -47,7 +41,7 @@ TEST(hmac_empty_data) {
 TEST(cookie_deterministic) {
     uint8_t secret[32];
     memset(secret, 0xAA, 32);
-    uint32_t ip = 0x0A000001;  /* 10.0.0.1 */
+    uint32_t ip = 0x0A000001; /* 10.0.0.1 */
     uint64_t nonce = 12345;
     uint64_t window = 100;
 
@@ -60,7 +54,6 @@ TEST(cookie_deterministic) {
     uint8_t cookie3[32];
     generate_cookie(secret, ip, nonce + 1, window, cookie3);
     ASSERT_TRUE(memcmp(cookie1, cookie3, 32) != 0);
-
 }
 
 /* ── X25519 ECDH Tests ── */
@@ -99,9 +92,8 @@ TEST(ecdh_pubkey_derivation) {
 TEST(hkdf_basic) {
     uint8_t salt[13] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
                         0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c};
-    uint8_t ikm[22] = {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
-                       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
-                       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b};
+    uint8_t ikm[22] = {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+                       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b};
     uint8_t out[32];
 
     ASSERT_TRUE(derive_kdf(salt, 13, ikm, 22, "test-info", out));
@@ -118,7 +110,6 @@ TEST(hkdf_basic) {
     uint8_t out3[32];
     ASSERT_TRUE(derive_kdf(salt, 13, ikm, 22, "different-info", out3));
     ASSERT_TRUE(memcmp(out, out3, 32) != 0);
-
 }
 
 /* ── AEAD Encrypt/Decrypt Tests ── */
@@ -133,18 +124,15 @@ TEST(aead_round_trip) {
     uint8_t ad[] = "associated data";
     size_t ad_len = sizeof(ad) - 1;
 
-    uint8_t nonce[12] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-                         0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C};
+    uint8_t nonce[12] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C};
 
     uint8_t ciphertext[64];
     uint8_t tag[16];
-    ASSERT_TRUE(cp_aead_encrypt(key, plaintext, pt_len, ad, ad_len,
-                                nonce, ciphertext, tag));
+    ASSERT_TRUE(cp_aead_encrypt(key, plaintext, pt_len, ad, ad_len, nonce, ciphertext, tag));
 
     /* Decrypt and verify */
     uint8_t decrypted[64];
-    ASSERT_TRUE(cp_aead_decrypt(key, ciphertext, pt_len, ad, ad_len,
-                                nonce, tag, decrypted));
+    ASSERT_TRUE(cp_aead_decrypt(key, ciphertext, pt_len, ad, ad_len, nonce, tag, decrypted));
     ASSERT_MEM_EQ(decrypted, plaintext, pt_len);
 }
 

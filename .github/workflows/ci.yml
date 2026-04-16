@@ -97,8 +97,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Check formatting
-        continue-on-error: true
         run: |
-          find loader/ tests/ -name '*.cpp' -o -name '*.h' | \
-            xargs clang-format --dry-run --Werror 2>&1 || \
-            echo "::warning::Code formatting issues found. Run 'make format' to fix."
+          find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
+            | xargs clang-format --dry-run --Werror --style=file

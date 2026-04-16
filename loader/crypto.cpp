@@ -27,8 +27,7 @@ volatile sig_atomic_t g_exiting = 0;
 EVP_MAC *g_mac = nullptr;
 EVP_KDF *g_kdf = nullptr;
 
-void init_crypto_globals()
-{
+void init_crypto_globals() {
     g_mac = EVP_MAC_fetch(nullptr, "HMAC", nullptr);
     g_kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
     if (!g_mac || !g_kdf) {
@@ -266,8 +265,7 @@ out:
  * X25519 Key Generation
  * ══════════════════════════════════════════════════════════════════════════ */
 
-bool generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out)
-{
+bool generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out) {
     EVP_PKEY *pk = EVP_PKEY_Q_keygen(nullptr, nullptr, "X25519");
     if (!pk) {
         LOG_ERR("X25519 keygen failed");

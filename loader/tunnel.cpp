@@ -18,8 +18,7 @@ static void sig_handler(int)
  * command_up - Create tunnel and start control plane
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void command_up(const std::string &conf_file)
-{
+void command_up(const std::string &conf_file) {
     TunnelConfig cfg = parse_config(conf_file);
     if (!validate_config(cfg))
         return;
@@ -190,8 +189,7 @@ void command_up(const std::string &conf_file)
  * command_down - Tear down tunnel
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void command_down(const std::string &conf_file)
-{
+void command_down(const std::string &conf_file) {
     std::string name = tunnel_name_from_conf(conf_file);
     std::string bpf_dir = std::string(TACHYON_BPF_PIN_BASE) + "/" + name;
 
@@ -204,8 +202,7 @@ void command_down(const std::string &conf_file)
  * command_show - Display tunnel statistics
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void command_show(const std::string &conf_file)
-{
+void command_show(const std::string &conf_file) {
     std::string name = tunnel_name_from_conf(conf_file);
     std::string bpf_dir = std::string(TACHYON_BPF_PIN_BASE) + "/" + name;
 

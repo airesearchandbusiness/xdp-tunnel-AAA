@@ -119,8 +119,7 @@ static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id, u
 
 static void reset_bpf_replay_state(struct bpf_object *obj, uint32_t session_id,
                                    uint32_t peer_ip_net, uint32_t local_ip_net,
-                                   const uint8_t *peer_mac)
-{
+                                   const uint8_t *peer_mac) {
     struct bpf_map *map = bpf_object__find_map_by_name(obj, "session_map");
     if (!map)
         return;
@@ -173,8 +172,7 @@ static void derive_session_keys(const uint8_t *early_secret, const uint8_t *eph_
  * Returns: 1 if my_pub > peer_pub, 0 if my_pub < peer_pub, -1 if equal.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub)
-{
+static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub) {
     /* First check equality in constant time */
     if (CRYPTO_memcmp(my_pub, peer_pub, TACHYON_X25519_KEY_LEN) == 0)
         return -1; /* Equal keys - error */
