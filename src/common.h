@@ -27,15 +27,7 @@ extern "C" {
 #if !defined(__KERNEL__) && !defined(__BPF__)
 #  include <stdint.h>
 #  include <string.h>
-   /* Avoid conflicts with kernel types from <linux/types.h> which
-    * may be pulled in transitively by <sys/stat.h> in C++ builds. */
-#  if !defined(_LINUX_TYPES_H)
-   typedef uint8_t   __u8;
-   typedef uint16_t  __u16;
-   typedef uint32_t  __u32;
-   typedef uint64_t  __u64;
-   typedef int32_t   __s32;
-#  endif
+#  include <linux/types.h>   /* Provides __u8, __u16, __u32, __u64 for userspace */
 #endif
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -176,6 +168,7 @@ enum tachyon_event_type {
     TACHYON_EVT_MALFORMED_PKT   = 3,
     TACHYON_EVT_RATELIMIT_DROP  = 4,
     TACHYON_EVT_PEER_ROAM       = 5,
+    TACHYON_EVT_RATE_LIMIT      = 6,
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -217,18 +210,21 @@ struct tachyon_config {
 /* Per-session state including replay protection window */
 struct tachyon_session {
 #if defined(__BPF__) || defined(__TARGET_ARCH_x86)
-    struct bpf_spin_lock replay_lock;      /* Protects replay state          */
+    struct bpf_spin_lock replay_lock;      /* Protects replay + rate state   */
 #else
     __u32 lock_pad;                        /* Placeholder for non-BPF ctx    */
 #endif
     __u32 peer_ip;                         /* Remote physical IP (network)   */
     __u32 local_ip;                        /* Local physical IP (network)    */
     __u8  peer_mac[6];                     /* Remote MAC for L2 redirect     */
-    __u16 peer_port;                       /* Remote UDP port (network)      */
-    __u64 tx_rl_tokens;                    /* TX token bucket current tokens */
-    __u64 tx_rl_last_ns;                   /* TX token bucket last refill ts */
-    __u64 rx_rl_tokens;                    /* RX token bucket current tokens */
-    __u64 rx_rl_last_ns;                   /* RX token bucket last refill ts */
+    __u16 peer_port;                       /* Peer UDP source port (NAT)     */
+    __u32 _pad2;                           /* Alignment padding              */
+    /* Rate limiting token bucket state (under replay_lock) */
+    __u64 tx_rl_tokens;                    /* TX tokens remaining (bytes)    */
+    __u64 tx_rl_last_ns;                   /* TX last refill timestamp       */
+    __u64 rx_rl_tokens;                    /* RX tokens remaining (bytes)    */
+    __u64 rx_rl_last_ns;                   /* RX last refill timestamp       */
+    /* Replay protection */
     __u64 rx_highest_seq[TACHYON_MAX_TX_CPUS]; /* Highest seq per sender CPU */
     __u64 rx_bitmap[TACHYON_MAX_TX_CPUS][TACHYON_REPLAY_WORDS]; /* Replay bitmap */
 };
@@ -253,23 +249,9 @@ struct tachyon_stats {
     __u64 rx_ratelimit_drops;              /* Control plane rate limited     */
     __u64 tx_crypto_errors;                /* TX encryption failures         */
     __u64 tx_headroom_errors;              /* Failed to adjust head/tail     */
-    __u64 tx_ratelimit_drops;              /* TX data plane rate limited     */
-    __u64 rx_ratelimit_data_drops;         /* RX data plane rate limited     */
+    __u64 tx_ratelimit_drops;              /* TX rate-limited drops          */
+    __u64 rx_ratelimit_data_drops;         /* RX data rate-limited drops     */
     __u64 rx_roam_events;                  /* Peer roaming detections        */
-};
-
-/* LPM trie key for IPv4 multi-peer routing */
-struct tachyon_lpm_key_v4 {
-    __u32 prefixlen;                       /* Prefix length in bits          */
-    __u32 addr;                            /* IPv4 address (network order)   */
-};
-
-/* Per-session token-bucket rate limiting configuration */
-struct tachyon_rate_cfg {
-    __u64 tx_rate_bps;                     /* TX rate limit (bytes/sec)      */
-    __u64 tx_burst;                        /* TX burst allowance (bytes)     */
-    __u64 rx_rate_bps;                     /* RX rate limit (bytes/sec)      */
-    __u64 rx_burst;                        /* RX burst allowance (bytes)     */
 };
 
 /* Event structure for perf_event reporting */
@@ -278,6 +260,29 @@ struct tachyon_event {
     __u32 session_id;
     __u64 seq;
     __u64 timestamp_ns;
+};
+
+/* Per-session rate limit configuration */
+struct tachyon_rate_cfg {
+    __u64 tx_rate_bps;                     /* TX rate limit (bytes/sec, 0=off) */
+    __u64 tx_burst;                        /* TX token bucket capacity        */
+    __u64 rx_rate_bps;                     /* RX rate limit (bytes/sec, 0=off) */
+    __u64 rx_burst;                        /* RX token bucket capacity        */
+};
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Cipher Type Constants
+ * ────────────────────────────────────────────────────────────────────────── */
+#define TACHYON_CIPHER_CHACHA20     0      /* rfc7539(chacha20,poly1305)      */
+#define TACHYON_CIPHER_AES128_GCM   1      /* gcm(aes) with 128-bit key      */
+#define TACHYON_CIPHER_AES256_GCM   2      /* gcm(aes) with 256-bit key      */
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * LPM Trie Key for Multi-Peer Routing
+ * ────────────────────────────────────────────────────────────────────────── */
+struct tachyon_lpm_key_v4 {
+    __u32 prefixlen;
+    __u32 addr;
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
