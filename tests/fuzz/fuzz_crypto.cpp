@@ -21,16 +21,14 @@
 static bool g_initialized = false;
 
 /* Initialize OpenSSL globals once */
-static void ensure_init()
-{
+static void ensure_init() {
     if (!g_initialized) {
         init_crypto_globals();
         g_initialized = true;
     }
 }
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
-{
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     ensure_init();
 
     /* Need at least: 1 byte selector + 32 byte key + 12 byte nonce + 1 byte data */

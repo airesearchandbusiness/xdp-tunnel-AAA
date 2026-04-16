@@ -12,27 +12,23 @@
 #include <gtest/gtest.h>
 #include "tachyon.h"
 
-class NonceCacheTest : public ::testing::Test
-{
+class NonceCacheTest : public ::testing::Test {
   protected:
     NonceCache cache_;
 };
 
 /* ── Basic Operations ── */
 
-TEST_F(NonceCacheTest, AddAndExists)
-{
+TEST_F(NonceCacheTest, AddAndExists) {
     cache_.add(12345, 1000);
     EXPECT_TRUE(cache_.exists(12345));
 }
 
-TEST_F(NonceCacheTest, NonExistentReturnsFalse)
-{
+TEST_F(NonceCacheTest, NonExistentReturnsFalse) {
     EXPECT_FALSE(cache_.exists(99999));
 }
 
-TEST_F(NonceCacheTest, MultipleNonces)
-{
+TEST_F(NonceCacheTest, MultipleNonces) {
     cache_.add(100, 1000);
     cache_.add(200, 1000);
     cache_.add(300, 1000);
@@ -45,8 +41,7 @@ TEST_F(NonceCacheTest, MultipleNonces)
 
 /* ── Expiry-Based Eviction ── */
 
-TEST_F(NonceCacheTest, ExpiryEviction)
-{
+TEST_F(NonceCacheTest, ExpiryEviction) {
     /* Add nonce at time 0 */
     cache_.add(111, 0);
     EXPECT_TRUE(cache_.exists(111));
@@ -59,8 +54,7 @@ TEST_F(NonceCacheTest, ExpiryEviction)
     EXPECT_TRUE(cache_.exists(222));
 }
 
-TEST_F(NonceCacheTest, NonExpiredNotEvicted)
-{
+TEST_F(NonceCacheTest, NonExpiredNotEvicted) {
     cache_.add(111, 1000);
     /* Add another nonce within expiry window */
     cache_.add(222, 1000 + TACHYON_NONCE_EXPIRY - 1);
@@ -70,8 +64,7 @@ TEST_F(NonceCacheTest, NonExpiredNotEvicted)
     EXPECT_TRUE(cache_.exists(222));
 }
 
-TEST_F(NonceCacheTest, MultipleExpiredEvicted)
-{
+TEST_F(NonceCacheTest, MultipleExpiredEvicted) {
     cache_.add(1, 0);
     cache_.add(2, 10);
     cache_.add(3, 20);
@@ -87,8 +80,7 @@ TEST_F(NonceCacheTest, MultipleExpiredEvicted)
 
 /* ── Capacity-Based Eviction ── */
 
-TEST_F(NonceCacheTest, CapacityEviction)
-{
+TEST_F(NonceCacheTest, CapacityEviction) {
     /* Fill the cache to max capacity with non-expired entries */
     uint64_t now = 1000;
     for (uint64_t i = 0; i < TACHYON_NONCE_CACHE_MAX; i++) {
@@ -106,8 +98,7 @@ TEST_F(NonceCacheTest, CapacityEviction)
 
 /* ── Edge Cases ── */
 
-TEST_F(NonceCacheTest, DuplicateNonce)
-{
+TEST_F(NonceCacheTest, DuplicateNonce) {
     cache_.add(42, 1000);
     cache_.add(42, 1001);
 
@@ -115,20 +106,17 @@ TEST_F(NonceCacheTest, DuplicateNonce)
     EXPECT_TRUE(cache_.exists(42));
 }
 
-TEST_F(NonceCacheTest, ZeroNonce)
-{
+TEST_F(NonceCacheTest, ZeroNonce) {
     cache_.add(0, 1000);
     EXPECT_TRUE(cache_.exists(0));
 }
 
-TEST_F(NonceCacheTest, MaxUint64Nonce)
-{
+TEST_F(NonceCacheTest, MaxUint64Nonce) {
     cache_.add(UINT64_MAX, 1000);
     EXPECT_TRUE(cache_.exists(UINT64_MAX));
 }
 
-TEST_F(NonceCacheTest, EmptyCacheExists)
-{
+TEST_F(NonceCacheTest, EmptyCacheExists) {
     EXPECT_FALSE(cache_.exists(0));
     EXPECT_FALSE(cache_.exists(1));
     EXPECT_FALSE(cache_.exists(UINT64_MAX));
