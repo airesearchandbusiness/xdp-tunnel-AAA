@@ -55,6 +55,7 @@ MODULE_VERSION("1.1");
 #define TACHYON_CIPHER_TYPE_AES128_GCM  1
 #define TACHYON_CIPHER_TYPE_AES256_GCM  2
 
+#define TACHYON_CIPHER_NAME     TACHYON_CIPHER_CHACHA
 #define TACHYON_LOG_PREFIX      "tachyon_crypto: "
 
 /* Module parameters */
@@ -68,6 +69,9 @@ int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 int bpf_ghost_encrypt(struct xdp_md *ctx, u32 session_id);
 int bpf_ghost_decrypt(struct xdp_md *ctx, u32 session_id);
 int bpf_ghost_set_cipher(u32 session_id, u32 cipher_type);
+
+/* Forward declaration for session engine lifecycle */
+static void destroy_session_engine(struct session_engine *se);
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Session Engine - Per-Session Crypto State
@@ -501,32 +505,34 @@ static void destroy_session_engine(struct session_engine *se)
 
 static int init_session_engine(struct session_engine *se)
 {
+	int ret;
+
 	spin_lock_init(&se->lock);
 
 	se->tfm_tx_primary = alloc_aead_tfm();
 	if (IS_ERR(se->tfm_tx_primary)) {
-		int ret = PTR_ERR(se->tfm_tx_primary);
+		ret = PTR_ERR(se->tfm_tx_primary);
 		se->tfm_tx_primary = NULL;
 		return ret;
 	}
 
 	se->tfm_tx_secondary = alloc_aead_tfm();
 	if (IS_ERR(se->tfm_tx_secondary)) {
-		int ret = PTR_ERR(se->tfm_tx_secondary);
+		ret = PTR_ERR(se->tfm_tx_secondary);
 		se->tfm_tx_secondary = NULL;
 		goto err;
 	}
 
 	se->tfm_rx_primary = alloc_aead_tfm();
 	if (IS_ERR(se->tfm_rx_primary)) {
-		int ret = PTR_ERR(se->tfm_rx_primary);
+		ret = PTR_ERR(se->tfm_rx_primary);
 		se->tfm_rx_primary = NULL;
 		goto err;
 	}
 
 	se->tfm_rx_secondary = alloc_aead_tfm();
 	if (IS_ERR(se->tfm_rx_secondary)) {
-		int ret = PTR_ERR(se->tfm_rx_secondary);
+		ret = PTR_ERR(se->tfm_rx_secondary);
 		se->tfm_rx_secondary = NULL;
 		goto err;
 	}
@@ -539,7 +545,7 @@ static int init_session_engine(struct session_engine *se)
 
 err:
 	destroy_session_engine(se);
-	return -ENOMEM;
+	return ret;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

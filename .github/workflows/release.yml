@@ -89,7 +89,7 @@ jobs:
         run: |
           VERSION=${{ needs.validate.outputs.version }}
           make xdp
-          make loader CXXFLAGS="-O2 -Wall -Wextra -Wpedantic -std=c++17 -DTACHYON_VERSION=\"${VERSION}\" -DNDEBUG"
+          make loader CXXFLAGS="-O2 -Wall -Wextra -std=c++17 -DTACHYON_VERSION=\"${VERSION}\" -DNDEBUG"
 
       - name: Create binary tarball
         run: |

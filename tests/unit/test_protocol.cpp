@@ -89,10 +89,10 @@ TEST(ProtocolTest, ConfigStructSize)
     EXPECT_EQ(sizeof(struct tachyon_config), 4u);
 }
 
-TEST(ProtocolTest, StatsStructHas11Fields)
+TEST(ProtocolTest, StatsStructFields)
 {
     struct tachyon_stats s;
-    /* Verify all 11 stat counters exist and are 8 bytes each */
+    /* Verify all 14 stat counters exist and are 8 bytes each */
     EXPECT_EQ(sizeof(s.rx_packets), 8u);
     EXPECT_EQ(sizeof(s.rx_bytes), 8u);
     EXPECT_EQ(sizeof(s.tx_packets), 8u);
@@ -104,6 +104,37 @@ TEST(ProtocolTest, StatsStructHas11Fields)
     EXPECT_EQ(sizeof(s.rx_ratelimit_drops), 8u);
     EXPECT_EQ(sizeof(s.tx_crypto_errors), 8u);
     EXPECT_EQ(sizeof(s.tx_headroom_errors), 8u);
+    EXPECT_EQ(sizeof(s.tx_ratelimit_drops), 8u);
+    EXPECT_EQ(sizeof(s.rx_ratelimit_data_drops), 8u);
+    EXPECT_EQ(sizeof(s.rx_roam_events), 8u);
+}
+
+TEST(ProtocolTest, LpmKeyV4Size)
+{
+    /* prefixlen(4) + addr(4) = 8 bytes */
+    EXPECT_EQ(sizeof(struct tachyon_lpm_key_v4), 8u);
+}
+
+TEST(ProtocolTest, RateCfgSize)
+{
+    /* 4 x uint64_t = 32 bytes */
+    EXPECT_EQ(sizeof(struct tachyon_rate_cfg), 32u);
+}
+
+TEST(ProtocolTest, SessionHasRateLimitFields)
+{
+    struct tachyon_session s;
+    /* Verify rate limiting and roaming fields exist */
+    EXPECT_EQ(sizeof(s.peer_port), 2u);
+    EXPECT_EQ(sizeof(s.tx_rl_tokens), 8u);
+    EXPECT_EQ(sizeof(s.tx_rl_last_ns), 8u);
+    EXPECT_EQ(sizeof(s.rx_rl_tokens), 8u);
+    EXPECT_EQ(sizeof(s.rx_rl_last_ns), 8u);
+}
+
+TEST(ProtocolTest, PeerRoamEventType)
+{
+    EXPECT_EQ(TACHYON_EVT_PEER_ROAM, 5);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
