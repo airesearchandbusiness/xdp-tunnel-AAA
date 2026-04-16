@@ -138,6 +138,34 @@ TEST(ProtocolTest, PeerRoamEventType)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Struct Layout Consistency (kernel <-> userspace mirror)
+ *
+ * These tests catch ABI drift between tachyon_stats/tachyon_session
+ * (BPF map values in common.h) and their userspace mirrors in tachyon.h.
+ * A size mismatch causes silent data corruption during bpf_map_lookup.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST(ProtocolTest, StatsLayoutMatchesUserspace)
+{
+    EXPECT_EQ(sizeof(struct tachyon_stats), sizeof(userspace_stats));
+}
+
+TEST(ProtocolTest, SessionLayoutMatchesUserspace)
+{
+    EXPECT_EQ(sizeof(struct tachyon_session), sizeof(userspace_session));
+}
+
+TEST(ProtocolTest, KeyInitLayoutMatchesUserspace)
+{
+    EXPECT_EQ(sizeof(struct tachyon_key_init), sizeof(userspace_key_init));
+}
+
+TEST(ProtocolTest, ConfigLayoutMatchesUserspace)
+{
+    EXPECT_EQ(sizeof(struct tachyon_config), sizeof(userspace_config));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Protocol Constants Consistency
  * ══════════════════════════════════════════════════════════════════════════ */
 
