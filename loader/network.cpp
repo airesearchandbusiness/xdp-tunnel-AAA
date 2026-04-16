@@ -24,7 +24,8 @@
  * ══════════════════════════════════════════════════════════════════════════ */
 
 static void send_mimic_quic(int sock, const void *msg, size_t msg_len, int type,
-                            const struct sockaddr_in *dest) {
+                            const struct sockaddr_in *dest)
+{
     uint8_t buffer[1500];
 
     if (msg_len > sizeof(buffer)) {
@@ -75,7 +76,8 @@ static void send_mimic_quic(int sock, const void *msg, size_t msg_len, int type,
  * ══════════════════════════════════════════════════════════════════════════ */
 
 static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id, uint8_t *tx_key,
-                                  uint8_t *rx_key) {
+                                  uint8_t *rx_key)
+{
     struct bpf_map *map = bpf_object__find_map_by_name(obj, "key_init_map");
     if (!map) {
         LOG_ERR("BPF map 'key_init_map' not found");
@@ -101,7 +103,8 @@ static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id, u
     }
     int prog_fd = bpf_program__fd(prog);
     if (prog_fd >= 0) {
-        struct bpf_test_run_opts topts {};
+        struct bpf_test_run_opts topts {
+        };
         topts.sz = sizeof(topts);
         bpf_prog_test_run_opts(prog_fd, &topts);
     }
@@ -138,7 +141,8 @@ static const uint8_t ZERO_IKM[TACHYON_AEAD_KEY_LEN] = {0};
 
 /* Build the 44-byte transcript associated data for PKT_AUTH messages */
 static void build_transcript_ad(uint8_t *out, uint32_t session_id_net, uint64_t client_nonce,
-                                const uint8_t *cookie) {
+                                const uint8_t *cookie)
+{
     memcpy(out, &session_id_net, 4);
     memcpy(out + 4, &client_nonce, 8);
     memcpy(out + 12, cookie, TACHYON_HMAC_LEN);
@@ -146,7 +150,8 @@ static void build_transcript_ad(uint8_t *out, uint32_t session_id_net, uint64_t 
 
 /* Derive session TX/RX keys from session master secret */
 static void derive_session_keys(const uint8_t *early_secret, const uint8_t *eph_ss,
-                                bool is_initiator, uint8_t *tx_key, uint8_t *rx_key) {
+                                bool is_initiator, uint8_t *tx_key, uint8_t *rx_key)
+{
     uint8_t session_master[32];
     derive_kdf(early_secret, 32, eph_ss, 32, TACHYON_KDF_SESSION_MASTER, session_master);
 
@@ -188,7 +193,8 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub) {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t session_id,
-                       uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac) {
+                       uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac)
+{
     LOG_INFO("Booting Tachyon AKE v%d.0...", TACHYON_PROTO_VERSION);
     init_crypto_globals();
 
@@ -252,7 +258,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
         struct timeval tv = {1, 0}; /* 1 second timeout */
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-        struct sockaddr_in addr {};
+        struct sockaddr_in addr {
+        };
         addr.sin_family = AF_INET;
         addr.sin_port = htons(cfg.listen_port);
         addr.sin_addr.s_addr = INADDR_ANY;
@@ -265,7 +272,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
     }
 
     {
-        struct sockaddr_in p_addr {};
+        struct sockaddr_in p_addr {
+        };
         p_addr.sin_family = AF_INET;
         p_addr.sin_port = htons(cfg.listen_port);
         inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &p_addr.sin_addr);

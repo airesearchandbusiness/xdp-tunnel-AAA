@@ -7,8 +7,22 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    name: Build All Components
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 1: Lint & Format (fast-fail, parallel)
+  # ════════════════════════════════════════════════════════════════════════
+
+  clang-format:
+    name: "lint / clang-format"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check formatting
+        run: |
+          find tests/ src/ loader/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
+            | xargs clang-format --dry-run --Werror --style=file
+
+  shellcheck:
+    name: "lint / shellcheck"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

@@ -174,7 +174,8 @@ extern int bpf_ghost_set_cipher(__u32 session_id, __u32 cipher_type) __ksym;
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* Compute IPv4 header checksum via incremental fold */
-static __always_inline void calc_ipv4_csum(struct iphdr *iph) {
+static __always_inline void calc_ipv4_csum(struct iphdr *iph)
+{
     __u32 csum = 0;
     __u16 *p = (__u16 *)iph;
 
@@ -190,8 +191,8 @@ static __always_inline void calc_ipv4_csum(struct iphdr *iph) {
 }
 
 /* Emit a structured event to the perf ring buffer */
-static __always_inline void emit_event(struct xdp_md *ctx, __u32 type, __u32 session_id,
-                                       __u64 seq) {
+static __always_inline void emit_event(struct xdp_md *ctx, __u32 type, __u32 session_id, __u64 seq)
+{
     struct tachyon_event evt = {
         .type = type,
         .session_id = session_id,
@@ -202,7 +203,8 @@ static __always_inline void emit_event(struct xdp_md *ctx, __u32 type, __u32 ses
 }
 
 /* Incremental TCP checksum update for a single 16-bit field change */
-static __always_inline void update_tcp_csum(__u16 *csum, __be16 old_val, __be16 new_val) {
+static __always_inline void update_tcp_csum(__u16 *csum, __be16 old_val, __be16 new_val)
+{
     __u32 res;
 
     res = (~((__u32)*csum) & 0xffff) + (~((__u32)old_val) & 0xffff) + new_val;
@@ -216,7 +218,8 @@ static __always_inline void update_tcp_csum(__u16 *csum, __be16 old_val, __be16 
  * This hides tunnel overhead from TCP path MTU discovery, preventing
  * fragmentation of inner packets.
  */
-static __always_inline void tcp_mss_clamp(struct iphdr *iph, void *data_end) {
+static __always_inline void tcp_mss_clamp(struct iphdr *iph, void *data_end)
+{
     struct tcphdr *tcph;
     int tcp_hlen;
     __u8 *opt;
@@ -275,21 +278,23 @@ static __always_inline void tcp_mss_clamp(struct iphdr *iph, void *data_end) {
 }
 
 /* Retrieve per-CPU stats pointer (map lookup with zero key) */
-static __always_inline struct tachyon_stats *get_stats(void) {
+static __always_inline struct tachyon_stats *get_stats(void)
+{
     __u32 zero = 0;
     return bpf_map_lookup_elem(&stats_map, &zero);
 }
 
 /* Increment a stats counter (deferred map lookup, safe if map missing) */
-#define STAT_INC(field)                                                                            \
-    do {                                                                                           \
-        struct tachyon_stats *_s = get_stats();                                                    \
-        if (_s)                                                                                    \
-            _s->field++;                                                                           \
+#define STAT_INC(field)                         \
+    do {                                        \
+        struct tachyon_stats *_s = get_stats(); \
+        if (_s)                                 \
+            _s->field++;                        \
     } while (0)
 
 /* Retrieve global config pointer */
-static __always_inline struct tachyon_config *get_config(void) {
+static __always_inline struct tachyon_config *get_config(void)
+{
     __u32 zero = 0;
     return bpf_map_lookup_elem(&config_map, &zero);
 }
@@ -309,7 +314,8 @@ static __always_inline struct tachyon_config *get_config(void) {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 SEC("xdp")
-int xdp_tx_path(struct xdp_md *ctx) {
+int xdp_tx_path(struct xdp_md *ctx)
+{
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
 
@@ -394,10 +400,10 @@ int xdp_tx_path(struct xdp_md *ctx) {
     __u8 mimicry = cfg ? cfg->mimicry_type : TACHYON_MIMICRY_QUIC;
 
     /* --- QUIC Mimicry: Bimodal packet-size shaping ---
-     * Pre-generate random values to minimize BPF helper calls.
-     * rand_a: padding distribution + mimicry fields
-     * rand_b: dedicated nonce_salt entropy (must be unique per-packet)
-     */
+	 * Pre-generate random values to minimize BPF helper calls.
+	 * rand_a: padding distribution + mimicry fields
+	 * rand_b: dedicated nonce_salt entropy (must be unique per-packet)
+	 */
     __u32 rand_a = bpf_get_prandom_u32();
     __u32 rand_b = bpf_get_prandom_u32();
 
@@ -455,8 +461,8 @@ int xdp_tx_path(struct xdp_md *ctx) {
         data + TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN + TACHYON_UDP_HDR_LEN;
 
     /* Ghost header: QUIC mimicry flags + session + sequence + nonce
-     * Derive spin_bit, pn_len, and CID entropy from rand_a (already fetched).
-     * This avoids 3 extra bpf_get_prandom_u32() calls (~50 cycles saved). */
+	 * Derive spin_bit, pn_len, and CID entropy from rand_a (already fetched).
+	 * This avoids 3 extra bpf_get_prandom_u32() calls (~50 cycles saved). */
     if (mimicry == TACHYON_MIMICRY_QUIC) {
         __u8 spin_bit = (rand_a >> 8) & TACHYON_QUIC_SPIN_BIT;
         __u8 pn_len = (rand_a >> 16) & TACHYON_QUIC_PN_LEN_MASK;
@@ -532,7 +538,8 @@ int xdp_tx_path(struct xdp_md *ctx) {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 SEC("xdp")
-int xdp_rx_path(struct xdp_md *ctx) {
+int xdp_rx_path(struct xdp_md *ctx)
+{
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
@@ -618,13 +625,13 @@ int xdp_rx_path(struct xdp_md *ctx) {
         return XDP_DROP;
 
     /* ── Unified Critical Section: Replay Check + Decrypt + Bitmap Commit ──
-     *
-     * We perform replay pre-check, then decrypt, then commit the bitmap
-     * update all conceptually linked. The decrypt happens outside the lock
-     * to avoid holding the spinlock during crypto (which can be expensive).
-     * The two-phase lock approach prevents replay while allowing concurrent
-     * crypto operations.
-     */
+	 *
+	 * We perform replay pre-check, then decrypt, then commit the bitmap
+	 * update all conceptually linked. The decrypt happens outside the lock
+	 * to avoid holding the spinlock during crypto (which can be expensive).
+	 * The two-phase lock approach prevents replay while allowing concurrent
+	 * crypto operations.
+	 */
 
     /* Phase 1: Replay pre-check (under lock) */
     bpf_spin_lock(&sess->replay_lock);
@@ -834,7 +841,7 @@ int xdp_rx_path(struct xdp_md *ctx) {
             /* Outer experienced congestion, inner is ECN-capable: set CE */
             decrypted_iph->tos = (decrypted_iph->tos & 0xFC) | 0x03;
             /* Incremental IPv4 checksum update not needed here since
-             * the inner packet will be rechecked by the receiving stack */
+			 * the inner packet will be rechecked by the receiving stack */
         }
     }
 
@@ -860,7 +867,8 @@ int xdp_rx_path(struct xdp_md *ctx) {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 SEC("syscall")
-int ghost_key_init(void *ctx) {
+int ghost_key_init(void *ctx)
+{
     __u32 zero = 0;
     struct tachyon_key_init *kid = bpf_map_lookup_elem(&key_init_map, &zero);
 
@@ -873,7 +881,8 @@ int ghost_key_init(void *ctx) {
 
 /* Cipher selection syscall program (called before ghost_key_init for AES-GCM) */
 SEC("syscall")
-int ghost_cipher_init(void *ctx) {
+int ghost_cipher_init(void *ctx)
+{
     __u32 zero = 0;
     struct tachyon_key_init *kid = bpf_map_lookup_elem(&key_init_map, &zero);
 
@@ -885,7 +894,8 @@ int ghost_cipher_init(void *ctx) {
 
 /* Dummy XDP program for the ingress veth (prevents kernel stack processing) */
 SEC("xdp")
-int xdp_dummy(struct xdp_md *ctx) {
+int xdp_dummy(struct xdp_md *ctx)
+{
     return XDP_PASS;
 }
 

@@ -52,9 +52,9 @@
  * Logging
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#define LOG_INFO(fmt, ...) fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...) fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_ERR(fmt, ...) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...)   fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...)   fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__)
+#define LOG_ERR(fmt, ...)    fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
 #define LOG_CRYPTO(fmt, ...) fprintf(stderr, "[CRYPTO] " fmt "\n", ##__VA_ARGS__)
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -189,9 +189,11 @@ struct TunnelConfig {
  * Replaces the old linear-scan approach that had O(n) cleanup.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-class NonceCache {
+class NonceCache
+{
   public:
-    void add(uint64_t nonce, uint64_t now_sec) {
+    void add(uint64_t nonce, uint64_t now_sec)
+    {
         /* Evict expired entries from the front (oldest first) */
         while (!order_.empty()) {
             auto &front = order_.front();
@@ -261,7 +263,6 @@ TunnelConfig parse_config(const std::string &filename);
 bool validate_config(const TunnelConfig &cfg);
 std::string tunnel_name_from_conf(const std::string &conf_path);
 
-#ifndef TACHYON_NO_BPF
 void command_up(const std::string &conf_file);
 void command_down(const std::string &conf_file);
 void command_show(const std::string &conf_file);
@@ -272,13 +273,13 @@ void command_show(const std::string &conf_file);
 
 void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t session_id,
                        uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac);
-#endif /* TACHYON_NO_BPF */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Utility Helpers
  * ══════════════════════════════════════════════════════════════════════════ */
 
-inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len) {
+inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len)
+{
     if (hex.size() != bin_len * 2)
         return false;
     for (size_t i = 0; i < bin_len; i++) {
@@ -288,18 +289,21 @@ inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len) {
     return true;
 }
 
-inline bool parse_mac(const std::string &str, uint8_t mac[6]) {
+inline bool parse_mac(const std::string &str, uint8_t mac[6])
+{
     return sscanf(str.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0], &mac[1], &mac[2], &mac[3],
                   &mac[4], &mac[5]) == 6;
 }
 
-inline std::string trim(std::string s) {
+inline std::string trim(std::string s)
+{
     s.erase(0, s.find_first_not_of(" \t\r\n"));
     s.erase(s.find_last_not_of(" \t\r\n") + 1);
     return s;
 }
 
-inline bool run_cmd(const std::string &cmd) {
+inline bool run_cmd(const std::string &cmd)
+{
     int ret = system(cmd.c_str());
     if (ret != 0)
         LOG_WARN("Command failed (exit %d): %s", ret, cmd.c_str());
