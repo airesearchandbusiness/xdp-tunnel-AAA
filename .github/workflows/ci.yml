@@ -30,8 +30,13 @@ jobs:
   lint:
     name: "lint"
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read   # required by gitleaks-action
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # full history for gitleaks
 
       - name: clang-format
         run: |
@@ -40,6 +45,12 @@ jobs:
 
       - name: shellcheck
         run: find tests/ -name '*.sh' -exec shellcheck -x -S warning {} +
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ════════════════════════════════════════════════════════════════════════
   # Stage 2: Build
@@ -124,6 +135,32 @@ jobs:
           mkdir -p build/test-results
           cd build && ctest --output-on-failure --timeout 60 \
             --output-junit test-results/unit.xml
+
+      - name: Write job summary
+        if: always()
+        run: |
+          XML=build/test-results/unit.xml
+          if [[ -f "$XML" ]]; then
+            python3 - <<'PYEOF'
+import xml.etree.ElementTree as ET, os
+tree = ET.parse("build/test-results/unit.xml")
+root = tree.getroot()
+ts = root.find("testsuite") if root.tag == "testsuites" else root
+tests    = int(ts.get("tests",    0))
+failures = int(ts.get("failures", 0))
+errors   = int(ts.get("errors",   0))
+skipped  = int(ts.get("skipped",  0))
+passed   = tests - failures - errors - skipped
+status   = ":white_check_mark:" if failures + errors == 0 else ":x:"
+with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+    f.write(f"## {status} Unit Test Results\n\n")
+    f.write("| Metric  | Count |\n|---------|-------|\n")
+    f.write(f"| Passed  | {passed} |\n")
+    f.write(f"| Failed  | {failures + errors} |\n")
+    f.write(f"| Skipped | {skipped} |\n")
+    f.write(f"| **Total** | **{tests}** |\n")
+PYEOF
+          fi
 
       - name: Upload test results
         if: always()

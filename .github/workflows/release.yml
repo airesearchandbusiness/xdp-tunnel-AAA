@@ -131,14 +131,24 @@ jobs:
             "tachyon-crypto-${VERSION}-dkms.tar.gz" \
             > "SHA256SUMS-${VERSION}.txt"
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom.spdx.json
+          upload-artifact: false
+
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: release-artifacts
           path: |
             tachyon-*.tar.gz
             tachyon-crypto-*.tar.gz
             SHA256SUMS-*.txt
+            sbom.spdx.json
 
   # ════════════════════════════════════════════════════════════════════════
   # Create GitHub Release
@@ -186,6 +196,7 @@ jobs:
             tachyon-*.tar.gz
             tachyon-crypto-*.tar.gz
             SHA256SUMS-*.txt
+            sbom.spdx.json
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
