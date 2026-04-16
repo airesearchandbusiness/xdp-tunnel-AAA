@@ -128,13 +128,14 @@ test-sanitize:
 	@echo "\n[TEST] Building with ASan+UBSan..."
 	@cmake -B build/sanitize -S tests \
 		-DCMAKE_BUILD_TYPE=Debug \
-		-DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
-		-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+		-DENABLE_SANITIZE=ON \
 		-DBUILD_XDP_TESTS=OFF \
 		-DBUILD_FUZZ_TESTS=OFF \
 		-G "Unix Makefiles" > /dev/null 2>&1
 	@cmake --build build/sanitize -j$$(nproc) > /dev/null 2>&1
-	@cd build/sanitize && ctest --output-on-failure --timeout 60
+	@ASAN_OPTIONS=halt_on_error=1:detect_leaks=1 \
+		UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		cd build/sanitize && ctest --output-on-failure --timeout 120
 	@echo "[TEST] Sanitizer tests complete."
 
 test: loader

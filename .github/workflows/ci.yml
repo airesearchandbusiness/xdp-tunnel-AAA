@@ -1,6 +1,6 @@
 # Tachyon XDP Tunnel - Continuous Integration
 #
-# Stages: Lint -> Build -> Unit Tests -> Coverage Upload -> Security Scan
+# Stages: Lint -> Build -> Unit Tests -> Coverage -> Sanitize -> clang-tidy -> CodeQL
 #
 # Triggered on: push to main, pull requests against main
 
@@ -215,3 +215,101 @@ jobs:
           files: build/cov/coverage-filtered.info
           flags: unit
           fail_ci_if_error: false
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 6: Sanitizer Tests (ASan + UBSan)
+  # ════════════════════════════════════════════════════════════════════════
+
+  sanitize:
+    name: "test / sanitize (ASan+UBSan)"
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            clang-18 libssl-dev
+
+      - name: Build with sanitizers
+        run: |
+          cmake -B build/san -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_SANITIZE=ON \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF
+          cmake --build build/san -j$(nproc)
+
+      - name: Run tests under sanitizers
+        env:
+          ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:detect_leaks=1"
+          UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+        run: cd build/san && ctest --output-on-failure --timeout 120
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 7: Static Analysis (clang-tidy)
+  # ════════════════════════════════════════════════════════════════════════
+
+  analysis:
+    name: "analysis / clang-tidy"
+    runs-on: ubuntu-24.04
+    needs: lint
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            clang-18 clang-tidy-18 libssl-dev libelf-dev
+
+      - name: Generate compilation database
+        run: |
+          cmake -B build/tidy -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF
+          cmake --build build/tidy -j$(nproc)
+
+      - name: Run clang-tidy
+        run: |
+          find loader/ -name '*.cpp' \
+            | xargs clang-tidy-18 \
+                -p build/tidy \
+                --config-file=.clang-tidy \
+                2>&1 | tee clang-tidy-report.txt
+          if grep -q " error:" clang-tidy-report.txt; then
+            echo "::error::clang-tidy found errors — see report above"
+            exit 1
+          fi
+          echo "clang-tidy: no errors"
+
+      - name: Upload clang-tidy report
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: clang-tidy-report
+          path: clang-tidy-report.txt
+          if-no-files-found: ignore
