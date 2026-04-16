@@ -72,6 +72,17 @@
     },
 
     {
+      "name": "ci-bench",
+      "displayName": "CI: Google Benchmarks",
+      "description": "Release-optimised build with benchmark harnesses",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_BENCHMARKS": "ON"
+      }
+    },
+
+    {
       "name": "ci-fuzz",
       "displayName": "CI: fuzz (clang + libFuzzer)",
       "description": "Fuzz harnesses; requires clang and -DBUILD_XDP_TESTS=ON optionally",
@@ -91,6 +102,7 @@
     { "name": "ci-sanitize",  "configurePreset": "ci-sanitize",  "jobs": 0 },
     { "name": "ci-tsan",      "configurePreset": "ci-tsan",      "jobs": 0 },
     { "name": "ci-coverage",  "configurePreset": "ci-coverage",  "jobs": 0 },
+    { "name": "ci-bench",     "configurePreset": "ci-bench",     "jobs": 0 },
     { "name": "ci-fuzz",      "configurePreset": "ci-fuzz",      "jobs": 0 }
   ],
 

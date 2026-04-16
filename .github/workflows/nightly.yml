@@ -206,7 +206,6 @@ jobs:
   benchmarks:
     name: "perf / benchmarks"
     runs-on: ubuntu-24.04
-    needs: build
     if: ${{ github.event.inputs.run_benchmarks != 'false' }}
     steps:
       - uses: actions/checkout@v6
@@ -214,24 +213,43 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev libelf-dev \
-            iproute2 iputils-ping kmod iperf3 jq
+            build-essential cmake ninja-build pkg-config \
+            libssl-dev libgtest-dev libgmock-dev jq
 
-      - name: Download build
-        uses: actions/download-artifact@v8
-        with:
-          name: nightly-build
-
-      - name: Fix permissions
-        run: chmod +x loader/tachyon
-
-      - name: Run throughput benchmark
+      - name: Build benchmarks
         run: |
-          echo "{ \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," > benchmark_result.json
-          echo "  \"commit\": \"${{ github.sha }}\"," >> benchmark_result.json
-          echo "  \"note\": \"Benchmark placeholder - requires full tunnel setup\"" >> benchmark_result.json
-          echo "}" >> benchmark_result.json
-          cat benchmark_result.json
+          cmake -B build/bench -S tests \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_BENCHMARKS=ON \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF \
+            -G Ninja
+          cmake --build build/bench --target bench_crypto -j$(nproc)
+
+      - name: Run crypto benchmarks
+        run: |
+          build/bench/bench_crypto \
+            --benchmark_format=json \
+            --benchmark_out=benchmark_result.json \
+            --benchmark_repetitions=3 \
+            --benchmark_report_aggregates_only=true
+          # Pretty-print summary to log
+          jq '.benchmarks[] | "\(.name): \(.real_time | round) \(.time_unit)"' \
+            benchmark_result.json
+
+      - name: Annotate results to job summary
+        run: |
+          echo "## Crypto Benchmark Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: \`${{ github.sha }}\`  " >> "$GITHUB_STEP_SUMMARY"
+          echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Benchmark | Mean (µs) | CPU (µs) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----------|-----------|----------|" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.benchmarks[]
+            | select(.aggregate_name == "mean" or .aggregate_name == null)
+            | "| \(.name) | \(.real_time | . * 100 | round / 100) | \(.cpu_time | . * 100 | round / 100) |"' \
+            benchmark_result.json >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v8

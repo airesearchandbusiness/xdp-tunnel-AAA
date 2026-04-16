@@ -476,3 +476,107 @@ TEST_F(CryptoTest, SessionKeyDerivationSymmetry) {
     /* Client TX == Server RX */
     EXPECT_EQ(memcmp(cli_tx, srv_rx, 32), 0);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Parameterized AEAD Tests — Plaintext Size Sweep
+ *
+ * Tests the full encrypt→decrypt roundtrip and tampering detection across
+ * boundary-spanning sizes: empty, block boundaries (16 B), ChaCha block
+ * boundaries (64 B), and practical packet sizes up to 8 KB.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+class AeadSizeTest : public ::testing::TestWithParam<size_t> {
+  protected:
+    void SetUp() override { init_crypto_globals(); }
+    void TearDown() override { free_crypto_globals(); }
+};
+
+TEST_P(AeadSizeTest, EncryptDecryptRoundtrip) {
+    const size_t pt_size = GetParam();
+
+    uint8_t key[32], nonce[12];
+    memset(key, 0x42, sizeof(key));
+    memset(nonce, 0x00, sizeof(nonce));
+    /* Encode pt_size into nonce to ensure each parameterised run uses a
+     * distinct nonce — avoids nonce-reuse between test instances. */
+    nonce[0] = static_cast<uint8_t>(pt_size & 0xFF);
+    nonce[1] = static_cast<uint8_t>((pt_size >> 8) & 0xFF);
+
+    std::vector<uint8_t> plaintext(pt_size, 0xAB);
+    std::vector<uint8_t> ciphertext(pt_size + 1); /* +1 avoids zero-size alloc */
+    std::vector<uint8_t> decrypted(pt_size + 1);
+    uint8_t tag[TACHYON_AEAD_TAG_LEN];
+
+    ASSERT_TRUE(
+        cp_aead_encrypt(key, plaintext.data(), pt_size, nullptr, 0, nonce, ciphertext.data(), tag));
+    ASSERT_TRUE(
+        cp_aead_decrypt(key, ciphertext.data(), pt_size, nullptr, 0, nonce, tag, decrypted.data()));
+
+    if (pt_size > 0) {
+        EXPECT_EQ(memcmp(plaintext.data(), decrypted.data(), pt_size), 0);
+    }
+}
+
+TEST_P(AeadSizeTest, TamperingAlwaysDetected) {
+    const size_t pt_size = GetParam();
+    if (pt_size == 0)
+        GTEST_SKIP() << "No ciphertext bytes to tamper";
+
+    uint8_t key[32], nonce[12];
+    memset(key, 0x42, sizeof(key));
+    memset(nonce, 0x00, sizeof(nonce));
+    nonce[2] = static_cast<uint8_t>(pt_size & 0xFF);
+    nonce[3] = static_cast<uint8_t>((pt_size >> 8) & 0xFF);
+
+    std::vector<uint8_t> plaintext(pt_size, 0xCD);
+    std::vector<uint8_t> ciphertext(pt_size);
+    std::vector<uint8_t> decrypted(pt_size);
+    uint8_t tag[TACHYON_AEAD_TAG_LEN];
+
+    ASSERT_TRUE(
+        cp_aead_encrypt(key, plaintext.data(), pt_size, nullptr, 0, nonce, ciphertext.data(), tag));
+
+    /* Flip the last byte of the ciphertext and verify authentication fails */
+    ciphertext[pt_size - 1] ^= 0x01;
+    EXPECT_FALSE(
+        cp_aead_decrypt(key, ciphertext.data(), pt_size, nullptr, 0, nonce, tag, decrypted.data()));
+}
+
+INSTANTIATE_TEST_SUITE_P(PlaintextSizes, AeadSizeTest,
+                         /* Covers: empty, single byte, just-under/at/over AES block (16 B),
+                          * ChaCha stream block (64 B), common network MTU payload (~1400 B),
+                          * and large (8 KB) payloads. */
+                         ::testing::Values(0, 1, 15, 16, 17, 63, 64, 65, 127, 128, 255, 256, 1023,
+                                           1024, 1400, 8192),
+                         [](const ::testing::TestParamInfo<size_t> &info) {
+                             return "pt_" + std::to_string(info.param) + "B";
+                         });
+
+/* ── Nonce Non-Reuse Property ─────────────────────────────────────────────── */
+
+TEST_F(CryptoTest, SequentialNoncesProduceDifferentCiphertexts) {
+    uint8_t key[32];
+    memset(key, 0x42, sizeof(key));
+
+    const uint8_t plaintext[] = "nonce progression test";
+    const size_t pt_len = sizeof(plaintext) - 1;
+    const int N = 16;
+
+    std::vector<std::vector<uint8_t>> cts(N, std::vector<uint8_t>(pt_len));
+    uint8_t tags[16][TACHYON_AEAD_TAG_LEN];
+
+    for (int i = 0; i < N; i++) {
+        uint8_t nonce[12] = {};
+        nonce[0] = static_cast<uint8_t>(i);
+        ASSERT_TRUE(
+            cp_aead_encrypt(key, plaintext, pt_len, nullptr, 0, nonce, cts[i].data(), tags[i]));
+    }
+
+    /* Every pair of ciphertexts must differ — same key + different nonce */
+    for (int i = 0; i < N; i++) {
+        for (int j = i + 1; j < N; j++) {
+            EXPECT_NE(cts[i], cts[j])
+                << "Nonces " << i << " and " << j << " produced identical ciphertext!";
+        }
+    }
+}

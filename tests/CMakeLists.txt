@@ -8,6 +8,7 @@
 # Options:
 #   -DBUILD_FUZZ_TESTS=ON      Build libFuzzer harnesses (requires clang)
 #   -DBUILD_XDP_TESTS=ON       Build XDP test runner (requires libbpf)
+#   -DBUILD_BENCHMARKS=ON      Build Google Benchmark harnesses
 #   -DENABLE_COVERAGE=ON       Enable gcov coverage instrumentation
 #   -DENABLE_SANITIZE=ON       Enable AddressSanitizer + UndefinedBehaviorSanitizer
 #   -DENABLE_TSAN=ON           Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)
@@ -20,11 +21,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ── Options ──
-option(BUILD_FUZZ_TESTS "Build libFuzzer fuzz test harnesses" OFF)
-option(BUILD_XDP_TESTS "Build XDP/BPF test runner (requires libbpf)" OFF)
-option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
-option(ENABLE_SANITIZE "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
-option(ENABLE_TSAN "Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)" OFF)
+option(BUILD_FUZZ_TESTS  "Build libFuzzer fuzz test harnesses" OFF)
+option(BUILD_XDP_TESTS   "Build XDP/BPF test runner (requires libbpf)" OFF)
+option(BUILD_BENCHMARKS  "Build Google Benchmark harnesses" OFF)
+option(ENABLE_COVERAGE   "Enable code coverage instrumentation" OFF)
+option(ENABLE_SANITIZE   "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_TSAN       "Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)" OFF)
 
 # ── Project root (parent of tests/) ──
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
@@ -156,6 +158,35 @@ if(BUILD_XDP_TESTS)
     endif()
 endif()
 
+# ── Google Benchmark harnesses ──
+if(BUILD_BENCHMARKS)
+    FetchContent_Declare(
+        benchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG        v1.8.3
+        GIT_SHALLOW    TRUE
+    )
+    set(BENCHMARK_ENABLE_TESTING    OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_INSTALL_DOCS      OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(benchmark)
+
+    add_executable(bench_crypto benchmarks/bench_crypto.cpp)
+    target_link_libraries(bench_crypto PRIVATE
+        tachyon_core
+        benchmark::benchmark_main
+    )
+    target_include_directories(bench_crypto PRIVATE
+        ${PROJECT_ROOT}/loader
+        ${PROJECT_ROOT}/src
+    )
+    target_compile_definitions(bench_crypto PRIVATE
+        TACHYON_VERSION="bench"
+        TACHYON_NO_BPF
+    )
+    target_compile_options(bench_crypto PRIVATE -O3 -Wall)
+endif()
+
 # ── Fuzz Tests (requires clang + libFuzzer) ──
 if(BUILD_FUZZ_TESTS)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -185,4 +216,5 @@ message(STATUS "  ASan+UBSan:  ${ENABLE_SANITIZE}")
 message(STATUS "  TSan:        ${ENABLE_TSAN}")
 message(STATUS "  XDP tests:   ${BUILD_XDP_TESTS}")
 message(STATUS "  Fuzz tests:  ${BUILD_FUZZ_TESTS}")
+message(STATUS "  Benchmarks:  ${BUILD_BENCHMARKS}")
 message(STATUS "")

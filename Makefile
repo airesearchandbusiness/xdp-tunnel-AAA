@@ -17,7 +17,7 @@
 .PHONY: all kmod xdp loader clean install uninstall \
         install-dkms remove-dkms install-module remove-module \
         test test-unit test-xdp test-integration test-all \
-        test-sanitize test-tsan test-valgrind \
+        test-sanitize test-tsan test-valgrind benchmark \
         lint format format-check coverage \
         purge help
 
@@ -171,6 +171,19 @@ test-valgrind:
 	done
 	@echo "[TEST] Valgrind memcheck complete."
 
+benchmark:
+	@echo "\n[BENCH] Building crypto benchmarks..."
+	@cmake -B build/bench -S tests \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DBUILD_BENCHMARKS=ON \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/bench --target bench_crypto -j$$(nproc) > /dev/null 2>&1
+	@build/bench/bench_crypto --benchmark_repetitions=3 \
+		--benchmark_report_aggregates_only=true
+	@echo "[BENCH] Complete."
+
 test: loader
 	@echo "\nTesting Tachyon (integration)..."
 	@test -f test.conf || { echo "Create test.conf first (see tun.conf.example)"; exit 1; }
@@ -225,6 +238,7 @@ help:
 	@echo "  test-sanitize    Build and run with ASan+UBSan"
 	@echo "  test-tsan        Build and run with ThreadSanitizer"
 	@echo "  test-valgrind    Build and run under valgrind memcheck"
+	@echo "  benchmark        Run Google Benchmark crypto harnesses"
 	@echo "  test-xdp         Run XDP/BPF tests (requires root)"
 	@echo "  test-integration Run integration tests (requires root)"
 	@echo "  test-all         Run all test tiers"
