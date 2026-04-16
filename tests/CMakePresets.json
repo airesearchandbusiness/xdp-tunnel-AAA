@@ -1,0 +1,142 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 23, "patch": 0 },
+
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_XDP_TESTS":  "OFF",
+        "BUILD_FUZZ_TESTS": "OFF",
+        "ENABLE_COVERAGE":  "OFF",
+        "ENABLE_SANITIZE":  "OFF",
+        "ENABLE_TSAN":      "OFF"
+      }
+    },
+
+    {
+      "name": "debug",
+      "displayName": "Debug (local development)",
+      "description": "Plain debug build; no instrumentation",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+
+    {
+      "name": "ci-unit",
+      "displayName": "CI: unit tests",
+      "description": "Matches the CI build job: Debug, no XDP, no fuzz",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+
+    {
+      "name": "ci-sanitize",
+      "displayName": "CI: ASan + UBSan",
+      "description": "AddressSanitizer + UndefinedBehaviorSanitizer via Clang",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":     "Debug",
+        "CMAKE_CXX_COMPILER":   "clang++-18",
+        "CMAKE_C_COMPILER":     "clang-18",
+        "ENABLE_SANITIZE":      "ON"
+      }
+    },
+
+    {
+      "name": "ci-coverage",
+      "displayName": "CI: gcov coverage",
+      "description": "Coverage instrumentation; pair with lcov + codecov-action",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_COVERAGE":  "ON"
+      }
+    },
+
+    {
+      "name": "ci-tsan",
+      "displayName": "CI: ThreadSanitizer",
+      "description": "Detects data races; incompatible with ci-sanitize",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":   "Debug",
+        "CMAKE_CXX_COMPILER": "clang++-18",
+        "CMAKE_C_COMPILER":   "clang-18",
+        "ENABLE_TSAN":        "ON"
+      }
+    },
+
+    {
+      "name": "ci-bench",
+      "displayName": "CI: Google Benchmarks",
+      "description": "Release-optimised build with benchmark harnesses",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_BENCHMARKS": "ON"
+      }
+    },
+
+    {
+      "name": "ci-fuzz",
+      "displayName": "CI: fuzz (clang + libFuzzer)",
+      "description": "Fuzz harnesses; requires clang and -DBUILD_XDP_TESTS=ON optionally",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":   "Release",
+        "CMAKE_CXX_COMPILER": "clang++-18",
+        "CMAKE_C_COMPILER":   "clang-18",
+        "BUILD_FUZZ_TESTS":   "ON"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "debug",        "configurePreset": "debug",        "jobs": 0 },
+    { "name": "ci-unit",      "configurePreset": "ci-unit",      "jobs": 0 },
+    { "name": "ci-sanitize",  "configurePreset": "ci-sanitize",  "jobs": 0 },
+    { "name": "ci-tsan",      "configurePreset": "ci-tsan",      "jobs": 0 },
+    { "name": "ci-coverage",  "configurePreset": "ci-coverage",  "jobs": 0 },
+    { "name": "ci-bench",     "configurePreset": "ci-bench",     "jobs": 0 },
+    { "name": "ci-fuzz",      "configurePreset": "ci-fuzz",      "jobs": 0 }
+  ],
+
+  "testPresets": [
+    {
+      "name": "unit",
+      "configurePreset": "ci-unit",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 60, "noTestsAction": "error" }
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "ci-sanitize",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 120, "noTestsAction": "error" },
+      "environment": {
+        "ASAN_OPTIONS":  "halt_on_error=1:abort_on_error=1:detect_leaks=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "ci-tsan",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 120, "noTestsAction": "error" },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+      }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "ci-coverage",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 60, "noTestsAction": "error" }
+    }
+  ]
+}

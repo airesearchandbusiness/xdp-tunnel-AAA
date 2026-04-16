@@ -62,8 +62,12 @@ static void send_mimic_quic(int sock, const void *msg, size_t msg_len, int type,
         total_len = sizeof(buffer);
 
     /* Fill padding with cryptographic random bytes */
-    if (total_len > msg_len)
-        RAND_bytes(buffer + msg_len, total_len - msg_len);
+    if (total_len > msg_len) {
+        if (RAND_bytes(buffer + msg_len, total_len - msg_len) != 1) {
+            LOG_ERR("RAND_bytes failed for mimicry padding fill");
+            return;
+        }
+    }
 
     if (sendto(sock, buffer, total_len, 0, reinterpret_cast<const struct sockaddr *>(dest),
                sizeof(*dest)) < 0)
@@ -187,7 +191,7 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub) {
  * Control Plane Main Loop
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t session_id,
+void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t session_id,
                        uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac) {
     LOG_INFO("Booting Tachyon AKE v%d.0...", TACHYON_PROTO_VERSION);
     init_crypto_globals();
@@ -235,10 +239,20 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
     OPENSSL_cleanse(static_ss, 32);
     OPENSSL_cleanse(static_priv, 32);
 
+    /* Cleanse config key material — no longer needed after static derivations.
+     * std::string::data() is mutable since C++17, which this project requires. */
+    if (!cfg.private_key.empty())
+        OPENSSL_cleanse(cfg.private_key.data(), cfg.private_key.size());
+    if (!cfg.psk.empty())
+        OPENSSL_cleanse(cfg.psk.data(), cfg.psk.size());
+
     /* Cookie secret for DoS protection */
     uint8_t cookie_secret[32];
-    RAND_bytes(cookie_secret, 32);
     uint64_t last_cookie_rotation = time(nullptr);
+    if (RAND_bytes(cookie_secret, 32) != 1) {
+        LOG_ERR("Failed to generate initial cookie secret");
+        goto cleanup_keys;
+    }
 
     /* UDP socket setup */
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -291,10 +305,13 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
         while (!g_exiting) {
             uint64_t now = time(nullptr);
 
-            /* Rotate cookie secret periodically */
+            /* Rotate cookie secret periodically. Failure retains the old secret
+             * and retries on the next tick rather than silently degrading. */
             if (now - last_cookie_rotation > TACHYON_COOKIE_ROTATION) {
-                RAND_bytes(cookie_secret, 32);
-                last_cookie_rotation = now;
+                if (RAND_bytes(cookie_secret, 32) == 1)
+                    last_cookie_rotation = now;
+                else
+                    LOG_WARN("Cookie secret rotation failed - retaining old secret");
             }
 
             /* Dead Peer Detection */
@@ -322,15 +339,22 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
                 memcpy(k_nonce, &kmsg.timestamp, 8);
 
                 uint8_t dummy[16];
-                RAND_bytes(dummy, 16);
-                cp_aead_encrypt(cp_enc_key, dummy, 16, k_ad, 12, k_nonce, kmsg.ciphertext,
-                                kmsg.ciphertext + 16);
+                if (RAND_bytes(dummy, 16) != 1) {
+                    LOG_WARN("RAND_bytes failed for keepalive - skipping");
+                    continue;
+                }
+                if (!cp_aead_encrypt(cp_enc_key, dummy, 16, k_ad, 12, k_nonce, kmsg.ciphertext,
+                                     kmsg.ciphertext + 16)) {
+                    LOG_WARN("Keepalive encrypt failed - skipping");
+                    continue;
+                }
 
                 send_mimic_quic(sock, &kmsg, sizeof(kmsg), TACHYON_PKT_KEEPALIVE, &p_addr);
                 last_tx_time = now;
                 {
                     uint32_t _j;
-                    RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
+                    if (RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j)) != 1)
+                        _j = 0; /* jitter not security-critical; fall back to base */
                     keepalive_interval = TACHYON_KEEPALIVE_BASE + (_j % TACHYON_KEEPALIVE_JITTER);
                 }
             }
@@ -345,8 +369,12 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
 
             /* Send PKT_INIT (initiator only, during handshake) */
             if (is_initiator && handshake_active && (now - last_init_send >= retry_interval)) {
-                if (my_nonce == 0)
-                    RAND_bytes(reinterpret_cast<uint8_t *>(&my_nonce), 8);
+                if (my_nonce == 0) {
+                    if (RAND_bytes(reinterpret_cast<uint8_t *>(&my_nonce), 8) != 1) {
+                        LOG_ERR("Failed to generate handshake nonce");
+                        continue;
+                    }
+                }
 
                 MsgInit msg = {};
                 msg.flags = TACHYON_PKT_INIT;
@@ -359,7 +387,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
                 last_tx_time = now;
                 {
                     uint32_t _j;
-                    RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
+                    if (RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j)) != 1)
+                        _j = 0;
                     retry_interval = TACHYON_RETRY_BASE + (_j % TACHYON_RETRY_JITTER);
                 }
             }
@@ -373,8 +402,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
             if (n <= 0)
                 continue;
 
-            /* Only accept from configured peer */
-            if (src.sin_addr.s_addr != p_addr.sin_addr.s_addr)
+            /* Only accept from configured peer (IP and source port) */
+            if (src.sin_addr.s_addr != p_addr.sin_addr.s_addr || src.sin_port != p_addr.sin_port)
                 continue;
 
             uint8_t flag = buf[0];
@@ -393,8 +422,11 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
                 uint8_t k_nonce[12] = {0};
                 memcpy(k_nonce, &msg->timestamp, 8);
                 uint8_t decrypted[16];
-                cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
-                                msg->ciphertext + 16, decrypted);
+                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
+                                     msg->ciphertext + 16, decrypted)) {
+                    LOG_WARN("Keepalive authentication failed - dropping");
+                    continue; /* Forged/corrupt keepalive - don't reset DPD timer */
+                }
             }
             /* ── Handle PKT_INIT (responder only) ── */
             else if (flag == TACHYON_PKT_INIT && n >= (int)sizeof(MsgInit)) {
@@ -497,7 +529,10 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t
 
                 /* Send PKT_FINISH with our ephemeral public key */
                 uint64_t srv_nonce;
-                RAND_bytes(reinterpret_cast<uint8_t *>(&srv_nonce), 8);
+                if (RAND_bytes(reinterpret_cast<uint8_t *>(&srv_nonce), 8) != 1) {
+                    LOG_ERR("Failed to generate server nonce");
+                    continue;
+                }
 
                 MsgFinish fmsg = {};
                 fmsg.flags = TACHYON_PKT_FINISH;

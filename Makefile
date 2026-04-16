@@ -17,7 +17,8 @@
 .PHONY: all kmod xdp loader clean install uninstall \
         install-dkms remove-dkms install-module remove-module \
         test test-unit test-xdp test-integration test-all \
-        lint format coverage \
+        test-sanitize test-tsan test-valgrind benchmark \
+        lint format format-check coverage \
         purge help
 
 VERSION     ?= 1.1.0
@@ -31,11 +32,27 @@ BINDIR      ?= $(PREFIX)/bin
 SYSCONFDIR  ?= /etc/tachyon
 SYSTEMDDIR  ?= /etc/systemd/system
 
-# Compiler flags
+# Compiler flags — production hardening
+# -D_FORTIFY_SOURCE=2: glibc buffer-overflow detection (requires -O1+)
+# -fstack-protector-strong: stack canary on functions with local arrays/pointers
+# -fPIE + -pie: position-independent executable (defeats ROP on ASLR kernels)
+# -Wformat-security: warn on non-literal format strings
+# -Wswitch-enum: require exhaustive switch coverage of enum values
+# Linker:
+# -z relro,-z now: full RELRO — all PLT entries resolved at startup, GOT read-only
+# -z noexecstack: mark stack segment as non-executable
 CXX         ?= g++
 CXXFLAGS    := -O2 -Wall -Wextra -std=c++17 \
+               -D_FORTIFY_SOURCE=2 \
+               -fstack-protector-strong \
+               -fPIE \
+               -Wformat -Wformat-security \
+               -Wswitch-enum \
                -DTACHYON_VERSION=\"$(VERSION)\"
-LDFLAGS     := -lbpf -lcrypto -lelf -lz
+LDFLAGS     := -Wl,-z,relro,-z,now \
+               -Wl,-z,noexecstack \
+               -pie \
+               -lbpf -lcrypto -lelf -lz
 
 # Loader source files
 LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
@@ -128,39 +145,61 @@ test-sanitize:
 	@echo "\n[TEST] Building with ASan+UBSan..."
 	@cmake -B build/sanitize -S tests \
 		-DCMAKE_BUILD_TYPE=Debug \
-		-DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
-		-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+		-DENABLE_SANITIZE=ON \
 		-DBUILD_XDP_TESTS=OFF \
 		-DBUILD_FUZZ_TESTS=OFF \
 		-G "Unix Makefiles" > /dev/null 2>&1
 	@cmake --build build/sanitize -j$$(nproc) > /dev/null 2>&1
-	@cd build/sanitize && ctest --output-on-failure --timeout 60
+	@ASAN_OPTIONS=halt_on_error=1:detect_leaks=1 \
+		UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		cd build/sanitize && ctest --output-on-failure --timeout 120
 	@echo "[TEST] Sanitizer tests complete."
 
-# Run XDP/BPF tests (requires root and kernel module)
-test-xdp: xdp
-	@echo "\n[TEST] Building and running XDP tests..."
-	@cmake -B build/tests -S tests \
+test-tsan:
+	@echo "\n[TEST] Building with ThreadSanitizer..."
+	@cmake -B build/tsan -S tests \
 		-DCMAKE_BUILD_TYPE=Debug \
-		-DBUILD_XDP_TESTS=ON \
+		-DENABLE_TSAN=ON \
+		-DBUILD_XDP_TESTS=OFF \
 		-DBUILD_FUZZ_TESTS=OFF \
 		-G "Unix Makefiles" > /dev/null 2>&1
-	@cmake --build build/tests --target xdp_test_runner -j$$(nproc) > /dev/null 2>&1
-	sudo build/tests/xdp_test_runner
-	@echo "[TEST] XDP tests complete."
+	@cmake --build build/tsan -j$$(nproc) > /dev/null 2>&1
+	@TSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		cd build/tsan && ctest --output-on-failure --timeout 120
+	@echo "[TEST] TSan tests complete."
 
-# Run integration tests (requires root and kernel module)
-test-integration: loader
-	@echo "\n[TEST] Running integration tests..."
-	@chmod +x tests/integration/*.sh
-	sudo tests/integration/test_tunnel_e2e.sh
-	@echo "[TEST] Integration tests complete."
+test-valgrind:
+	@echo "\n[TEST] Building for valgrind (no instrumentation)..."
+	@cmake -B build/valgrind -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/valgrind -j$$(nproc) > /dev/null 2>&1
+	@echo "\n[TEST] Running under valgrind memcheck..."
+	@for t in test_config test_crypto test_nonce_cache test_utils test_protocol; do \
+		echo "  -> $$t"; \
+		valgrind --tool=memcheck --error-exitcode=1 \
+			--leak-check=full --show-leak-kinds=definite,indirect \
+			--track-origins=yes \
+			--suppressions=tests/valgrind.supp \
+			build/valgrind/$$t 2>&1 | tail -5 || exit 1; \
+	done
+	@echo "[TEST] Valgrind memcheck complete."
 
-# Run all test tiers
-test-all: test-unit test-xdp test-integration
-	@echo "\n[TEST] All test tiers complete."
+benchmark:
+	@echo "\n[BENCH] Building crypto benchmarks..."
+	@cmake -B build/bench -S tests \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DBUILD_BENCHMARKS=ON \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/bench --target bench_crypto -j$$(nproc) > /dev/null 2>&1
+	@build/bench/bench_crypto --benchmark_repetitions=3 \
+		--benchmark_report_aggregates_only=true
+	@echo "[BENCH] Complete."
 
-# Basic tunnel smoke test (requires test.conf)
 test: loader
 	@echo "\nTesting Tachyon (integration)..."
 	@test -f test.conf || { echo "Create test.conf first (see tun.conf.example)"; exit 1; }
@@ -196,9 +235,22 @@ format-check:
 	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
 		| xargs clang-format --dry-run --Werror --style=file
 
-# Generate HTML coverage report
+lint: format-check
+	@echo "\n[LINT] Running shellcheck..."
+	@find tests/ -name '*.sh' -exec shellcheck -x -S warning {} +
+	@echo "\n[LINT] Running cppcheck..."
+	@cppcheck \
+		--enable=warning,performance,portability \
+		--error-exitcode=1 \
+		--suppress=missingInclude \
+		--suppress=missingIncludeSystem \
+		--inline-suppr \
+		--std=c11 \
+		src/ loader/
+	@echo "\n[LINT] All checks passed."
+
 coverage:
-	@echo "\n[COVERAGE] Building with coverage instrumentation..."
+	@echo "\n[COV] Building with coverage instrumentation..."
 	@cmake -B build/coverage -S tests \
 		-DCMAKE_BUILD_TYPE=Debug \
 		-DENABLE_COVERAGE=ON \
@@ -206,14 +258,32 @@ coverage:
 		-DBUILD_FUZZ_TESTS=OFF \
 		-G "Unix Makefiles" > /dev/null 2>&1
 	@cmake --build build/coverage -j$$(nproc) > /dev/null 2>&1
-	@cd build/coverage && ctest --output-on-failure --timeout 60 || true
-	@lcov --capture --directory build/coverage --output-file build/coverage/coverage.info \
+	@cd build/coverage && ctest --output-on-failure --timeout 60
+	@echo "\n[COV] Collecting coverage data..."
+	@lcov --capture --directory build/coverage \
+		--output-file build/coverage/coverage.info \
 		--ignore-errors mismatch 2>/dev/null
-	@lcov --remove build/coverage/coverage.info '/usr/*' '*/tests/*' '*/googletest/*' \
+	@lcov --remove build/coverage/coverage.info \
+		'/usr/*' '*/tests/*' '*/googletest/*' \
 		--output-file build/coverage/coverage-filtered.info 2>/dev/null
 	@genhtml build/coverage/coverage-filtered.info \
-		--output-directory build/coverage/html 2>/dev/null
-	@echo "[COVERAGE] Report at build/coverage/html/index.html"
+		--output-directory build/coverage/html \
+		--title "Tachyon XDP Tunnel" \
+		--legend --demangle-cpp 2>/dev/null
+	@echo "\n[COV] HTML report: build/coverage/html/index.html"
+
+test-xdp:
+	@echo "\n[TEST] Running XDP/BPF tests (requires root + loaded XDP program)..."
+	@sudo tests/xdp/run_xdp_tests.sh
+
+test-integration:
+	@echo "\n[TEST] Running integration tests (requires root)..."
+	@sudo tests/integration/test_tunnel_e2e.sh
+	@sudo tests/integration/test_key_rotation.sh
+	@sudo tests/integration/test_dpd.sh
+
+test-all: test-unit test-sanitize test-tsan test-valgrind test-xdp test-integration
+	@echo "\n[TEST] All test tiers complete."
 
 # ── Cleanup ──
 
@@ -250,6 +320,10 @@ help:
 	@echo "Testing:"
 	@echo "  test             Run basic up/show/down smoke test"
 	@echo "  test-unit        Build and run unit tests (no root)"
+	@echo "  test-sanitize    Build and run with ASan+UBSan"
+	@echo "  test-tsan        Build and run with ThreadSanitizer"
+	@echo "  test-valgrind    Build and run under valgrind memcheck"
+	@echo "  benchmark        Run Google Benchmark crypto harnesses"
 	@echo "  test-xdp         Run XDP/BPF tests (requires root)"
 	@echo "  test-integration Run integration tests (requires root)"
 	@echo "  test-all         Run all test tiers"
@@ -257,6 +331,7 @@ help:
 	@echo "Code quality:"
 	@echo "  lint             Run all linters (clang-format, cppcheck, shellcheck)"
 	@echo "  format           Auto-format all source files"
+	@echo "  format-check     Dry-run format check (used by CI)"
 	@echo "  coverage         Generate HTML coverage report"
 	@echo ""
 	@echo "Cleanup:"

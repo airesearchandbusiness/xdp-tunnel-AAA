@@ -1,6 +1,6 @@
 # Tachyon XDP Tunnel - Nightly Extended Tests
 #
-# Runs fuzz testing, extended integration tests, and performance benchmarks.
+# Runs fuzz testing, extended sanitizer scan, integration tests, and benchmarks.
 # Triggered: Daily at 03:00 UTC, or manual dispatch.
 
 name: Nightly
@@ -20,7 +20,7 @@ on:
         default: 'true'
 
 permissions:
-  contents: read
+  contents: write   # benchmark-action pushes baselines to gh-pages
 
 concurrency:
   group: nightly-${{ github.ref }}
@@ -41,14 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            build-essential clang-18 llvm-18 \
-            libbpf-dev libelf-dev libssl-dev \
-            linux-headers-$(uname -r) \
-            cmake ninja-build pkg-config \
-            libgtest-dev libgmock-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'build-essential clang-18 llvm-18 libbpf-dev libelf-dev libssl-dev linux-headers-generic cmake ninja-build pkg-config libgtest-dev libgmock-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Build all targets
         run: |
@@ -83,10 +79,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libbpf-dev libssl-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Download build
         uses: actions/download-artifact@v8
@@ -125,10 +121,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libbpf-dev libssl-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Download build
         uses: actions/download-artifact@v8
@@ -170,11 +166,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev libelf-dev \
-            iproute2 iputils-ping kmod iperf3 jq
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libbpf-dev libssl-dev libelf-dev iproute2 iputils-ping kmod iperf3 jq'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Download build
         uses: actions/download-artifact@v8
@@ -206,35 +201,165 @@ jobs:
   benchmarks:
     name: "perf / benchmarks"
     runs-on: ubuntu-24.04
-    needs: build
     if: ${{ github.event.inputs.run_benchmarks != 'false' }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev libelf-dev \
-            iproute2 iputils-ping kmod iperf3 jq
-
-      - name: Download build
-        uses: actions/download-artifact@v8
+      - uses: ./.github/actions/setup-deps
         with:
-          name: nightly-build
+          packages: 'build-essential cmake ninja-build pkg-config libssl-dev libgtest-dev libgmock-dev jq'
+          cache-key-file: '.github/workflows/nightly.yml'
 
-      - name: Fix permissions
-        run: chmod +x loader/tachyon
-
-      - name: Run throughput benchmark
+      - name: Build benchmarks
         run: |
-          echo "{ \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," > benchmark_result.json
-          echo "  \"commit\": \"${{ github.sha }}\"," >> benchmark_result.json
-          echo "  \"note\": \"Benchmark placeholder - requires full tunnel setup\"" >> benchmark_result.json
-          echo "}" >> benchmark_result.json
-          cat benchmark_result.json
+          cmake -B build/bench -S tests \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_BENCHMARKS=ON \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF \
+            -G Ninja
+          cmake --build build/bench --target bench_crypto -j$(nproc)
+
+      - name: Run crypto benchmarks
+        run: |
+          build/bench/bench_crypto \
+            --benchmark_format=json \
+            --benchmark_out=benchmark_result.json \
+            --benchmark_repetitions=3 \
+            --benchmark_report_aggregates_only=true
+          # Pretty-print summary to log
+          jq '.benchmarks[] | "\(.name): \(.real_time | round) \(.time_unit)"' \
+            benchmark_result.json
+
+      - name: Annotate results to job summary
+        run: |
+          echo "## Crypto Benchmark Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: \`${{ github.sha }}\`  " >> "$GITHUB_STEP_SUMMARY"
+          echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Benchmark | Mean (µs) | CPU (µs) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----------|-----------|----------|" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.benchmarks[]
+            | select(.aggregate_name == "mean" or .aggregate_name == null)
+            | "| \(.name) | \(.real_time | . * 100 | round / 100) | \(.cpu_time | . * 100 | round / 100) |"' \
+            benchmark_result.json >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v8
         with:
           name: benchmark-results
           path: benchmark_result.json
+
+      - name: Store baseline & alert on regression
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: "Tachyon Crypto Benchmarks"
+          tool: googlecpp
+          output-file-path: benchmark_result.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: docs/benchmarks
+          comment-on-alert: true
+          alert-threshold: '110%'
+          fail-on-alert: false
+          summary-always: true
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Extended Sanitizer Run (ASan + UBSan — nightly deep scan)
+  # ════════════════════════════════════════════════════════════════════════
+
+  sanitize-extended:
+    name: "sanitize / extended (ASan+UBSan)"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'clang-18 libssl-dev cmake ninja-build pkg-config libgtest-dev libgmock-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
+
+      - name: Build with sanitizers
+        run: |
+          cmake -B build/san -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_SANITIZE=ON \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF \
+            -G Ninja
+          cmake --build build/san -j$(nproc)
+
+      - name: Run extended sanitizer tests
+        env:
+          ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:detect_leaks=1:check_initialization_order=1:strict_init_order=1:detect_stack_use_after_return=1"
+          UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1:report_error_type=1"
+        run: |
+          mkdir -p build/san/test-results
+          cd build/san && ctest --output-on-failure --timeout 300 \
+            --output-junit test-results/sanitize-nightly.xml
+
+      - name: Upload sanitizer test results
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: sanitize-extended-results
+          path: build/san/test-results/sanitize-nightly.xml
+          if-no-files-found: ignore
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Valgrind Memcheck (catches classes of bugs ASan misses)
+  # ════════════════════════════════════════════════════════════════════════
+
+  valgrind:
+    name: "valgrind / memcheck"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'valgrind libssl-dev cmake ninja-build pkg-config libgtest-dev libgmock-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
+
+      - name: Build (no instrumentation — valgrind needs clean binary)
+        run: |
+          cmake -B build/valgrind -S tests \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF \
+            -G Ninja
+          cmake --build build/valgrind -j$(nproc)
+
+      - name: Run under valgrind memcheck
+        run: |
+          mkdir -p build/valgrind/test-results
+          cd build/valgrind
+
+          # Run each test binary individually under valgrind
+          for binary in test_config test_crypto test_nonce_cache test_utils test_protocol; do
+            if [[ -x "./${binary}" ]]; then
+              echo "=== valgrind: ${binary} ==="
+              valgrind \
+                --tool=memcheck \
+                --error-exitcode=1 \
+                --leak-check=full \
+                --show-leak-kinds=definite,indirect \
+                --track-origins=yes \
+                --suppressions=../../tests/valgrind.supp \
+                --xml=yes \
+                --xml-file="test-results/valgrind-${binary}.xml" \
+                "./${binary}" --gtest_filter=* 2>&1 | tail -20 || true
+            fi
+          done
+
+      - name: Upload valgrind reports
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: valgrind-reports
+          path: build/valgrind/test-results/
+          if-no-files-found: ignore

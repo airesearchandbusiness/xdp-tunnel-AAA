@@ -8,7 +8,10 @@
 # Options:
 #   -DBUILD_FUZZ_TESTS=ON      Build libFuzzer harnesses (requires clang)
 #   -DBUILD_XDP_TESTS=ON       Build XDP test runner (requires libbpf)
+#   -DBUILD_BENCHMARKS=ON      Build Google Benchmark harnesses
 #   -DENABLE_COVERAGE=ON       Enable gcov coverage instrumentation
+#   -DENABLE_SANITIZE=ON       Enable AddressSanitizer + UndefinedBehaviorSanitizer
+#   -DENABLE_TSAN=ON           Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)
 
 cmake_minimum_required(VERSION 3.16)
 project(TachyonTests VERSION 1.1.0 LANGUAGES CXX C)
@@ -18,18 +21,50 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ── Options ──
-option(BUILD_FUZZ_TESTS "Build libFuzzer fuzz test harnesses" OFF)
-option(BUILD_XDP_TESTS "Build XDP/BPF test runner (requires libbpf)" OFF)
-option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+option(BUILD_FUZZ_TESTS  "Build libFuzzer fuzz test harnesses" OFF)
+option(BUILD_XDP_TESTS   "Build XDP/BPF test runner (requires libbpf)" OFF)
+option(BUILD_BENCHMARKS  "Build Google Benchmark harnesses" OFF)
+option(ENABLE_COVERAGE   "Enable code coverage instrumentation" OFF)
+option(ENABLE_SANITIZE   "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_TSAN       "Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)" OFF)
 
 # ── Project root (parent of tests/) ──
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 # ── Coverage flags ──
 if(ENABLE_COVERAGE)
+    if(ENABLE_SANITIZE)
+        message(FATAL_ERROR "ENABLE_COVERAGE and ENABLE_SANITIZE are mutually exclusive")
+    endif()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+endif()
+
+# ── Sanitizer flags ──
+if(ENABLE_SANITIZE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(WARNING "Sanitizers work best with Clang or GCC")
+    endif()
+    if(ENABLE_TSAN)
+        message(FATAL_ERROR "ENABLE_SANITIZE and ENABLE_TSAN are mutually exclusive")
+    endif()
+    set(SANITIZE_FLAGS
+        "-fsanitize=address,undefined"
+        "-fno-omit-frame-pointer"
+        "-fno-sanitize-recover=undefined"
+    )
+    add_compile_options(${SANITIZE_FLAGS})
+    add_link_options(${SANITIZE_FLAGS})
+endif()
+
+# ── ThreadSanitizer flags ──
+if(ENABLE_TSAN)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(WARNING "ThreadSanitizer works best with Clang or GCC")
+    endif()
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
 endif()
 
 # ── Google Test ──
@@ -123,6 +158,35 @@ if(BUILD_XDP_TESTS)
     endif()
 endif()
 
+# ── Google Benchmark harnesses ──
+if(BUILD_BENCHMARKS)
+    FetchContent_Declare(
+        benchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG        v1.8.3
+        GIT_SHALLOW    TRUE
+    )
+    set(BENCHMARK_ENABLE_TESTING    OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_INSTALL_DOCS      OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(benchmark)
+
+    add_executable(bench_crypto benchmarks/bench_crypto.cpp)
+    target_link_libraries(bench_crypto PRIVATE
+        tachyon_core
+        benchmark::benchmark_main
+    )
+    target_include_directories(bench_crypto PRIVATE
+        ${PROJECT_ROOT}/loader
+        ${PROJECT_ROOT}/src
+    )
+    target_compile_definitions(bench_crypto PRIVATE
+        TACHYON_VERSION="bench"
+        TACHYON_NO_BPF
+    )
+    target_compile_options(bench_crypto PRIVATE -O3 -Wall)
+endif()
+
 # ── Fuzz Tests (requires clang + libFuzzer) ──
 if(BUILD_FUZZ_TESTS)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -148,6 +212,9 @@ endif()
 message(STATUS "")
 message(STATUS "Tachyon Test Suite Configuration:")
 message(STATUS "  Coverage:    ${ENABLE_COVERAGE}")
+message(STATUS "  ASan+UBSan:  ${ENABLE_SANITIZE}")
+message(STATUS "  TSan:        ${ENABLE_TSAN}")
 message(STATUS "  XDP tests:   ${BUILD_XDP_TESTS}")
 message(STATUS "  Fuzz tests:  ${BUILD_FUZZ_TESTS}")
+message(STATUS "  Benchmarks:  ${BUILD_BENCHMARKS}")
 message(STATUS "")

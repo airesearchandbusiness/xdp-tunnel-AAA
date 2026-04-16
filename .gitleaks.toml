@@ -1,14 +1,34 @@
 # Tachyon XDP Tunnel - Gitleaks Configuration
+#
+# Configures secret scanning to reduce false positives for test fixtures
+# and example configurations that intentionally contain synthetic key material.
+# Uses the gitleaks v8 TOML format.
+
 title = "Tachyon Gitleaks Config"
 
-[allowlist]
-  description = "Allow test data and example configs"
-  paths = [
-    '''tests/''',
-    '''tun\.conf\.example''',
-    '''\.gitleaks\.toml''',
-  ]
-  # Allow repeated-character hex strings used as dummy test keys
-  regexes = [
-    '''(a{16,}|b{16,}|c{16,}|d{16,}|e{16,}|f{16,}|0{16,}|1{16,})''',
-  ]
+[extend]
+# Inherit the full upstream default ruleset and extend it below
+useDefault = true
+
+# ── Global allowlists ────────────────────────────────────────────────────────
+
+[[allowlists]]
+description = "Test fixtures, fuzz corpus, and example configs contain synthetic keys"
+paths = [
+  '''tests/''',
+  '''tun\.conf\.example$''',
+  '''\.gitleaks\.toml$''',
+]
+
+[[allowlists]]
+description = "Repeated-character hex strings are dummy test key material, not secrets"
+regexes = [
+  # Patterns like aaaa...aaaa, 0101...0101 used as deterministic test vectors
+  '''(a{16,}|b{16,}|c{16,}|d{16,}|e{16,}|f{16,}|0{16,}|1{16,}|[0-9a-f]{2}){16,}''',
+]
+paths = [
+  '''tests/unit/test_crypto\.cpp$''',
+  '''tests/unit/test_config\.cpp$''',
+  '''tests/unit/test_protocol\.cpp$''',
+  '''tests/fuzz/corpus/''',
+]

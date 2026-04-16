@@ -454,3 +454,129 @@ TEST_F(ConfigTest, ParseConfigWithUtf8Comment) {
     TunnelConfig cfg = parse_config(path);
     EXPECT_TRUE(validate_config(cfg));
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Tunnel name sanitization - block shell metacharacters, enforce IFNAMSIZ
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST_F(ConfigTest, TunnelNameRejectsShellMetachars) {
+    EXPECT_EQ(tunnel_name_from_conf("; rm -rf /.conf"), "");
+}
+
+TEST_F(ConfigTest, TunnelNameRejectsSpaces) {
+    EXPECT_EQ(tunnel_name_from_conf("my tunnel.conf"), "");
+}
+
+TEST_F(ConfigTest, TunnelNameRejectsDollarSign) {
+    EXPECT_EQ(tunnel_name_from_conf("$(whoami).conf"), "");
+}
+
+TEST_F(ConfigTest, TunnelNameRejectsBacktick) {
+    EXPECT_EQ(tunnel_name_from_conf("`id`.conf"), "");
+}
+
+TEST_F(ConfigTest, TunnelNameRejectsPipe) {
+    EXPECT_EQ(tunnel_name_from_conf("test|evil.conf"), "");
+}
+
+TEST_F(ConfigTest, TunnelNameAcceptsHyphenUnderscore) {
+    EXPECT_EQ(tunnel_name_from_conf("my-tun_1.conf"), "my-tun_1");
+}
+
+TEST_F(ConfigTest, TunnelNameAcceptsAlphanumeric) {
+    EXPECT_EQ(tunnel_name_from_conf("tunnel42.conf"), "tunnel42");
+}
+
+TEST_F(ConfigTest, TunnelNameTooLong) {
+    /* 11 chars exceeds the IFNAMSIZ-derived 10-char limit */
+    EXPECT_EQ(tunnel_name_from_conf("abcdefghijk.conf"), "");
+}
+
+TEST_F(ConfigTest, TunnelNameMaxLength) {
+    /* Exactly 10 chars is accepted */
+    EXPECT_EQ(tunnel_name_from_conf("abcdefghij.conf"), "abcdefghij");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * IP / MAC semantic validation - reject reserved addresses
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST_F(ConfigTest, ValidateLoopbackEndpointIP) {
+    auto path = write_config(
+        "loopback.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 127.0.0.1\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(validate_config(cfg));
+}
+
+TEST_F(ConfigTest, ValidateBroadcastEndpointIP) {
+    auto path = write_config(
+        "broadcast.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 255.255.255.255\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(validate_config(cfg));
+}
+
+TEST_F(ConfigTest, ValidateLinkLocalEndpointIP) {
+    auto path = write_config(
+        "linklocal.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 169.254.1.1\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(validate_config(cfg));
+}
+
+TEST_F(ConfigTest, ValidateBroadcastMAC) {
+    auto path = write_config(
+        "bcast_mac.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 192.168.1.20\n"
+        "EndpointMAC = ff:ff:ff:ff:ff:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(validate_config(cfg));
+}
+
+TEST_F(ConfigTest, ValidateZeroMAC) {
+    auto path = write_config(
+        "zero_mac.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 192.168.1.20\n"
+        "EndpointMAC = 00:00:00:00:00:00\n"
+        "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(validate_config(cfg));
+}

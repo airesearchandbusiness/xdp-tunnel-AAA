@@ -9,6 +9,8 @@
 #define TACHYON_CTRL_H
 
 /* ── Standard Library ── */
+#include <cassert>
+#include <cctype>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
@@ -27,8 +29,11 @@
 #include <unistd.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <net/if.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <linux/limits.h>
 
 /* ── BPF (optional - define TACHYON_NO_BPF to exclude for unit tests) ── */
@@ -269,7 +274,7 @@ void command_show(const std::string &conf_file);
  * Function Declarations - network.cpp
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t session_id,
+void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t session_id,
                        uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac);
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -280,6 +285,10 @@ inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len) {
     if (hex.size() != bin_len * 2)
         return false;
     for (size_t i = 0; i < bin_len; i++) {
+        const auto hi = static_cast<unsigned char>(hex[i * 2]);
+        const auto lo = static_cast<unsigned char>(hex[i * 2 + 1]);
+        if (!isxdigit(hi) || !isxdigit(lo))
+            return false; /* reject non-hex characters early */
         if (sscanf(&hex[i * 2], "%2hhx", &bin[i]) != 1)
             return false;
     }
@@ -292,16 +301,96 @@ inline bool parse_mac(const std::string &str, uint8_t mac[6]) {
 }
 
 inline std::string trim(std::string s) {
-    s.erase(0, s.find_first_not_of(" \t\r\n"));
+    const auto first = s.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+        return {}; /* all whitespace */
+    s.erase(0, first);
+    /* find_last_not_of cannot return npos here: s now starts with non-whitespace */
     s.erase(s.find_last_not_of(" \t\r\n") + 1);
     return s;
 }
 
-inline bool run_cmd(const std::string &cmd) {
-    int ret = system(cmd.c_str());
-    if (ret != 0)
-        LOG_WARN("Command failed (exit %d): %s", ret, cmd.c_str());
-    return ret == 0;
+/*
+ * run_cmd - Execute a shell-style command via fork/execvp.
+ *
+ * Security: uses fork+execvp instead of system() to prevent shell injection.
+ * The command string is whitespace-tokenised into an argv array; no shell
+ * interprets the result, so metacharacters ($(), ;, `, |, &&, >, etc.) pass
+ * through as literal argv entries rather than being interpreted.
+ *
+ * Limitations: callers must not use shell redirection (2>/dev/null), pipes,
+ * or quoted arguments containing spaces. All in-tree callers comply.
+ *
+ * Set quiet=true to silence child stdout/stderr and suppress the failure
+ * LOG_WARN — useful for best-effort teardown paths.
+ */
+inline bool run_cmd(const std::string &cmd, bool quiet = false) {
+    std::vector<std::string> tokens;
+    std::istringstream iss(cmd);
+    for (std::string tok; iss >> tok;)
+        tokens.push_back(std::move(tok));
+    if (tokens.empty())
+        return false;
+
+    std::vector<char *> argv;
+    argv.reserve(tokens.size() + 1);
+    for (auto &t : tokens)
+        argv.push_back(t.data());
+    argv.push_back(nullptr);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        LOG_ERR("fork() failed: %s", strerror(errno));
+        return false;
+    }
+    if (pid == 0) {
+        if (quiet) {
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) {
+                dup2(devnull, STDOUT_FILENO);
+                dup2(devnull, STDERR_FILENO);
+                close(devnull);
+            }
+        }
+        execvp(argv[0], argv.data());
+        _exit(127); /* execvp only returns on failure */
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        LOG_ERR("waitpid() failed: %s", strerror(errno));
+        return false;
+    }
+    bool ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    if (!ok && !quiet)
+        LOG_WARN("Command failed (status %d): %s", status, cmd.c_str());
+    return ok;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Compile-Time Cross-Structure Verification
+ *
+ * Ensure userspace mirror structs remain identical in size to their
+ * common.h counterparts so BPF map reads/writes never silently corrupt.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static_assert(sizeof(userspace_config) == sizeof(struct tachyon_config),
+              "userspace_config layout must match tachyon_config");
+static_assert(sizeof(userspace_key_init) == sizeof(struct tachyon_key_init),
+              "userspace_key_init layout must match tachyon_key_init");
+static_assert(sizeof(userspace_stats) == sizeof(struct tachyon_stats),
+              "userspace_stats layout must match tachyon_stats");
+
+/* Control-plane message structs: userspace #pragma pack(1) vs common.h __attribute__((packed)) */
+static_assert(sizeof(MsgInit) == sizeof(struct tachyon_msg_init),
+              "MsgInit must match tachyon_msg_init wire size");
+static_assert(sizeof(MsgCookie) == sizeof(struct tachyon_msg_cookie),
+              "MsgCookie must match tachyon_msg_cookie wire size");
+static_assert(sizeof(MsgAuth) == sizeof(struct tachyon_msg_auth),
+              "MsgAuth must match tachyon_msg_auth wire size");
+static_assert(sizeof(MsgFinish) == sizeof(struct tachyon_msg_finish),
+              "MsgFinish must match tachyon_msg_finish wire size");
+static_assert(sizeof(MsgKeepalive) == sizeof(struct tachyon_msg_keepalive),
+              "MsgKeepalive must match tachyon_msg_keepalive wire size");
 
 #endif /* TACHYON_CTRL_H */

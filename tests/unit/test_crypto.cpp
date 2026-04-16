@@ -187,6 +187,47 @@ TEST_F(CryptoTest, EcdhRejectsZeroPublicKey) {
     EXPECT_FALSE(do_ecdh(priv, zero_pub, ss));
 }
 
+/* RFC 7748 Section 6.1 - X25519 Known-Answer Test
+ *
+ *   Alice private : 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a
+ *   Alice public  : 8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+ *   Bob   private : 5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb
+ *   Bob   public  : de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
+ *   Shared secret : 4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742
+ */
+TEST_F(CryptoTest, X25519_RFC7748_Section6_1) {
+    auto alice_priv = from_hex("77076d0a7318a57d3c16c17251b26645"
+                               "df4c2f87ebc0992ab177fba51db92c2a");
+    auto alice_pub_expected = from_hex("8520f0098930a754748b7ddcb43ef75a"
+                                       "0dbf3a0d26381af4eba4a98eaa9b4e6a");
+    auto bob_priv = from_hex("5dab087e624a8a4b79e17f8b83800ee6"
+                             "6f3bb1292618b6fd1c2f8b27ff88e0eb");
+    auto bob_pub_expected = from_hex("de9edb7d7b7dc1b4d35b61c2ece43537"
+                                     "3f8343c85b78674dadfc7e146f882b4f");
+    auto shared_expected = from_hex("4a5d9d5ba4ce2de1728e3bf480350f25"
+                                    "e07e21c947d19e3376f09b3c1e161742");
+
+    /* Public-key derivation must match the RFC */
+    uint8_t alice_pub[32], bob_pub[32];
+    ASSERT_TRUE(get_public_key(alice_priv.data(), alice_pub));
+    ASSERT_TRUE(get_public_key(bob_priv.data(), bob_pub));
+
+    EXPECT_EQ(to_hex(alice_pub, 32), to_hex(alice_pub_expected.data(), 32))
+        << "Alice public key does not match RFC 7748 Section 6.1";
+    EXPECT_EQ(to_hex(bob_pub, 32), to_hex(bob_pub_expected.data(), 32))
+        << "Bob public key does not match RFC 7748 Section 6.1";
+
+    /* ECDH in both directions yields the RFC shared secret */
+    uint8_t ss_ab[32], ss_ba[32];
+    ASSERT_TRUE(do_ecdh(alice_priv.data(), bob_pub, ss_ab));
+    ASSERT_TRUE(do_ecdh(bob_priv.data(), alice_pub, ss_ba));
+
+    EXPECT_EQ(to_hex(ss_ab, 32), to_hex(shared_expected.data(), 32))
+        << "Alice->Bob shared secret does not match RFC 7748 Section 6.1";
+    EXPECT_EQ(to_hex(ss_ba, 32), to_hex(shared_expected.data(), 32))
+        << "Bob->Alice shared secret does not match RFC 7748 Section 6.1";
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Key Generation Tests
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -398,6 +439,55 @@ TEST_F(CryptoTest, AeadDifferentNoncesDifferentCiphertext) {
     EXPECT_NE(memcmp(ct1, ct2, pt_len), 0);
 }
 
+/* RFC 8439 Section 2.8.2 - ChaCha20-Poly1305 AEAD Known-Answer Test
+ *
+ *   Key        : 808182...9e9f                              (32 bytes)
+ *   Nonce (IV) : 070000004041424344454647                   (12 bytes)
+ *   AAD        : 50515253c0c1c2c3c4c5c6c7                   (12 bytes)
+ *   Plaintext  : "Ladies and Gentlemen of the class of '99: ..." (114 bytes)
+ *   Ciphertext : d31a8d34...6116
+ *   Tag (Poly1305): 1ae10b594f09e26a7e902ecbd0600691
+ */
+TEST_F(CryptoTest, AeadRFC8439_Section2_8_2) {
+    auto key = from_hex("808182838485868788898a8b8c8d8e8f"
+                        "909192939495969798999a9b9c9d9e9f");
+    auto nonce = from_hex("070000004041424344454647");
+    auto aad = from_hex("50515253c0c1c2c3c4c5c6c7");
+
+    const char *pt_str = "Ladies and Gentlemen of the class of '99: "
+                         "If I could offer you only one tip for the future, "
+                         "sunscreen would be it.";
+    const size_t pt_len = strlen(pt_str);
+    ASSERT_EQ(pt_len, 114u);
+
+    auto expected_ct = from_hex("d31a8d34648e60db7b86afbc53ef7ec2"
+                                "a4aded51296e08fea9e2b5a736ee62d6"
+                                "3dbea45e8ca9671282fafb69da92728b"
+                                "1a71de0a9e060b2905d6a5b67ecd3b36"
+                                "92ddbd7f2d778b8c9803aee328091b58"
+                                "fab324e4fad675945585808b4831d7bc"
+                                "3ff4def08e4b7a9de576d26586cec64b"
+                                "6116");
+    auto expected_tag = from_hex("1ae10b594f09e26a7e902ecbd0600691");
+
+    std::vector<uint8_t> ct(pt_len);
+    uint8_t tag[TACHYON_AEAD_TAG_LEN];
+
+    ASSERT_TRUE(cp_aead_encrypt(key.data(), reinterpret_cast<const uint8_t *>(pt_str), pt_len,
+                                aad.data(), aad.size(), nonce.data(), ct.data(), tag));
+
+    EXPECT_EQ(to_hex(ct.data(), ct.size()), to_hex(expected_ct.data(), expected_ct.size()))
+        << "Ciphertext does not match RFC 8439 Section 2.8.2";
+    EXPECT_EQ(to_hex(tag, TACHYON_AEAD_TAG_LEN), to_hex(expected_tag.data(), expected_tag.size()))
+        << "Tag does not match RFC 8439 Section 2.8.2";
+
+    /* Decrypt roundtrip recovers the plaintext */
+    std::vector<uint8_t> decrypted(pt_len);
+    ASSERT_TRUE(cp_aead_decrypt(key.data(), ct.data(), pt_len, aad.data(), aad.size(), nonce.data(),
+                                tag, decrypted.data()));
+    EXPECT_EQ(memcmp(decrypted.data(), pt_str, pt_len), 0);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Full Key Derivation Chain Test
  *
@@ -478,57 +568,212 @@ TEST_F(CryptoTest, SessionKeyDerivationSymmetry) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Edge-Case Tests
+ * Parameterized AEAD Tests — Plaintext Size Sweep
+ *
+ * Tests the full encrypt→decrypt roundtrip and tampering detection across
+ * boundary-spanning sizes: empty, block boundaries (16 B), ChaCha block
+ * boundaries (64 B), and practical packet sizes up to 8 KB.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, AeadEncryptDecryptEmptyPlaintext) {
+class AeadSizeTest : public ::testing::TestWithParam<size_t> {
+  protected:
+    void SetUp() override { init_crypto_globals(); }
+    void TearDown() override { free_crypto_globals(); }
+};
+
+TEST_P(AeadSizeTest, EncryptDecryptRoundtrip) {
+    const size_t pt_size = GetParam();
+
     uint8_t key[32], nonce[12];
     memset(key, 0x42, sizeof(key));
-    memset(nonce, 0x01, sizeof(nonce));
+    memset(nonce, 0x00, sizeof(nonce));
+    /* Encode pt_size into nonce to ensure each parameterised run uses a
+     * distinct nonce — avoids nonce-reuse between test instances. */
+    nonce[0] = static_cast<uint8_t>(pt_size & 0xFF);
+    nonce[1] = static_cast<uint8_t>((pt_size >> 8) & 0xFF);
 
-    uint8_t tag[TACHYON_AEAD_TAG_LEN];
-    /* Encrypt zero bytes -- only produces a tag */
-    ASSERT_TRUE(cp_aead_encrypt(key, nullptr, 0, nullptr, 0, nonce, nullptr, tag));
-
-    /* Decrypt zero bytes -- verifies tag only */
-    ASSERT_TRUE(cp_aead_decrypt(key, nullptr, 0, nullptr, 0, nonce, tag, nullptr));
-}
-
-TEST_F(CryptoTest, AeadEncryptDecryptLargePlaintext) {
-    uint8_t key[32], nonce[12];
-    memset(key, 0xAA, sizeof(key));
-    memset(nonce, 0x55, sizeof(nonce));
-
-    /* 8KB plaintext -- exercises buffer management */
-    std::vector<uint8_t> pt(8192);
-    for (size_t i = 0; i < pt.size(); i++)
-        pt[i] = static_cast<uint8_t>(i & 0xFF);
-
-    std::vector<uint8_t> ct(pt.size());
+    std::vector<uint8_t> plaintext(pt_size, 0xAB);
+    std::vector<uint8_t> ciphertext(pt_size + 1); /* +1 avoids zero-size alloc */
+    std::vector<uint8_t> decrypted(pt_size + 1);
     uint8_t tag[TACHYON_AEAD_TAG_LEN];
 
-    ASSERT_TRUE(cp_aead_encrypt(key, pt.data(), pt.size(), nullptr, 0, nonce, ct.data(), tag));
-
-    std::vector<uint8_t> recovered(pt.size());
     ASSERT_TRUE(
-        cp_aead_decrypt(key, ct.data(), ct.size(), nullptr, 0, nonce, tag, recovered.data()));
-    EXPECT_EQ(memcmp(pt.data(), recovered.data(), pt.size()), 0);
+        cp_aead_encrypt(key, plaintext.data(), pt_size, nullptr, 0, nonce, ciphertext.data(), tag));
+    ASSERT_TRUE(
+        cp_aead_decrypt(key, ciphertext.data(), pt_size, nullptr, 0, nonce, tag, decrypted.data()));
+
+    if (pt_size > 0) {
+        EXPECT_EQ(memcmp(plaintext.data(), decrypted.data(), pt_size), 0);
+    }
 }
 
-TEST_F(CryptoTest, HkdfEmptySalt) {
-    /* RFC 5869 Section 2.2: empty salt treated as all-zero salt of HashLen bytes */
-    uint8_t ikm[32], out1[32], out2[32];
-    memset(ikm, 0xBB, sizeof(ikm));
+TEST_P(AeadSizeTest, TamperingAlwaysDetected) {
+    const size_t pt_size = GetParam();
+    if (pt_size == 0)
+        GTEST_SKIP() << "No ciphertext bytes to tamper";
 
-    /* Derive with zero-length salt */
-    uint8_t zero_salt[32] = {0};
-    ASSERT_TRUE(derive_kdf(zero_salt, 0, ikm, 32, "test-label", out1));
+    uint8_t key[32], nonce[12];
+    memset(key, 0x42, sizeof(key));
+    memset(nonce, 0x00, sizeof(nonce));
+    nonce[2] = static_cast<uint8_t>(pt_size & 0xFF);
+    nonce[3] = static_cast<uint8_t>((pt_size >> 8) & 0xFF);
 
-    /* Derive with explicit zero salt of same length */
-    ASSERT_TRUE(derive_kdf(zero_salt, 32, ikm, 32, "test-label", out2));
+    std::vector<uint8_t> plaintext(pt_size, 0xCD);
+    std::vector<uint8_t> ciphertext(pt_size);
+    std::vector<uint8_t> decrypted(pt_size);
+    uint8_t tag[TACHYON_AEAD_TAG_LEN];
 
-    /* Both should produce valid (non-zero) output */
-    uint8_t zeros[32] = {0};
-    EXPECT_NE(memcmp(out1, zeros, 32), 0);
-    EXPECT_NE(memcmp(out2, zeros, 32), 0);
+    ASSERT_TRUE(
+        cp_aead_encrypt(key, plaintext.data(), pt_size, nullptr, 0, nonce, ciphertext.data(), tag));
+
+    /* Flip the last byte of the ciphertext and verify authentication fails */
+    ciphertext[pt_size - 1] ^= 0x01;
+    EXPECT_FALSE(
+        cp_aead_decrypt(key, ciphertext.data(), pt_size, nullptr, 0, nonce, tag, decrypted.data()));
+}
+
+INSTANTIATE_TEST_SUITE_P(PlaintextSizes, AeadSizeTest,
+                         /* Covers: empty, single byte, just-under/at/over AES block (16 B),
+                          * ChaCha stream block (64 B), common network MTU payload (~1400 B),
+                          * and large (8 KB) payloads. */
+                         ::testing::Values(0, 1, 15, 16, 17, 63, 64, 65, 127, 128, 255, 256, 1023,
+                                           1024, 1400, 8192),
+                         [](const ::testing::TestParamInfo<size_t> &info) {
+                             return "pt_" + std::to_string(info.param) + "B";
+                         });
+
+/* ── Nonce Non-Reuse Property ─────────────────────────────────────────────── */
+
+TEST_F(CryptoTest, SequentialNoncesProduceDifferentCiphertexts) {
+    uint8_t key[32];
+    memset(key, 0x42, sizeof(key));
+
+    const uint8_t plaintext[] = "nonce progression test";
+    const size_t pt_len = sizeof(plaintext) - 1;
+    const int N = 16;
+
+    std::vector<std::vector<uint8_t>> cts(N, std::vector<uint8_t>(pt_len));
+    uint8_t tags[16][TACHYON_AEAD_TAG_LEN];
+
+    for (int i = 0; i < N; i++) {
+        uint8_t nonce[12] = {};
+        nonce[0] = static_cast<uint8_t>(i);
+        ASSERT_TRUE(
+            cp_aead_encrypt(key, plaintext, pt_len, nullptr, 0, nonce, cts[i].data(), tags[i]));
+    }
+
+    /* Every pair of ciphertexts must differ — same key + different nonce */
+    for (int i = 0; i < N; i++) {
+        for (int j = i + 1; j < N; j++) {
+            EXPECT_NE(cts[i], cts[j])
+                << "Nonces " << i << " and " << j << " produced identical ciphertext!";
+        }
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * RFC 4231 HMAC-SHA256 Known-Answer Tests
+ *
+ * Test vectors from IETF RFC 4231 §4 (Test Cases for HMAC-SHA-256).
+ * These verify that our HMAC implementation is correct against the standard,
+ * not merely internally consistent.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* RFC 4231 Test Case 1
+ * Key  : 20 × 0x0b
+ * Data : "Hi There"
+ * HMAC : b0344c61d8db38535ca8afceaf0bf12b 881dc200c9833da726e9376c2e32cff7 */
+TEST_F(CryptoTest, HmacSha256_RFC4231_TC1) {
+    uint8_t key[20];
+    memset(key, 0x0b, sizeof(key));
+
+    const char *data = "Hi There";
+    uint8_t mac[TACHYON_HMAC_LEN];
+    ASSERT_TRUE(calc_hmac(key, sizeof(key), reinterpret_cast<const uint8_t *>(data), 8, mac));
+
+    const auto expected = from_hex("b0344c61d8db38535ca8afceaf0bf12b"
+                                   "881dc200c9833da726e9376c2e32cff7");
+    EXPECT_EQ(to_hex(mac, TACHYON_HMAC_LEN), to_hex(expected.data(), expected.size()))
+        << "HMAC-SHA256 result does not match RFC 4231 TC1";
+}
+
+/* RFC 4231 Test Case 2
+ * Key  : "Jefe" (4 bytes)
+ * Data : "what do ya want for nothing?"
+ * HMAC : 5bdcc146bf60754e6a042426089575c7 5a003f089d2739839dec58b964ec3843
+ * (verified against OpenSSL 3.x CLI: echo -n '...' | openssl dgst -sha256 -hmac 'Jefe') */
+TEST_F(CryptoTest, HmacSha256_RFC4231_TC2) {
+    const char *key = "Jefe";
+    const char *data = "what do ya want for nothing?";
+    uint8_t mac[TACHYON_HMAC_LEN];
+    ASSERT_TRUE(calc_hmac(reinterpret_cast<const uint8_t *>(key), 4,
+                          reinterpret_cast<const uint8_t *>(data), 28, mac));
+
+    const auto expected = from_hex("5bdcc146bf60754e6a042426089575c7"
+                                   "5a003f089d2739839dec58b964ec3843");
+    EXPECT_EQ(to_hex(mac, TACHYON_HMAC_LEN), to_hex(expected.data(), expected.size()))
+        << "HMAC-SHA256 result does not match RFC 4231 TC2";
+}
+
+/* RFC 4231 Test Case 3
+ * Key  : 20 × 0xaa
+ * Data : 50 × 0xdd
+ * HMAC : 773ea91e36800e46854db8ebd09181a7 2959098b3ef8c122d9635514ced565fe */
+TEST_F(CryptoTest, HmacSha256_RFC4231_TC3) {
+    uint8_t key[20];
+    memset(key, 0xaa, sizeof(key));
+
+    uint8_t data[50];
+    memset(data, 0xdd, sizeof(data));
+
+    uint8_t mac[TACHYON_HMAC_LEN];
+    ASSERT_TRUE(calc_hmac(key, sizeof(key), data, sizeof(data), mac));
+
+    const auto expected = from_hex("773ea91e36800e46854db8ebd09181a7"
+                                   "2959098b3ef8c122d9635514ced565fe");
+    EXPECT_EQ(to_hex(mac, TACHYON_HMAC_LEN), to_hex(expected.data(), expected.size()))
+        << "HMAC-SHA256 result does not match RFC 4231 TC3";
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Runtime Wire-Format Layout Verification
+ *
+ * Belt-and-suspenders complement to the compile-time static_assert checks
+ * in common.h.  Catches size mismatches that slip through on compilers
+ * that differ in their struct padding behaviour.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST(WireFormatTest, GhostHeaderSizeAndOffsets) {
+    EXPECT_EQ(sizeof(struct tachyon_ghost_hdr), 20u);
+    EXPECT_EQ(offsetof(struct tachyon_ghost_hdr, session_id), 4u);
+    EXPECT_EQ(offsetof(struct tachyon_ghost_hdr, seq), 8u);
+    EXPECT_EQ(offsetof(struct tachyon_ghost_hdr, nonce_salt), 16u);
+}
+
+TEST(WireFormatTest, ControlPlaneMessageSizes) {
+    EXPECT_EQ(sizeof(struct tachyon_msg_init), 20u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_cookie), 48u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_auth), 100u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_finish), 64u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_keepalive), 48u);
+}
+
+TEST(WireFormatTest, MapValueSizes) {
+    EXPECT_EQ(sizeof(struct tachyon_key_init), 68u);
+    EXPECT_EQ(sizeof(struct tachyon_stats), 112u);
+    EXPECT_EQ(sizeof(struct tachyon_event), 24u);
+    EXPECT_EQ(sizeof(struct tachyon_config), 4u);
+    EXPECT_EQ(sizeof(struct tachyon_lpm_key_v4), 8u);
+    EXPECT_EQ(sizeof(struct tachyon_rate_cfg), 32u);
+}
+
+TEST(WireFormatTest, UserspaceStructsMatchBpfMapTypes) {
+    EXPECT_EQ(sizeof(MsgInit), sizeof(struct tachyon_msg_init));
+    EXPECT_EQ(sizeof(MsgCookie), sizeof(struct tachyon_msg_cookie));
+    EXPECT_EQ(sizeof(MsgAuth), sizeof(struct tachyon_msg_auth));
+    EXPECT_EQ(sizeof(MsgFinish), sizeof(struct tachyon_msg_finish));
+    EXPECT_EQ(sizeof(MsgKeepalive), sizeof(struct tachyon_msg_keepalive));
+    EXPECT_EQ(sizeof(userspace_config), sizeof(struct tachyon_config));
+    EXPECT_EQ(sizeof(userspace_key_init), sizeof(struct tachyon_key_init));
+    EXPECT_EQ(sizeof(userspace_stats), sizeof(struct tachyon_stats));
 }

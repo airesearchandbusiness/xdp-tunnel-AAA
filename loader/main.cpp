@@ -78,6 +78,12 @@ int main(int argc, char **argv) {
 
     std::string conf = argv[2];
 
+    /* up/down/show all require root: BPF map ops, network namespace, sysctl */
+    if (geteuid() != 0) {
+        LOG_ERR("Command '%s' requires root privileges (try sudo)", cmd.c_str());
+        return 1;
+    }
+
     if (cmd == "up")
         command_up(conf);
     else if (cmd == "down")

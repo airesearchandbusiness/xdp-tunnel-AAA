@@ -6,6 +6,26 @@
 #include "tachyon.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Tunnel Name Validation
+ *
+ * Tunnel names are used as components in Linux interface names ("t_<name>_in")
+ * and BPF filesystem paths. They must be restricted to a safe character set
+ * to prevent shell injection (via run_cmd callers) and stay within IFNAMSIZ.
+ *
+ * IFNAMSIZ=16; wrapper "t_<name>_in" consumes 5 static chars + null → 10 max.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static bool is_valid_tunnel_name(const std::string &name) {
+    if (name.empty() || name.size() > 10)
+        return false;
+    for (char c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-')
+            return false;
+    }
+    return true;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * INI Config Parser
  *
  * Parses WireGuard-style INI files with [Section] headers.
@@ -136,19 +156,34 @@ bool validate_config(const TunnelConfig &cfg) {
     check(!cfg.peer_endpoint_mac.empty(), "Peer.EndpointMAC is required (e.g. aa:bb:cc:dd:ee:ff)");
     check(!cfg.peer_inner_ip.empty(), "Peer.InnerIP is required (e.g. 10.8.0.2)");
     check(cfg.listen_port > 0 && cfg.listen_port < 65536, "ListenPort must be 1-65535");
+    check(is_valid_tunnel_name(cfg.name), "Tunnel name must be 1-10 chars of [a-zA-Z0-9_-]");
 
-    /* Validate MAC format */
+    /* Validate MAC format + reject all-zero and broadcast */
     if (!cfg.peer_endpoint_mac.empty()) {
         uint8_t mac[6];
-        check(parse_mac(cfg.peer_endpoint_mac, mac),
-              "Peer.EndpointMAC format invalid (expected xx:xx:xx:xx:xx:xx)");
+        if (!parse_mac(cfg.peer_endpoint_mac, mac)) {
+            check(false, "Peer.EndpointMAC format invalid (expected xx:xx:xx:xx:xx:xx)");
+        } else {
+            bool all_zero = (mac[0] | mac[1] | mac[2] | mac[3] | mac[4] | mac[5]) == 0;
+            bool all_ff = (mac[0] & mac[1] & mac[2] & mac[3] & mac[4] & mac[5]) == 0xFF;
+            check(!all_zero, "Peer.EndpointMAC must not be 00:00:00:00:00:00");
+            check(!all_ff, "Peer.EndpointMAC must not be broadcast ff:ff:ff:ff:ff:ff");
+        }
     }
 
-    /* Validate IP format */
+    /* Validate IP format + reject loopback, broadcast, link-local, 0.0.0.0 */
     if (!cfg.peer_endpoint_ip.empty()) {
         struct in_addr tmp;
-        check(inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &tmp) == 1,
-              "Peer.EndpointIP is not a valid IPv4 address");
+        if (inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &tmp) != 1) {
+            check(false, "Peer.EndpointIP is not a valid IPv4 address");
+        } else {
+            uint32_t ip_host = ntohl(tmp.s_addr);
+            check((ip_host >> 24) != 127, "Peer.EndpointIP must not be loopback (127.x.x.x)");
+            check(ip_host != 0xFFFFFFFFu, "Peer.EndpointIP must not be 255.255.255.255");
+            check((ip_host >> 16) != 0xA9FEu,
+                  "Peer.EndpointIP must not be link-local (169.254.x.x)");
+            check(ip_host != 0, "Peer.EndpointIP must not be 0.0.0.0");
+        }
     }
 
     return ok;
@@ -170,6 +205,11 @@ std::string tunnel_name_from_conf(const std::string &conf_path) {
     p = name.find('.');
     if (p != std::string::npos)
         name = name.substr(0, p);
+
+    if (!is_valid_tunnel_name(name)) {
+        LOG_ERR("Tunnel name '%s' invalid: allowed [a-zA-Z0-9_-], max 10 chars", name.c_str());
+        return "";
+    }
 
     return name;
 }

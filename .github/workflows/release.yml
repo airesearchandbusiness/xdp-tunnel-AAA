@@ -79,6 +79,10 @@ jobs:
     name: "build-release"
     runs-on: ubuntu-24.04
     needs: validate
+    permissions:
+      id-token: write      # mint OIDC token for Sigstore signing
+      attestations: write  # upload SLSA attestation bundle to GitHub
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -93,7 +97,9 @@ jobs:
         run: |
           VERSION=${{ needs.validate.outputs.version }}
           make xdp
-          make loader CXXFLAGS="-O2 -Wall -Wextra -std=c++17 -DTACHYON_VERSION=\"${VERSION}\" -DNDEBUG"
+          make loader \
+            CXXFLAGS="-O2 -Wall -Wextra -std=c++17 -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -Wformat -Wformat-security -DTACHYON_VERSION=\"${VERSION}\"" \
+            LDFLAGS="-Wl,-z,relro,-z,now -Wl,-z,noexecstack -pie -lbpf -lcrypto -lelf -lz"
 
       - name: Create binary tarball
         run: |
@@ -135,6 +141,15 @@ jobs:
             "tachyon-crypto-${VERSION}-dkms.tar.gz" \
             > "SHA256SUMS-${VERSION}.txt"
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom.spdx.json
+          upload-artifact: false
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v8
         with:
@@ -143,6 +158,16 @@ jobs:
             tachyon-*.tar.gz
             tachyon-crypto-*.tar.gz
             SHA256SUMS-*.txt
+            sbom.spdx.json
+
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            tachyon-*-linux-amd64.tar.gz
+            tachyon-crypto-*-dkms.tar.gz
+            SHA256SUMS-*.txt
+            sbom.spdx.json
 
   # ════════════════════════════════════════════════════════════════════════
   # Create GitHub Release
@@ -190,6 +215,7 @@ jobs:
             tachyon-*.tar.gz
             tachyon-crypto-*.tar.gz
             SHA256SUMS-*.txt
+            sbom.spdx.json
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
