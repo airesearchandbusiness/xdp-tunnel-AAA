@@ -137,6 +137,30 @@ test-sanitize:
 	@cd build/sanitize && ctest --output-on-failure --timeout 60
 	@echo "[TEST] Sanitizer tests complete."
 
+# Run XDP/BPF tests (requires root and kernel module)
+test-xdp: xdp
+	@echo "\n[TEST] Building and running XDP tests..."
+	@cmake -B build/tests -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DBUILD_XDP_TESTS=ON \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/tests --target xdp_test_runner -j$$(nproc) > /dev/null 2>&1
+	sudo build/tests/xdp_test_runner
+	@echo "[TEST] XDP tests complete."
+
+# Run integration tests (requires root and kernel module)
+test-integration: loader
+	@echo "\n[TEST] Running integration tests..."
+	@chmod +x tests/integration/*.sh
+	sudo tests/integration/test_tunnel_e2e.sh
+	@echo "[TEST] Integration tests complete."
+
+# Run all test tiers
+test-all: test-unit test-xdp test-integration
+	@echo "\n[TEST] All test tiers complete."
+
+# Basic tunnel smoke test (requires test.conf)
 test: loader
 	@echo "\nTesting Tachyon (integration)..."
 	@test -f test.conf || { echo "Create test.conf first (see tun.conf.example)"; exit 1; }
@@ -145,6 +169,25 @@ test: loader
 	sudo -E ./$(LOADER_BIN) show test.conf
 	sudo -E ./$(LOADER_BIN) down test.conf
 
+# ── Code Quality ──
+
+# Run all linters
+lint:
+	@echo "\n[LINT] Running code quality checks..."
+	@echo "  -> clang-format..."
+	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
+		| xargs clang-format --dry-run --Werror --style=file
+	@echo "  -> cppcheck..."
+	@cppcheck --enable=warning,performance,portability \
+		--suppress=missingInclude --suppress=unmatchedSuppression \
+		--suppress=syntaxError --suppress=preprocessorErrorDirective \
+		-I src/ -I loader/ --std=c++17 \
+		loader/ src/common.h 2>&1 || true
+	@echo "  -> shellcheck..."
+	@find tests/ -name '*.sh' -exec shellcheck -x -S warning {} + 2>&1 || true
+	@echo "[LINT] Complete."
+
+# Auto-format all source files
 format:
 	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
 		| xargs clang-format -i --style=file
@@ -152,6 +195,25 @@ format:
 format-check:
 	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
 		| xargs clang-format --dry-run --Werror --style=file
+
+# Generate HTML coverage report
+coverage:
+	@echo "\n[COVERAGE] Building with coverage instrumentation..."
+	@cmake -B build/coverage -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DENABLE_COVERAGE=ON \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/coverage -j$$(nproc) > /dev/null 2>&1
+	@cd build/coverage && ctest --output-on-failure --timeout 60 || true
+	@lcov --capture --directory build/coverage --output-file build/coverage/coverage.info \
+		--ignore-errors mismatch 2>/dev/null
+	@lcov --remove build/coverage/coverage.info '/usr/*' '*/tests/*' '*/googletest/*' \
+		--output-file build/coverage/coverage-filtered.info 2>/dev/null
+	@genhtml build/coverage/coverage-filtered.info \
+		--output-directory build/coverage/html 2>/dev/null
+	@echo "[COVERAGE] Report at build/coverage/html/index.html"
 
 # ── Cleanup ──
 
