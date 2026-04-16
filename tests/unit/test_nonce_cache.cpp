@@ -121,3 +121,22 @@ TEST_F(NonceCacheTest, EmptyCacheExists) {
     EXPECT_FALSE(cache_.exists(1));
     EXPECT_FALSE(cache_.exists(UINT64_MAX));
 }
+
+TEST_F(NonceCacheTest, HighFrequencyAddLookup) {
+    /* Simulate rapid handshake nonce processing */
+    for (uint64_t i = 0; i < 10000; i++) {
+        cache_.add(i, 1000 + (i / 100));
+        EXPECT_TRUE(cache_.exists(i));
+    }
+    /* Recent entries should survive; oldest may be evicted by capacity */
+    EXPECT_TRUE(cache_.exists(9999));
+}
+
+TEST_F(NonceCacheTest, ExpiryDoesNotEvictFreshEntries) {
+    /* Add entries at time T, then add one at T + EXPIRY - 1 */
+    cache_.add(100, 1000);
+    cache_.add(200, 1000 + TACHYON_NONCE_EXPIRY - 1);
+    /* Entry 100 should still exist (not yet expired at T + EXPIRY - 1) */
+    EXPECT_TRUE(cache_.exists(100));
+    EXPECT_TRUE(cache_.exists(200));
+}

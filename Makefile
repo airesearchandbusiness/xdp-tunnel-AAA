@@ -208,6 +208,25 @@ test: loader
 	sudo -E ./$(LOADER_BIN) show test.conf
 	sudo -E ./$(LOADER_BIN) down test.conf
 
+# ── Code Quality ──
+
+# Run all linters
+lint:
+	@echo "\n[LINT] Running code quality checks..."
+	@echo "  -> clang-format..."
+	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
+		| xargs clang-format --dry-run --Werror --style=file
+	@echo "  -> cppcheck..."
+	@cppcheck --enable=warning,performance,portability \
+		--suppress=missingInclude --suppress=unmatchedSuppression \
+		--suppress=syntaxError --suppress=preprocessorErrorDirective \
+		-I src/ -I loader/ --std=c++17 \
+		loader/ src/common.h 2>&1 || true
+	@echo "  -> shellcheck..."
+	@find tests/ -name '*.sh' -exec shellcheck -x -S warning {} + 2>&1 || true
+	@echo "[LINT] Complete."
+
+# Auto-format all source files
 format:
 	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
 		| xargs clang-format -i --style=file
