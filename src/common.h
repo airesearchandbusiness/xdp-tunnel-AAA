@@ -280,28 +280,6 @@ struct tachyon_event {
     __u64 timestamp_ns;
 };
 
-/* Per-session rate limit configuration */
-struct tachyon_rate_cfg {
-    __u64 tx_rate_bps; /* TX rate limit (bytes/sec, 0=off) */
-    __u64 tx_burst;    /* TX token bucket capacity        */
-    __u64 rx_rate_bps; /* RX rate limit (bytes/sec, 0=off) */
-    __u64 rx_burst;    /* RX token bucket capacity        */
-};
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Cipher Type Constants
- * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_CIPHER_CHACHA20 0   /* rfc7539(chacha20,poly1305)      */
-#define TACHYON_CIPHER_AES128_GCM 1 /* gcm(aes) with 128-bit key      */
-#define TACHYON_CIPHER_AES256_GCM 2 /* gcm(aes) with 256-bit key      */
-
-/* ──────────────────────────────────────────────────────────────────────────
- * LPM Trie Key for Multi-Peer Routing
- * ────────────────────────────────────────────────────────────────────────── */
-struct tachyon_lpm_key_v4 {
-    __u32 prefixlen;
-    __u32 addr;
-};
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Message Structures
