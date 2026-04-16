@@ -1,0 +1,37 @@
+# Tachyon CI - Setup Dependencies Composite Action
+#
+# Caches and installs apt packages for CI jobs.
+# Deduplicates the cache + install pattern used across all CI/nightly jobs.
+#
+# Usage:
+#   - uses: ./.github/actions/setup-deps
+#     with:
+#       packages: 'libssl-dev libelf-dev'
+
+name: Setup Dependencies
+description: Cache apt packages and install build dependencies
+
+inputs:
+  packages:
+    description: 'Space-separated list of apt packages to install'
+    required: true
+  cache-key-file:
+    description: 'File to hash for cache key (default: .github/workflows/ci.yml)'
+    required: false
+    default: '.github/workflows/ci.yml'
+
+runs:
+  using: composite
+  steps:
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: apt-${{ runner.os }}-${{ hashFiles(inputs.cache-key-file) }}
+        restore-keys: apt-${{ runner.os }}-
+
+    - name: Install packages
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --no-install-recommends ${{ inputs.packages }}

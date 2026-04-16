@@ -15,7 +15,12 @@ sudo apt-get install -y \
     libssl-dev libelf-dev zlib1g-dev \
     clang llvm \
     linux-headers-$(uname -r) \
-    shellcheck cppcheck clang-format
+    shellcheck cppcheck clang-format \
+    valgrind lcov
+
+# Install pre-commit hooks (recommended)
+pip install pre-commit
+pre-commit install
 
 # Build and run unit tests (no root required)
 make test-unit
@@ -34,18 +39,52 @@ make lint
 - **Commits**: [Conventional Commits](https://www.conventionalcommits.org/) with scopes: `fix(build)`, `feat(crypto)`, `test(unit)`, `docs`, `ci`, `refactor`, `security`
 
 Run `make format` before committing to auto-format all source files.
+Pre-commit hooks will enforce formatting automatically if installed.
 
 ## Testing Requirements
 
 All changes must pass:
 
-1. **Unit tests** (`make test-unit`) -- 114+ tests, no root required
+1. **Unit tests** (`make test-unit`) -- 160+ tests, no root required
 2. **Lint checks** (`make lint`) -- clang-format, cppcheck, shellcheck
-3. **CI pipeline** -- GitHub Actions runs lint, build, and test stages automatically
+3. **CI pipeline** -- GitHub Actions runs 8 parallel checks automatically
 
-For changes to XDP or kernel code:
-- Test with `make test-xdp` (requires root and kernel module loaded)
-- Test with `make test-integration` for end-to-end validation
+### Full local test matrix
+
+```bash
+# Core (required before every PR)
+make test-unit        # Unit tests (gtest, ~160 tests)
+make format-check     # Dry-run format verification
+
+# Memory safety (recommended)
+make test-sanitize    # AddressSanitizer + UndefinedBehaviorSanitizer
+make test-tsan        # ThreadSanitizer (data-race detection)
+make test-valgrind    # Valgrind memcheck (requires valgrind)
+
+# Coverage (optional)
+make coverage         # HTML coverage report at build/coverage/html/
+
+# Performance (optional)
+make benchmark        # Google Benchmark crypto harnesses
+
+# Privileged (requires root + kernel module)
+make test-xdp         # XDP/BPF program tests
+make test-integration # End-to-end tunnel tests
+make test-all         # All test tiers
+```
+
+### CMake presets
+
+For developers who prefer CMake directly over Makefile wrappers:
+
+```bash
+cd tests
+cmake --preset ci-unit     && cmake --build --preset ci-unit
+cmake --preset ci-sanitize && cmake --build --preset ci-sanitize
+cmake --preset ci-tsan     && cmake --build --preset ci-tsan
+cmake --preset ci-coverage && cmake --build --preset ci-coverage
+cmake --preset ci-bench    && cmake --build --preset ci-bench
+```
 
 ## Pull Request Process
 

@@ -1,0 +1,55 @@
+# Tachyon XDP Tunnel - PR Auto-Labeler Configuration
+#
+# Used by actions/labeler to add labels to PRs based on changed file paths.
+# See: https://github.com/actions/labeler
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - Makefile
+          - codecov.yml
+          - .clang-tidy
+          - .clang-format
+          - .pre-commit-config.yaml
+          - .gitleaks.toml
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**
+
+crypto:
+  - changed-files:
+      - any-glob-to-any-file:
+          - loader/crypto.cpp
+          - tests/unit/test_crypto.cpp
+          - tests/fuzz/fuzz_crypto.cpp
+          - tests/benchmarks/bench_crypto.cpp
+
+loader:
+  - changed-files:
+      - any-glob-to-any-file:
+          - loader/**
+
+xdp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/xdp_core.c
+          - src/common.h
+          - tests/xdp/**
+
+kernel:
+  - changed-files:
+      - any-glob-to-any-file:
+          - kmod/**
+          - dkms.conf
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '*.md'
+          - docs/**
+          - LICENSE
+          - .github/ISSUE_TEMPLATE/**
+          - .github/pull_request_template.md
