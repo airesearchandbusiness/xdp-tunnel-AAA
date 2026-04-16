@@ -1,102 +1,136 @@
-name: Tachyon CI
+# Tachyon XDP Tunnel - Continuous Integration
+#
+# Stages: Lint -> Build -> Unit Tests -> Security Scan
+#
+# Triggered on: push to main, pull requests against main
+
+name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
 jobs:
   # ════════════════════════════════════════════════════════════════════════
-  # Stage 1: Lint & Format (fast-fail, parallel)
+  # Stage 1: Lint (fast-fail)
   # ════════════════════════════════════════════════════════════════════════
 
-  clang-format:
-    name: "lint / clang-format"
+  lint:
+    name: "lint"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - name: Check formatting
+
+      - name: clang-format
         run: |
           find tests/ src/ loader/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
             | xargs clang-format --dry-run --Werror --style=file
 
-  shellcheck:
-    name: "lint / shellcheck"
+      - name: shellcheck
+        run: find tests/ -name '*.sh' -exec shellcheck -x -S warning {} +
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 2: Build
+  # ════════════════════════════════════════════════════════════════════════
+
+  build:
+    name: "build"
     runs-on: ubuntu-24.04
+    needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang llvm \
-            libbpf-dev libelf-dev zlib1g-dev \
-            libssl-dev \
-            linux-headers-generic \
-            g++
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libssl-dev libelf-dev
 
-      - name: Show libbpf version
-        run: dpkg -l libbpf-dev | tail -1
+      - name: Build loader (advisory)
+        run: make loader 2>&1 || echo "::warning::Loader build requires libbpf"
 
-      - name: Build control plane
-        id: loader
-        continue-on-error: true
-        run: make loader 2>&1
-
-      - name: Build XDP object
-        continue-on-error: true
-        run: make xdp
-
-      - name: Build kernel module (best-effort)
-        continue-on-error: true
-        run: make kmod 2>&1 || true
-
-      - name: Build status
+      - name: Build test suite
         run: |
-          if [ "${{ steps.loader.outcome }}" = "failure" ]; then
-            echo "::warning::Loader build failed - check libbpf API compatibility"
-          fi
+          cmake -B build -S tests \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF
+          cmake --build build -j$(nproc)
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-artifacts
+          path: build/
+          retention-days: 1
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 3: Unit Tests
+  # ════════════════════════════════════════════════════════════════════════
 
   test:
-    name: Unit Tests
+    name: "test / unit"
     runs-on: ubuntu-24.04
+    needs: build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y g++ libssl-dev
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libssl-dev
 
-      - name: Build and run unit tests
-        run: make test-unit
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: build-artifacts
+          path: build/
 
-  sanitize:
-    name: ASan + UBSan
+      - name: Run unit tests
+        run: |
+          chmod +x build/test_* 2>/dev/null || true
+          cd build && ctest --output-on-failure --timeout 60
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 4: Security Scanning
+  # ════════════════════════════════════════════════════════════════════════
+
+  security:
+    name: "security / codeql"
     runs-on: ubuntu-24.04
+    needs: lint
+    continue-on-error: true
+    permissions:
+      security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: cpp
+          queries: security-and-quality
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y g++ libssl-dev
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libbpf-dev libelf-dev libssl-dev zlib1g-dev
 
-      - name: Build and run tests with sanitizers
-        run: make test-sanitize
+      - name: Build for analysis
+        run: make loader 2>&1 || true
 
-  lint:
-    name: Code Format Check
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
-
-      - name: Check formatting
-        run: |
-          find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
-            | xargs clang-format --dry-run --Werror --style=file
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:cpp"

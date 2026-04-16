@@ -12,8 +12,7 @@
  * Keys are stored both as "Section.Key" and bare "Key" for flexibility.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static std::unordered_map<std::string, std::string> parse_ini(const std::string &filename)
-{
+static std::unordered_map<std::string, std::string> parse_ini(const std::string &filename) {
     std::unordered_map<std::string, std::string> kv;
     std::ifstream file(filename);
 
@@ -57,8 +56,7 @@ static std::unordered_map<std::string, std::string> parse_ini(const std::string 
 
 /* Helper: look up a key with fallback alias */
 static std::string get_val(const std::unordered_map<std::string, std::string> &kv,
-                           const std::string &primary, const std::string &fallback = "")
-{
+                           const std::string &primary, const std::string &fallback = "") {
     auto it = kv.find(primary);
     if (it != kv.end())
         return it->second;

@@ -42,12 +42,6 @@ LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
                loader/network.cpp loader/tunnel.cpp
 LOADER_BIN  := loader/tachyon
 
-# Test build flags (TACHYON_NO_BPF avoids libbpf dependency for unit tests)
-TEST_CXXFLAGS := -O0 -g -Wall -Wextra -std=c++17 -I. \
-                 -DTACHYON_VERSION=\"$(VERSION)\" -DTACHYON_NO_BPF
-TEST_LDFLAGS  := -lcrypto
-TEST_SRCS     := loader/crypto.cpp loader/config.cpp
-
 # ── Build Targets ──
 
 all: kmod xdp loader
@@ -119,27 +113,29 @@ remove-module:
 
 # ── Testing ──
 
-test-unit: tests/test_crypto tests/test_config tests/test_utils tests/test_protocol
-	@echo "\n Running Tachyon Unit Tests...\n"
-	@./tests/test_crypto && ./tests/test_config && \
-	 ./tests/test_utils && ./tests/test_protocol && \
-	 echo "\n All tests passed." || (echo "\n Some tests FAILED." && exit 1)
+test-unit:
+	@echo "\n[TEST] Building and running unit tests..."
+	@cmake -B build/tests -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/tests -j$$(nproc) > /dev/null 2>&1
+	@cd build/tests && ctest --output-on-failure --timeout 60
+	@echo "[TEST] Unit tests complete."
 
-tests/test_crypto: tests/test_crypto.cpp $(TEST_SRCS) loader/tachyon.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_crypto.cpp $(TEST_SRCS) -o $@ $(TEST_LDFLAGS)
-
-tests/test_config: tests/test_config.cpp $(TEST_SRCS) loader/tachyon.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_config.cpp $(TEST_SRCS) -o $@ $(TEST_LDFLAGS)
-
-tests/test_utils: tests/test_utils.cpp loader/tachyon.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_utils.cpp -o $@ $(TEST_LDFLAGS)
-
-tests/test_protocol: tests/test_protocol.cpp loader/tachyon.h src/common.h
-	$(CXX) $(TEST_CXXFLAGS) tests/test_protocol.cpp -o $@ $(TEST_LDFLAGS)
-
-test-sanitize: TEST_CXXFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
-test-sanitize: TEST_LDFLAGS  += -fsanitize=address,undefined
-test-sanitize: test-unit
+test-sanitize:
+	@echo "\n[TEST] Building with ASan+UBSan..."
+	@cmake -B build/sanitize -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+		-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/sanitize -j$$(nproc) > /dev/null 2>&1
+	@cd build/sanitize && ctest --output-on-failure --timeout 60
+	@echo "[TEST] Sanitizer tests complete."
 
 test: loader
 	@echo "\nTesting Tachyon (integration)..."
@@ -150,10 +146,12 @@ test: loader
 	sudo -E ./$(LOADER_BIN) down test.conf
 
 format:
-	find loader/ tests/ -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
+		| xargs clang-format -i --style=file
 
 format-check:
-	find loader/ tests/ -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
+		| xargs clang-format --dry-run --Werror --style=file
 
 # ── Cleanup ──
 
@@ -161,7 +159,7 @@ clean:
 	@echo "Cleaning build artifacts..."
 	$(MAKE) -C $(KDIR) M=$(PWD)/kmod clean 2>/dev/null || true
 	rm -f src/xdp_core.o $(LOADER_BIN)
-	rm -f tests/test_crypto tests/test_config tests/test_utils tests/test_protocol
+	rm -rf build/
 	@echo "Clean complete."
 
 purge: clean remove-dkms remove-module

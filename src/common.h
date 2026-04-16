@@ -28,7 +28,7 @@ extern "C" {
 #include <stdint.h>
 #include <string.h>
 /* Avoid conflicts with kernel types from <linux/types.h> which
-    * may be pulled in transitively by <sys/stat.h> in C++ builds. */
+ * may be pulled in transitively by <sys/stat.h> in C++ builds. */
 #if !defined(_LINUX_TYPES_H)
 typedef uint8_t __u8;
 typedef uint16_t __u16;
@@ -42,29 +42,29 @@ typedef int32_t __s32;
  * Protocol Version & Identity
  * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_PROTO_VERSION 4 /* AKE v4.0                      */
-#define TACHYON_MODULE_NAME   "tachyon-crypto"
+#define TACHYON_MODULE_NAME "tachyon-crypto"
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Capacity Limits
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_MAX_SESSIONS    256
-#define TACHYON_MAX_TX_CPUS     64    /* Per-CPU sequence partitioning */
+#define TACHYON_MAX_SESSIONS 256
+#define TACHYON_MAX_TX_CPUS 64        /* Per-CPU sequence partitioning */
 #define TACHYON_MAX_IP_SESSIONS 1024  /* ip_to_session LRU capacity    */
-#define TACHYON_MAX_RATELIMIT   65536 /* Control plane rate-limit LRU  */
+#define TACHYON_MAX_RATELIMIT 65536   /* Control plane rate-limit LRU  */
 #define TACHYON_NONCE_CACHE_MAX 50000 /* Userspace nonce dedup cache   */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Wire Format Sizes (bytes)
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_ETH_HDR_LEN    14
-#define TACHYON_IP_HDR_LEN     20
-#define TACHYON_UDP_HDR_LEN    8
-#define TACHYON_GHOST_HDR_LEN  20
-#define TACHYON_AEAD_TAG_LEN   16 /* Poly1305 tag                  */
-#define TACHYON_AEAD_KEY_LEN   32 /* ChaCha20 key                  */
-#define TACHYON_AEAD_IV_LEN    12 /* ChaCha20-Poly1305 nonce       */
+#define TACHYON_ETH_HDR_LEN 14
+#define TACHYON_IP_HDR_LEN 20
+#define TACHYON_UDP_HDR_LEN 8
+#define TACHYON_GHOST_HDR_LEN 20
+#define TACHYON_AEAD_TAG_LEN 16 /* Poly1305 tag                  */
+#define TACHYON_AEAD_KEY_LEN 32 /* ChaCha20 key                  */
+#define TACHYON_AEAD_IV_LEN 12  /* ChaCha20-Poly1305 nonce       */
 #define TACHYON_X25519_KEY_LEN 32
-#define TACHYON_HMAC_LEN       32 /* SHA-256 HMAC output           */
+#define TACHYON_HMAC_LEN 32 /* SHA-256 HMAC output           */
 
 /*
  * TX_HEAD_ADJUST = ETH(14) + IP(20) + UDP(8) + Ghost(20) = 62 ... but the
@@ -76,7 +76,7 @@ typedef int32_t __s32;
  *                                                     ^-- inner starts at +48 from original
  */
 #define TACHYON_TX_HEAD_ADJUST 48
-#define TACHYON_OUTER_HDR_LEN \
+#define TACHYON_OUTER_HDR_LEN                                                                      \
     (TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN + TACHYON_UDP_HDR_LEN + TACHYON_GHOST_HDR_LEN)
 
 /* Minimum encapsulated packet: outer headers + ghost + at least 1 byte + tag */
@@ -86,28 +86,28 @@ typedef int32_t __s32;
  * Replay Protection
  * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_REPLAY_WINDOW 256 /* Sliding window size in packets */
-#define TACHYON_REPLAY_WORDS  4   /* 256 / 64 = 4 bitmap words     */
+#define TACHYON_REPLAY_WORDS 4    /* 256 / 64 = 4 bitmap words     */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Network Tuning
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_TARGET_MSS    1360 /* Clamped MSS to hide overhead   */
-#define TACHYON_TUNNEL_MTU    1420 /* Virtual interface MTU          */
+#define TACHYON_TARGET_MSS 1360    /* Clamped MSS to hide overhead   */
+#define TACHYON_TUNNEL_MTU 1420    /* Virtual interface MTU          */
 #define TACHYON_MAX_FRAME_LEN 1500 /* Physical MTU assumption        */
-#define TACHYON_DEFAULT_PORT  443  /* Default listen port            */
+#define TACHYON_DEFAULT_PORT 443   /* Default listen port            */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Timing Constants (seconds)
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_KEEPALIVE_BASE   8          /* Keepalive base interval        */
-#define TACHYON_KEEPALIVE_JITTER 8          /* Keepalive jitter range         */
-#define TACHYON_RETRY_BASE       2          /* Handshake retry base interval  */
-#define TACHYON_RETRY_JITTER     3          /* Handshake retry jitter range   */
-#define TACHYON_DPD_TIMEOUT      35         /* Dead Peer Detection timeout    */
-#define TACHYON_REKEY_INTERVAL   60         /* Key rotation interval          */
-#define TACHYON_COOKIE_ROTATION  120        /* Cookie secret rotation (secs)  */
-#define TACHYON_NONCE_EXPIRY     180        /* Nonce cache entry TTL (secs)   */
-#define TACHYON_CP_RATELIMIT_NS  1000000ULL /* 1ms between CP packets   */
+#define TACHYON_KEEPALIVE_BASE 8           /* Keepalive base interval        */
+#define TACHYON_KEEPALIVE_JITTER 8         /* Keepalive jitter range         */
+#define TACHYON_RETRY_BASE 2               /* Handshake retry base interval  */
+#define TACHYON_RETRY_JITTER 3             /* Handshake retry jitter range   */
+#define TACHYON_DPD_TIMEOUT 35             /* Dead Peer Detection timeout    */
+#define TACHYON_REKEY_INTERVAL 60          /* Key rotation interval          */
+#define TACHYON_COOKIE_ROTATION 120        /* Cookie secret rotation (secs)  */
+#define TACHYON_NONCE_EXPIRY 180           /* Nonce cache entry TTL (secs)   */
+#define TACHYON_CP_RATELIMIT_NS 1000000ULL /* 1ms between CP packets   */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Sequence Number Encoding
@@ -117,8 +117,8 @@ typedef int32_t __s32;
  * packets per CPU before wrap-around.
  * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_SEQ_CPU_SHIFT 48
-#define TACHYON_SEQ_CPU_MASK  0xFFFF000000000000ULL
-#define TACHYON_SEQ_NUM_MASK  0x0000FFFFFFFFFFFFULL
+#define TACHYON_SEQ_CPU_MASK 0xFFFF000000000000ULL
+#define TACHYON_SEQ_NUM_MASK 0x0000FFFFFFFFFFFFULL
 
 /* ──────────────────────────────────────────────────────────────────────────
  * QUIC Mimicry Constants
@@ -126,17 +126,17 @@ typedef int32_t __s32;
 #define TACHYON_MIMICRY_NONE 0 /* Standard UDP encapsulation     */
 #define TACHYON_MIMICRY_QUIC 1 /* QUIC short-header mimicry      */
 
-#define TACHYON_QUIC_FIXED_BIT   0x40 /* QUIC short header marker       */
-#define TACHYON_QUIC_SPIN_BIT    0x20 /* QUIC spin bit position         */
+#define TACHYON_QUIC_FIXED_BIT 0x40   /* QUIC short header marker       */
+#define TACHYON_QUIC_SPIN_BIT 0x20    /* QUIC spin bit position         */
 #define TACHYON_QUIC_PN_LEN_MASK 0x03 /* Packet number length bits      */
 
 /* Bimodal padding distribution thresholds (percentage) */
-#define TACHYON_PAD_FULL_THRESH  60    /* % packets padded to MTU        */
-#define TACHYON_PAD_ACK_THRESH   90    /* % packets with small padding   */
-#define TACHYON_PAD_ACK_MAX      31    /* Max small-padding bytes        */
-#define TACHYON_PAD_MAX_BITS     0x7FF /* Safety mask for verifier       */
-#define TACHYON_PAD_JITTER_MASK  0x0F  /* Full-pad jitter mask           */
-#define TACHYON_TARGET_OUTER_LEN 1490  /* Target outer frame length      */
+#define TACHYON_PAD_FULL_THRESH 60    /* % packets padded to MTU        */
+#define TACHYON_PAD_ACK_THRESH 90     /* % packets with small padding   */
+#define TACHYON_PAD_ACK_MAX 31        /* Max small-padding bytes        */
+#define TACHYON_PAD_MAX_BITS 0x7FF    /* Safety mask for verifier       */
+#define TACHYON_PAD_JITTER_MASK 0x0F  /* Full-pad jitter mask           */
+#define TACHYON_TARGET_OUTER_LEN 1490 /* Target outer frame length      */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Packet Types
@@ -144,13 +144,13 @@ typedef int32_t __s32;
  * Identified by the high nibble 0xC0 in the quic_flags field.
  * The XDP RX path uses (flags & 0xF0) == 0xC0 to route to userspace.
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_PKT_INIT      0xC0 /* Handshake initiation           */
-#define TACHYON_PKT_COOKIE    0xC1 /* Stateless cookie response      */
-#define TACHYON_PKT_AUTH      0xC2 /* Authenticated key exchange      */
-#define TACHYON_PKT_FINISH    0xC3 /* Handshake completion           */
+#define TACHYON_PKT_INIT 0xC0      /* Handshake initiation           */
+#define TACHYON_PKT_COOKIE 0xC1    /* Stateless cookie response      */
+#define TACHYON_PKT_AUTH 0xC2      /* Authenticated key exchange      */
+#define TACHYON_PKT_FINISH 0xC3    /* Handshake completion           */
 #define TACHYON_PKT_KEEPALIVE 0xC4 /* Encrypted keepalive            */
 
-#define TACHYON_CP_FLAG_MASK   0xF0 /* Mask for CP type detection     */
+#define TACHYON_CP_FLAG_MASK 0xF0   /* Mask for CP type detection     */
 #define TACHYON_CP_FLAG_PREFIX 0xC0 /* CP packet prefix               */
 
 /* QUIC Initial minimum size (RFC 9000, Section 14.1) */
@@ -159,12 +159,12 @@ typedef int32_t __s32;
 /* ──────────────────────────────────────────────────────────────────────────
  * KDF Labels (used in HKDF-SHA256 derivation)
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_KDF_EARLY_SECRET   "Tachyon-EarlySecret"
-#define TACHYON_KDF_CP_AEAD        "Tachyon-CP-AEAD"
+#define TACHYON_KDF_EARLY_SECRET "Tachyon-EarlySecret"
+#define TACHYON_KDF_CP_AEAD "Tachyon-CP-AEAD"
 #define TACHYON_KDF_SESSION_MASTER "Tachyon-Session-Master"
-#define TACHYON_KDF_SERVER_TX      "Tachyon-Srv-TX"
-#define TACHYON_KDF_CLIENT_TX      "Tachyon-Cli-TX"
-#define TACHYON_KDF_DEFAULT_PSK    "Tachyon-Default-PSK"
+#define TACHYON_KDF_SERVER_TX "Tachyon-Srv-TX"
+#define TACHYON_KDF_CLIENT_TX "Tachyon-Cli-TX"
+#define TACHYON_KDF_DEFAULT_PSK "Tachyon-Default-PSK"
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Event Types (perf event reporting from eBPF to userspace)
@@ -278,29 +278,6 @@ struct tachyon_event {
     __u32 session_id;
     __u64 seq;
     __u64 timestamp_ns;
-};
-
-/* Per-session rate limit configuration */
-struct tachyon_rate_cfg {
-    __u64 tx_rate_bps; /* TX rate limit (bytes/sec, 0=off) */
-    __u64 tx_burst;    /* TX token bucket capacity        */
-    __u64 rx_rate_bps; /* RX rate limit (bytes/sec, 0=off) */
-    __u64 rx_burst;    /* RX token bucket capacity        */
-};
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Cipher Type Constants
- * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_CIPHER_CHACHA20 0   /* rfc7539(chacha20,poly1305)      */
-#define TACHYON_CIPHER_AES128_GCM 1 /* gcm(aes) with 128-bit key      */
-#define TACHYON_CIPHER_AES256_GCM 2 /* gcm(aes) with 256-bit key      */
-
-/* ──────────────────────────────────────────────────────────────────────────
- * LPM Trie Key for Multi-Peer Routing
- * ────────────────────────────────────────────────────────────────────────── */
-struct tachyon_lpm_key_v4 {
-    __u32 prefixlen;
-    __u32 addr;
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
