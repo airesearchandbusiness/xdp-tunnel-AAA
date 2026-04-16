@@ -1,0 +1,63 @@
+# Tachyon XDP Tunnel - Valgrind Suppression File
+#
+# Suppresses known false positives from OpenSSL internals and the
+# GTest framework that produce spurious valgrind reports.
+#
+# Usage: valgrind --suppressions=tests/valgrind.supp <binary>
+
+# OpenSSL allocates a global error-string table that valgrind reports
+# as a reachable leak at process exit. This is intentional by design.
+{
+    openssl_err_strings_reachable
+    Memcheck:Leak
+    match-leak-kinds: reachable
+    ...
+    fun:CRYPTO_malloc
+    ...
+    fun:ERR_load_strings
+    ...
+}
+
+# OpenSSL engine initialization leaves the engine list reachable at exit.
+{
+    openssl_engine_list_reachable
+    Memcheck:Leak
+    match-leak-kinds: reachable
+    ...
+    fun:CRYPTO_malloc
+    ...
+    fun:ENGINE_load_builtin_engines
+    ...
+}
+
+# OpenSSL PRNG state is kept alive for the lifetime of the process.
+{
+    openssl_rand_state_reachable
+    Memcheck:Leak
+    match-leak-kinds: reachable
+    ...
+    fun:CRYPTO_malloc
+    ...
+    fun:RAND_add
+    ...
+}
+
+# GTest registers static test objects at startup; they remain reachable at exit.
+{
+    gtest_static_objects
+    Memcheck:Leak
+    match-leak-kinds: reachable
+    ...
+    fun:_ZN7testing8internal12UnitTestImpl15RegisterTestInfoEPNS_8TestInfoE
+    ...
+}
+
+# GCC/libstdc++ one-time initialization (std::string, std::locale, etc.)
+{
+    libstdcxx_once_init
+    Memcheck:Leak
+    match-leak-kinds: reachable
+    ...
+    fun:__cxa_guard_acquire
+    ...
+}

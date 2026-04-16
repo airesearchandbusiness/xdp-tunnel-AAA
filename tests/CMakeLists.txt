@@ -10,6 +10,7 @@
 #   -DBUILD_XDP_TESTS=ON       Build XDP test runner (requires libbpf)
 #   -DENABLE_COVERAGE=ON       Enable gcov coverage instrumentation
 #   -DENABLE_SANITIZE=ON       Enable AddressSanitizer + UndefinedBehaviorSanitizer
+#   -DENABLE_TSAN=ON           Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)
 
 cmake_minimum_required(VERSION 3.16)
 project(TachyonTests VERSION 1.1.0 LANGUAGES CXX C)
@@ -23,6 +24,7 @@ option(BUILD_FUZZ_TESTS "Build libFuzzer fuzz test harnesses" OFF)
 option(BUILD_XDP_TESTS "Build XDP/BPF test runner (requires libbpf)" OFF)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 option(ENABLE_SANITIZE "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_TSAN "Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)" OFF)
 
 # ── Project root (parent of tests/) ──
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
@@ -42,6 +44,9 @@ if(ENABLE_SANITIZE)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         message(WARNING "Sanitizers work best with Clang or GCC")
     endif()
+    if(ENABLE_TSAN)
+        message(FATAL_ERROR "ENABLE_SANITIZE and ENABLE_TSAN are mutually exclusive")
+    endif()
     set(SANITIZE_FLAGS
         "-fsanitize=address,undefined"
         "-fno-omit-frame-pointer"
@@ -49,6 +54,15 @@ if(ENABLE_SANITIZE)
     )
     add_compile_options(${SANITIZE_FLAGS})
     add_link_options(${SANITIZE_FLAGS})
+endif()
+
+# ── ThreadSanitizer flags ──
+if(ENABLE_TSAN)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(WARNING "ThreadSanitizer works best with Clang or GCC")
+    endif()
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
 endif()
 
 # ── Google Test ──
@@ -167,7 +181,8 @@ endif()
 message(STATUS "")
 message(STATUS "Tachyon Test Suite Configuration:")
 message(STATUS "  Coverage:    ${ENABLE_COVERAGE}")
-message(STATUS "  Sanitizers:  ${ENABLE_SANITIZE}")
+message(STATUS "  ASan+UBSan:  ${ENABLE_SANITIZE}")
+message(STATUS "  TSan:        ${ENABLE_TSAN}")
 message(STATUS "  XDP tests:   ${BUILD_XDP_TESTS}")
 message(STATUS "  Fuzz tests:  ${BUILD_FUZZ_TESTS}")
 message(STATUS "")

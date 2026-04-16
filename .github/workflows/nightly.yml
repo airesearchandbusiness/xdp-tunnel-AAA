@@ -283,3 +283,58 @@ jobs:
           name: sanitize-extended-results
           path: build/san/test-results/sanitize-nightly.xml
           if-no-files-found: ignore
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Valgrind Memcheck (catches classes of bugs ASan misses)
+  # ════════════════════════════════════════════════════════════════════════
+
+  valgrind:
+    name: "valgrind / memcheck"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            valgrind libssl-dev cmake ninja-build pkg-config \
+            libgtest-dev libgmock-dev
+
+      - name: Build (no instrumentation — valgrind needs clean binary)
+        run: |
+          cmake -B build/valgrind -S tests \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF \
+            -G Ninja
+          cmake --build build/valgrind -j$(nproc)
+
+      - name: Run under valgrind memcheck
+        run: |
+          mkdir -p build/valgrind/test-results
+          cd build/valgrind
+
+          # Run each test binary individually under valgrind
+          for binary in test_config test_crypto test_nonce_cache test_utils test_protocol; do
+            if [[ -x "./${binary}" ]]; then
+              echo "=== valgrind: ${binary} ==="
+              valgrind \
+                --tool=memcheck \
+                --error-exitcode=1 \
+                --leak-check=full \
+                --show-leak-kinds=definite,indirect \
+                --track-origins=yes \
+                --suppressions=../../tests/valgrind.supp \
+                --xml=yes \
+                --xml-file="test-results/valgrind-${binary}.xml" \
+                "./${binary}" --gtest_filter=* 2>&1 | tail -20 || true
+            fi
+          done
+
+      - name: Upload valgrind reports
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: valgrind-reports
+          path: build/valgrind/test-results/
+          if-no-files-found: ignore

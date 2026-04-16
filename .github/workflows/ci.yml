@@ -382,3 +382,54 @@ PYEOF
           name: clang-tidy-report
           path: clang-tidy-report.txt
           if-no-files-found: ignore
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 8: ThreadSanitizer (data-race detection)
+  # ════════════════════════════════════════════════════════════════════════
+
+  tsan:
+    name: "test / tsan (ThreadSanitizer)"
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            clang-18 libssl-dev
+
+      - name: Build with ThreadSanitizer
+        run: |
+          cmake -B build/tsan -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_TSAN=ON \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF
+          cmake --build build/tsan -j$(nproc)
+
+      - name: Run tests under ThreadSanitizer
+        env:
+          TSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+        run: |
+          mkdir -p build/tsan/test-results
+          cd build/tsan && ctest --output-on-failure --timeout 120 \
+            --output-junit test-results/tsan.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: test-results-tsan
+          path: build/tsan/test-results/tsan.xml
+          if-no-files-found: ignore

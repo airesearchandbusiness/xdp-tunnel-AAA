@@ -17,7 +17,8 @@
 .PHONY: all kmod xdp loader clean install uninstall \
         install-dkms remove-dkms install-module remove-module \
         test test-unit test-xdp test-integration test-all \
-        lint format coverage \
+        test-sanitize test-tsan test-valgrind \
+        lint format format-check coverage \
         purge help
 
 VERSION     ?= 1.1.0
@@ -138,6 +139,38 @@ test-sanitize:
 		cd build/sanitize && ctest --output-on-failure --timeout 120
 	@echo "[TEST] Sanitizer tests complete."
 
+test-tsan:
+	@echo "\n[TEST] Building with ThreadSanitizer..."
+	@cmake -B build/tsan -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DENABLE_TSAN=ON \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/tsan -j$$(nproc) > /dev/null 2>&1
+	@TSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		cd build/tsan && ctest --output-on-failure --timeout 120
+	@echo "[TEST] TSan tests complete."
+
+test-valgrind:
+	@echo "\n[TEST] Building for valgrind (no instrumentation)..."
+	@cmake -B build/valgrind -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/valgrind -j$$(nproc) > /dev/null 2>&1
+	@echo "\n[TEST] Running under valgrind memcheck..."
+	@for t in test_config test_crypto test_nonce_cache test_utils test_protocol; do \
+		echo "  -> $$t"; \
+		valgrind --tool=memcheck --error-exitcode=1 \
+			--leak-check=full --show-leak-kinds=definite,indirect \
+			--track-origins=yes \
+			--suppressions=tests/valgrind.supp \
+			build/valgrind/$$t 2>&1 | tail -5 || exit 1; \
+	done
+	@echo "[TEST] Valgrind memcheck complete."
+
 test: loader
 	@echo "\nTesting Tachyon (integration)..."
 	@test -f test.conf || { echo "Create test.conf first (see tun.conf.example)"; exit 1; }
@@ -189,6 +222,9 @@ help:
 	@echo "Testing:"
 	@echo "  test             Run basic up/show/down smoke test"
 	@echo "  test-unit        Build and run unit tests (no root)"
+	@echo "  test-sanitize    Build and run with ASan+UBSan"
+	@echo "  test-tsan        Build and run with ThreadSanitizer"
+	@echo "  test-valgrind    Build and run under valgrind memcheck"
 	@echo "  test-xdp         Run XDP/BPF tests (requires root)"
 	@echo "  test-integration Run integration tests (requires root)"
 	@echo "  test-all         Run all test tiers"
@@ -196,6 +232,7 @@ help:
 	@echo "Code quality:"
 	@echo "  lint             Run all linters (clang-format, cppcheck, shellcheck)"
 	@echo "  format           Auto-format all source files"
+	@echo "  format-check     Dry-run format check (used by CI)"
 	@echo "  coverage         Generate HTML coverage report"
 	@echo ""
 	@echo "Cleanup:"
