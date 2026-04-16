@@ -61,6 +61,9 @@ make test-sanitize    # AddressSanitizer + UndefinedBehaviorSanitizer
 make test-tsan        # ThreadSanitizer (data-race detection)
 make test-valgrind    # Valgrind memcheck (requires valgrind)
 
+# Fuzzing (requires clang)
+make test-fuzz        # Quick 30s fuzz run (config parser + crypto)
+
 # Coverage (optional)
 make coverage         # HTML coverage report at build/coverage/html/
 
