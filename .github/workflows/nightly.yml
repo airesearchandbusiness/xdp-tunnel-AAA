@@ -19,6 +19,9 @@ on:
         required: false
         default: 'true'
 
+permissions:
+  contents: read
+
 concurrency:
   group: nightly-${{ github.ref }}
   cancel-in-progress: true
