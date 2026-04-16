@@ -154,6 +154,44 @@ TEST_F(ConfigTest, ParseCustomPort)
     EXPECT_EQ(cfg.listen_port, 51820);
 }
 
+TEST_F(ConfigTest, ParseNonNumericPort)
+{
+    auto path = write_config(
+        "bad_port.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "ListenPort = abc\n"
+        "[Peer]\n"
+        "EndpointIP = 192.168.1.20\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    /* Non-numeric port should not crash; falls back to default 443 */
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.listen_port, TACHYON_DEFAULT_PORT);
+}
+
+TEST_F(ConfigTest, ParseNonNumericMimicry)
+{
+    auto path = write_config(
+        "bad_mimicry.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "MimicryType = notanumber\n"
+        "[Peer]\n"
+        "EndpointIP = 192.168.1.20\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    /* Non-numeric mimicry type should not crash; falls back to default */
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.mimicry_type, TACHYON_MIMICRY_QUIC);
+}
+
 TEST_F(ConfigTest, ParseCommentsAndWhitespace)
 {
     auto path = write_config(

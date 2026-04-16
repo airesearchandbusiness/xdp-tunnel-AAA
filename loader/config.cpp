@@ -12,8 +12,7 @@
  * Keys are stored both as "Section.Key" and bare "Key" for flexibility.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static std::unordered_map<std::string, std::string>
-parse_ini(const std::string &filename)
+static std::unordered_map<std::string, std::string> parse_ini(const std::string &filename)
 {
     std::unordered_map<std::string, std::string> kv;
     std::ifstream file(filename);
@@ -50,22 +49,23 @@ parse_ini(const std::string &filename)
         std::string val = trim(line.substr(pos + 1));
 
         kv[section + key] = val;
-        kv[key] = val;   /* Allow lookup without section prefix */
+        kv[key] = val; /* Allow lookup without section prefix */
     }
 
     return kv;
 }
 
 /* Helper: look up a key with fallback alias */
-static std::string
-get_val(const std::unordered_map<std::string, std::string> &kv,
-        const std::string &primary, const std::string &fallback = "")
+static std::string get_val(const std::unordered_map<std::string, std::string> &kv,
+                           const std::string &primary, const std::string &fallback = "")
 {
     auto it = kv.find(primary);
-    if (it != kv.end()) return it->second;
+    if (it != kv.end())
+        return it->second;
     if (!fallback.empty()) {
         it = kv.find(fallback);
-        if (it != kv.end()) return it->second;
+        if (it != kv.end())
+            return it->second;
     }
     return "";
 }
@@ -75,24 +75,36 @@ TunnelConfig parse_config(const std::string &filename)
     auto kv = parse_ini(filename);
     TunnelConfig cfg;
 
-    cfg.name               = tunnel_name_from_conf(filename);
-    cfg.private_key        = get_val(kv, "PrivateKey");
-    cfg.peer_public_key    = get_val(kv, "PeerPublicKey");
-    cfg.psk                = get_val(kv, "PresharedKey", "Secret");
-    cfg.virtual_ip         = get_val(kv, "VirtualIP", "Interface.VirtualIP");
-    cfg.local_physical_ip  = get_val(kv, "LocalPhysicalIP", "LocalIP");
+    cfg.name = tunnel_name_from_conf(filename);
+    cfg.private_key = get_val(kv, "PrivateKey");
+    cfg.peer_public_key = get_val(kv, "PeerPublicKey");
+    cfg.psk = get_val(kv, "PresharedKey", "Secret");
+    cfg.virtual_ip = get_val(kv, "VirtualIP", "Interface.VirtualIP");
+    cfg.local_physical_ip = get_val(kv, "LocalPhysicalIP", "LocalIP");
     cfg.physical_interface = get_val(kv, "PhysicalInterface", "PhysIface");
-    cfg.peer_endpoint_ip   = get_val(kv, "Peer.EndpointIP", "Endpoint");
-    cfg.peer_endpoint_mac  = get_val(kv, "Peer.EndpointMAC", "PeerMAC");
-    cfg.peer_inner_ip      = get_val(kv, "Peer.InnerIP", "InnerIP");
+    cfg.peer_endpoint_ip = get_val(kv, "Peer.EndpointIP", "Endpoint");
+    cfg.peer_endpoint_mac = get_val(kv, "Peer.EndpointMAC", "PeerMAC");
+    cfg.peer_inner_ip = get_val(kv, "Peer.InnerIP", "InnerIP");
 
     std::string port_str = get_val(kv, "ListenPort");
-    if (!port_str.empty())
-        cfg.listen_port = std::stoi(port_str);
+    if (!port_str.empty()) {
+        try {
+            cfg.listen_port = std::stoi(port_str);
+        } catch (const std::exception &) {
+            LOG_WARN("Invalid ListenPort '%s', using default %d", port_str.c_str(),
+                     cfg.listen_port);
+        }
+    }
 
     std::string mimicry_str = get_val(kv, "MimicryType");
-    if (!mimicry_str.empty())
-        cfg.mimicry_type = std::stoi(mimicry_str);
+    if (!mimicry_str.empty()) {
+        try {
+            cfg.mimicry_type = std::stoi(mimicry_str);
+        } catch (const std::exception &) {
+            LOG_WARN("Invalid MimicryType '%s', using default %d", mimicry_str.c_str(),
+                     cfg.mimicry_type);
+        }
+    }
 
     std::string enc_str = get_val(kv, "EnableEncryption");
     if (enc_str == "false" || enc_str == "0")
@@ -109,31 +121,25 @@ bool validate_config(const TunnelConfig &cfg)
 {
     bool ok = true;
     auto check = [&](bool cond, const char *msg) {
-        if (!cond) { LOG_ERR("Config: %s", msg); ok = false; }
+        if (!cond) {
+            LOG_ERR("Config: %s", msg);
+            ok = false;
+        }
     };
 
-    check(!cfg.private_key.empty(),
-          "PrivateKey is required (64 hex chars)");
+    check(!cfg.private_key.empty(), "PrivateKey is required (64 hex chars)");
     check(cfg.private_key.size() == 64 || cfg.private_key.empty(),
           "PrivateKey must be exactly 64 hex characters");
-    check(!cfg.peer_public_key.empty(),
-          "PeerPublicKey is required (64 hex chars)");
+    check(!cfg.peer_public_key.empty(), "PeerPublicKey is required (64 hex chars)");
     check(cfg.peer_public_key.size() == 64 || cfg.peer_public_key.empty(),
           "PeerPublicKey must be exactly 64 hex characters");
-    check(!cfg.virtual_ip.empty(),
-          "VirtualIP is required (e.g. 10.8.0.1/24)");
-    check(!cfg.local_physical_ip.empty(),
-          "LocalPhysicalIP is required");
-    check(!cfg.physical_interface.empty(),
-          "PhysicalInterface is required (e.g. eth0)");
-    check(!cfg.peer_endpoint_ip.empty(),
-          "Peer.EndpointIP is required");
-    check(!cfg.peer_endpoint_mac.empty(),
-          "Peer.EndpointMAC is required (e.g. aa:bb:cc:dd:ee:ff)");
-    check(!cfg.peer_inner_ip.empty(),
-          "Peer.InnerIP is required (e.g. 10.8.0.2)");
-    check(cfg.listen_port > 0 && cfg.listen_port < 65536,
-          "ListenPort must be 1-65535");
+    check(!cfg.virtual_ip.empty(), "VirtualIP is required (e.g. 10.8.0.1/24)");
+    check(!cfg.local_physical_ip.empty(), "LocalPhysicalIP is required");
+    check(!cfg.physical_interface.empty(), "PhysicalInterface is required (e.g. eth0)");
+    check(!cfg.peer_endpoint_ip.empty(), "Peer.EndpointIP is required");
+    check(!cfg.peer_endpoint_mac.empty(), "Peer.EndpointMAC is required (e.g. aa:bb:cc:dd:ee:ff)");
+    check(!cfg.peer_inner_ip.empty(), "Peer.InnerIP is required (e.g. 10.8.0.2)");
+    check(cfg.listen_port > 0 && cfg.listen_port < 65536, "ListenPort must be 1-65535");
 
     /* Validate MAC format */
     if (!cfg.peer_endpoint_mac.empty()) {
