@@ -35,10 +35,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check formatting
         run: |
-          find tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
+          find tests/ src/ loader/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
             | xargs clang-format --dry-run --Werror --style=file
-          find src/ loader/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
-            | xargs clang-format --dry-run --style=file || true
 
   shellcheck:
     name: "lint / shellcheck"

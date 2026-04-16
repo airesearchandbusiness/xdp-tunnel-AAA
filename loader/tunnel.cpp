@@ -9,7 +9,10 @@
 #include "tachyon.h"
 #include <cerrno>
 
-static void sig_handler(int) { g_exiting = 1; }
+static void sig_handler(int)
+{
+    g_exiting = 1;
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
  * command_up - Create tunnel and start control plane
@@ -28,7 +31,7 @@ void command_up(const std::string &conf_file)
         return;
     }
 
-    std::string v_in  = "t_" + cfg.name + "_in";
+    std::string v_in = "t_" + cfg.name + "_in";
     std::string v_out = "t_" + cfg.name + "_out";
 
     /* Create veth pair */
@@ -39,12 +42,12 @@ void command_up(const std::string &conf_file)
     }
 
     /* Configure interfaces */
-    run_cmd("ip link set dev " + v_in  + " mtu " + std::to_string(TACHYON_TUNNEL_MTU));
+    run_cmd("ip link set dev " + v_in + " mtu " + std::to_string(TACHYON_TUNNEL_MTU));
     run_cmd("ip link set dev " + v_out + " mtu " + std::to_string(TACHYON_TUNNEL_MTU));
-    run_cmd("ip link set dev " + v_in  + " arp off");
+    run_cmd("ip link set dev " + v_in + " arp off");
     run_cmd("ip link set dev " + v_out + " arp off");
     run_cmd("ip addr add " + cfg.virtual_ip + " peer " + cfg.peer_inner_ip + " dev " + v_in);
-    run_cmd("ip link set dev " + v_in  + " up");
+    run_cmd("ip link set dev " + v_in + " up");
     run_cmd("ip link set dev " + v_out + " up");
     run_cmd("sysctl -qw net.ipv4.conf.all.rp_filter=0");
     run_cmd("sysctl -qw net.ipv4.conf." + v_in + ".rp_filter=0");
@@ -55,8 +58,8 @@ void command_up(const std::string &conf_file)
     unsigned int i_idx = if_nametoindex(v_in.c_str());
 
     if (!p_idx || !o_idx || !i_idx) {
-        LOG_ERR("Failed to resolve interface indices (phys=%u, out=%u, in=%u)",
-                p_idx, o_idx, i_idx);
+        LOG_ERR("Failed to resolve interface indices (phys=%u, out=%u, in=%u)", p_idx, o_idx,
+                i_idx);
         run_cmd("ip link del " + v_in + " 2>/dev/null");
         return;
     }
@@ -144,9 +147,15 @@ void command_up(const std::string &conf_file)
     /* Attach XDP programs (libbpf 1.0+ API: bpf_xdp_attach) */
     auto attach_xdp = [&](const char *prog_name, unsigned int ifidx, const char *pin_name) {
         struct bpf_program *prog = bpf_object__find_program_by_name(obj, prog_name);
-        if (!prog) { LOG_ERR("BPF program '%s' not found", prog_name); return; }
+        if (!prog) {
+            LOG_ERR("BPF program '%s' not found", prog_name);
+            return;
+        }
         int prog_fd = bpf_program__fd(prog);
-        if (prog_fd < 0) { LOG_ERR("Invalid fd for '%s'", prog_name); return; }
+        if (prog_fd < 0) {
+            LOG_ERR("Invalid fd for '%s'", prog_name);
+            return;
+        }
         if (bpf_xdp_attach(ifidx, prog_fd, 0, NULL) < 0) {
             LOG_ERR("Failed to attach '%s' to ifindex %u", prog_name, ifidx);
             return;
@@ -158,14 +167,13 @@ void command_up(const std::string &conf_file)
 
     attach_xdp("xdp_rx_path", p_idx, "rx");
     attach_xdp("xdp_tx_path", o_idx, "tx");
-    attach_xdp("xdp_dummy",   i_idx, "dummy");
+    attach_xdp("xdp_dummy", i_idx, "dummy");
 
-    LOG_INFO("Datapath UP: %s <-> %s (phys: %s, port: %d)",
-             v_in.c_str(), cfg.peer_endpoint_ip.c_str(),
-             cfg.physical_interface.c_str(), cfg.listen_port);
+    LOG_INFO("Datapath UP: %s <-> %s (phys: %s, port: %d)", v_in.c_str(),
+             cfg.peer_endpoint_ip.c_str(), cfg.physical_interface.c_str(), cfg.listen_port);
 
     /* Install signal handlers and run control plane */
-    signal(SIGINT,  sig_handler);
+    signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
     uint32_t peer_ip_net = sess.peer_ip;
@@ -235,39 +243,38 @@ void command_show(const std::string &conf_file)
     /* Aggregate across CPUs */
     userspace_stats total{};
     for (int i = 0; i < ncpus; i++) {
-        total.rx_packets         += per_cpu[i].rx_packets;
-        total.rx_bytes           += per_cpu[i].rx_bytes;
-        total.tx_packets         += per_cpu[i].tx_packets;
-        total.tx_bytes           += per_cpu[i].tx_bytes;
-        total.rx_replay_drops    += per_cpu[i].rx_replay_drops;
-        total.rx_crypto_errors   += per_cpu[i].rx_crypto_errors;
+        total.rx_packets += per_cpu[i].rx_packets;
+        total.rx_bytes += per_cpu[i].rx_bytes;
+        total.tx_packets += per_cpu[i].tx_packets;
+        total.tx_bytes += per_cpu[i].tx_bytes;
+        total.rx_replay_drops += per_cpu[i].rx_replay_drops;
+        total.rx_crypto_errors += per_cpu[i].rx_crypto_errors;
         total.rx_invalid_session += per_cpu[i].rx_invalid_session;
-        total.rx_malformed       += per_cpu[i].rx_malformed;
+        total.rx_malformed += per_cpu[i].rx_malformed;
         total.rx_ratelimit_drops += per_cpu[i].rx_ratelimit_drops;
-        total.tx_crypto_errors      += per_cpu[i].tx_crypto_errors;
-        total.tx_headroom_errors    += per_cpu[i].tx_headroom_errors;
-        total.tx_ratelimit_drops    += per_cpu[i].tx_ratelimit_drops;
+        total.tx_crypto_errors += per_cpu[i].tx_crypto_errors;
+        total.tx_headroom_errors += per_cpu[i].tx_headroom_errors;
+        total.tx_ratelimit_drops += per_cpu[i].tx_ratelimit_drops;
         total.rx_ratelimit_data_drops += per_cpu[i].rx_ratelimit_data_drops;
-        total.rx_roam_events        += per_cpu[i].rx_roam_events;
+        total.rx_roam_events += per_cpu[i].rx_roam_events;
     }
 
     printf("\n  Tachyon Tunnel: %s\n", name.c_str());
-    printf("  %-24s %s\n", "Interface:",
-           ("t_" + name + "_in").c_str());
-    printf("\n  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n",
-           "TX:", total.tx_packets, total.tx_bytes);
-    printf("  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n",
-           "RX:", total.rx_packets, total.rx_bytes);
+    printf("  %-24s %s\n", "Interface:", ("t_" + name + "_in").c_str());
+    printf("\n  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n", "TX:", total.tx_packets,
+           total.tx_bytes);
+    printf("  %-24s %" PRIu64 " packets, %" PRIu64 " bytes\n", "RX:", total.rx_packets,
+           total.rx_bytes);
     printf("\n  Errors:\n");
-    printf("    %-22s %" PRIu64 "\n", "Replay drops:",       total.rx_replay_drops);
-    printf("    %-22s %" PRIu64 "\n", "RX crypto errors:",   total.rx_crypto_errors);
-    printf("    %-22s %" PRIu64 "\n", "TX crypto errors:",   total.tx_crypto_errors);
-    printf("    %-22s %" PRIu64 "\n", "Invalid session:",    total.rx_invalid_session);
-    printf("    %-22s %" PRIu64 "\n", "Malformed packets:",  total.rx_malformed);
-    printf("    %-22s %" PRIu64 "\n", "CP rate-limited:",    total.rx_ratelimit_drops);
-    printf("    %-22s %" PRIu64 "\n", "TX rate-limited:",    total.tx_ratelimit_drops);
-    printf("    %-22s %" PRIu64 "\n", "RX rate-limited:",    total.rx_ratelimit_data_drops);
-    printf("    %-22s %" PRIu64 "\n", "TX headroom:",        total.tx_headroom_errors);
-    printf("    %-22s %" PRIu64 "\n", "Roaming events:",     total.rx_roam_events);
+    printf("    %-22s %" PRIu64 "\n", "Replay drops:", total.rx_replay_drops);
+    printf("    %-22s %" PRIu64 "\n", "RX crypto errors:", total.rx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "TX crypto errors:", total.tx_crypto_errors);
+    printf("    %-22s %" PRIu64 "\n", "Invalid session:", total.rx_invalid_session);
+    printf("    %-22s %" PRIu64 "\n", "Malformed packets:", total.rx_malformed);
+    printf("    %-22s %" PRIu64 "\n", "CP rate-limited:", total.rx_ratelimit_drops);
+    printf("    %-22s %" PRIu64 "\n", "TX rate-limited:", total.tx_ratelimit_drops);
+    printf("    %-22s %" PRIu64 "\n", "RX rate-limited:", total.rx_ratelimit_data_drops);
+    printf("    %-22s %" PRIu64 "\n", "TX headroom:", total.tx_headroom_errors);
+    printf("    %-22s %" PRIu64 "\n", "Roaming events:", total.rx_roam_events);
     printf("\n");
 }

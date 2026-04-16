@@ -47,7 +47,7 @@
 #endif
 
 /* Compile-time endian conversion to avoid per-packet bpf_htons() calls */
-#define ETH_P_IP_BE  __bpf_constant_htons(ETH_P_IP)
+#define ETH_P_IP_BE __bpf_constant_htons(ETH_P_IP)
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Debug Logging
@@ -65,98 +65,98 @@
 
 /* Global tunnel configuration (listen port, mimicry mode) */
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
-	__type(key, __u32);
-	__type(value, struct tachyon_config);
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct tachyon_config);
 } config_map SEC(".maps");
 
 /* Per-session state: peer addresses, replay protection window */
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, TACHYON_MAX_SESSIONS);
-	__type(key, __u32);
-	__type(value, struct tachyon_session);
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, TACHYON_MAX_SESSIONS);
+    __type(key, __u32);
+    __type(value, struct tachyon_session);
 } session_map SEC(".maps");
 
 /* Per-CPU TX sequence counters (lock-free increment) */
 struct {
-	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-	__uint(max_entries, TACHYON_MAX_SESSIONS);
-	__type(key, __u32);
-	__type(value, __u64);
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, TACHYON_MAX_SESSIONS);
+    __type(key, __u32);
+    __type(value, __u64);
 } session_tx_seq SEC(".maps");
 
 /* Per-CPU packet and error statistics */
 struct {
-	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-	__uint(max_entries, 1);
-	__type(key, __u32);
-	__type(value, struct tachyon_stats);
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct tachyon_stats);
 } stats_map SEC(".maps");
 
 /* Virtual IP -> session ID lookup (LRU for dynamic peers) */
 struct {
-	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, TACHYON_MAX_IP_SESSIONS);
-	__type(key, __u32);
-	__type(value, __u32);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, TACHYON_MAX_IP_SESSIONS);
+    __type(key, __u32);
+    __type(value, __u32);
 } ip_to_session_map SEC(".maps");
 
 /* Device map for XDP_REDIRECT targets: [0]=veth, [1]=physical */
 struct {
-	__uint(type, BPF_MAP_TYPE_DEVMAP);
-	__uint(max_entries, 4);
-	__type(key, __u32);
-	__type(value, __u32);
+    __uint(type, BPF_MAP_TYPE_DEVMAP);
+    __uint(max_entries, 4);
+    __type(key, __u32);
+    __type(value, __u32);
 } tx_port SEC(".maps");
 
 /* Staging area for key injection from userspace */
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
-	__type(key, __u32);
-	__type(value, struct tachyon_key_init);
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct tachyon_key_init);
 } key_init_map SEC(".maps");
 
 /* Perf event buffer for error/event reporting to userspace */
 struct {
-	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(key_size, sizeof(int));
-	__uint(value_size, sizeof(int));
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(int));
+    __uint(value_size, sizeof(int));
 } events SEC(".maps");
 
 /* Control plane packet rate limiter (per source IP) */
 struct {
-	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, TACHYON_MAX_RATELIMIT);
-	__type(key, __u32);
-	__type(value, __u64);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, TACHYON_MAX_RATELIMIT);
+    __type(key, __u32);
+    __type(value, __u64);
 } cp_ratelimit_map SEC(".maps");
 
 /* Per-session rate limit configuration */
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, TACHYON_MAX_SESSIONS);
-	__type(key, __u32);
-	__type(value, struct tachyon_rate_cfg);
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, TACHYON_MAX_SESSIONS);
+    __type(key, __u32);
+    __type(value, struct tachyon_rate_cfg);
 } rate_limit_map SEC(".maps");
 
 /* LPM trie for multi-peer allowed-IP routing (Phase 3) */
 struct {
-	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
-	__uint(max_entries, 1024);
-	__uint(map_flags, BPF_F_NO_PREALLOC);
-	__type(key, struct tachyon_lpm_key_v4);
-	__type(value, __u32);
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __uint(max_entries, 1024);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __type(key, struct tachyon_lpm_key_v4);
+    __type(value, __u32);
 } lpm_route_v4 SEC(".maps");
 
 /* AF_XDP socket map for zero-copy control plane (Phase 4) */
 struct {
-	__uint(type, BPF_MAP_TYPE_XSKMAP);
-	__uint(max_entries, 64);
-	__type(key, __u32);
-	__type(value, __u32);
+    __uint(type, BPF_MAP_TYPE_XSKMAP);
+    __uint(max_entries, 64);
+    __type(key, __u32);
+    __type(value, __u32);
 } xsk_map SEC(".maps");
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -165,11 +165,9 @@ struct {
 
 extern int bpf_ghost_encrypt(struct xdp_md *ctx, __u32 session_id) __ksym;
 extern int bpf_ghost_decrypt(struct xdp_md *ctx, __u32 session_id) __ksym;
-extern int bpf_ghost_set_key(__u32 session_id,
-			     __u8 *tx_key, __u32 tx_key__sz,
-			     __u8 *rx_key, __u32 rx_key__sz) __ksym;
-extern int bpf_ghost_set_cipher(__u32 session_id,
-				__u32 cipher_type) __ksym;
+extern int bpf_ghost_set_key(__u32 session_id, __u8 *tx_key, __u32 tx_key__sz, __u8 *rx_key,
+                             __u32 rx_key__sz) __ksym;
+extern int bpf_ghost_set_cipher(__u32 session_id, __u32 cipher_type) __ksym;
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Inline Helpers
@@ -178,43 +176,41 @@ extern int bpf_ghost_set_cipher(__u32 session_id,
 /* Compute IPv4 header checksum via incremental fold */
 static __always_inline void calc_ipv4_csum(struct iphdr *iph)
 {
-	__u32 csum = 0;
-	__u16 *p = (__u16 *)iph;
+    __u32 csum = 0;
+    __u16 *p = (__u16 *)iph;
 
-	iph->check = 0;
+    iph->check = 0;
 
-	#pragma unroll
-	for (int i = 0; i < (int)(sizeof(struct iphdr) / 2); i++)
-		csum += p[i];
+#pragma unroll
+    for (int i = 0; i < (int)(sizeof(struct iphdr) / 2); i++)
+        csum += p[i];
 
-	csum = (csum >> 16) + (csum & 0xffff);
-	csum += (csum >> 16);
-	iph->check = ~(__u16)csum;
+    csum = (csum >> 16) + (csum & 0xffff);
+    csum += (csum >> 16);
+    iph->check = ~(__u16)csum;
 }
 
 /* Emit a structured event to the perf ring buffer */
-static __always_inline void emit_event(struct xdp_md *ctx, __u32 type,
-					__u32 session_id, __u64 seq)
+static __always_inline void emit_event(struct xdp_md *ctx, __u32 type, __u32 session_id, __u64 seq)
 {
-	struct tachyon_event evt = {
-		.type         = type,
-		.session_id   = session_id,
-		.seq          = seq,
-		.timestamp_ns = bpf_ktime_get_ns(),
-	};
-	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &evt, sizeof(evt));
+    struct tachyon_event evt = {
+        .type = type,
+        .session_id = session_id,
+        .seq = seq,
+        .timestamp_ns = bpf_ktime_get_ns(),
+    };
+    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &evt, sizeof(evt));
 }
 
 /* Incremental TCP checksum update for a single 16-bit field change */
-static __always_inline void update_tcp_csum(__u16 *csum, __be16 old_val,
-					    __be16 new_val)
+static __always_inline void update_tcp_csum(__u16 *csum, __be16 old_val, __be16 new_val)
 {
-	__u32 res;
+    __u32 res;
 
-	res = (~((__u32)*csum) & 0xffff) + (~((__u32)old_val) & 0xffff) + new_val;
-	res = (res & 0xffff) + (res >> 16);
-	res = (res & 0xffff) + (res >> 16);
-	*csum = ~(__u16)res;
+    res = (~((__u32)*csum) & 0xffff) + (~((__u32)old_val) & 0xffff) + new_val;
+    res = (res & 0xffff) + (res >> 16);
+    res = (res & 0xffff) + (res >> 16);
+    *csum = ~(__u16)res;
 }
 
 /*
@@ -224,81 +220,83 @@ static __always_inline void update_tcp_csum(__u16 *csum, __be16 old_val,
  */
 static __always_inline void tcp_mss_clamp(struct iphdr *iph, void *data_end)
 {
-	struct tcphdr *tcph;
-	int tcp_hlen;
-	__u8 *opt;
+    struct tcphdr *tcph;
+    int tcp_hlen;
+    __u8 *opt;
 
-	if (iph->protocol != IPPROTO_TCP)
-		return;
+    if (iph->protocol != IPPROTO_TCP)
+        return;
 
-	tcph = (void *)iph + (iph->ihl * 4);
-	if ((void *)(tcph + 1) > data_end)
-		return;
+    tcph = (void *)iph + (iph->ihl * 4);
+    if ((void *)(tcph + 1) > data_end)
+        return;
 
-	if (!tcph->syn)
-		return;
+    if (!tcph->syn)
+        return;
 
-	tcp_hlen = tcph->doff * 4;
-	if (tcp_hlen <= (int)sizeof(struct tcphdr))
-		return;
+    tcp_hlen = tcph->doff * 4;
+    if (tcp_hlen <= (int)sizeof(struct tcphdr))
+        return;
 
-	opt = (__u8 *)(tcph + 1);
+    opt = (__u8 *)(tcph + 1);
 
-	#pragma unroll
-	for (int i = 0; i < 40; i++) {
-		if ((void *)(opt + 1) > data_end)
-			break;
-		if (*opt == 0)   /* End of options */
-			break;
-		if (*opt == 1) { /* NOP */
-			opt++;
-			continue;
-		}
+#pragma unroll
+    for (int i = 0; i < 40; i++) {
+        if ((void *)(opt + 1) > data_end)
+            break;
+        if (*opt == 0) /* End of options */
+            break;
+        if (*opt == 1) { /* NOP */
+            opt++;
+            continue;
+        }
 
-		if ((void *)(opt + 2) > data_end)
-			break;
+        if ((void *)(opt + 2) > data_end)
+            break;
 
-		__u8 len = *(opt + 1);
-		if (len < 2)
-			break;
+        __u8 len = *(opt + 1);
+        if (len < 2)
+            break;
 
-		/* MSS option: kind=2, length=4 */
-		if (*opt == 2 && len == 4) {
-			if ((void *)(opt + 4) > data_end)
-				break;
+        /* MSS option: kind=2, length=4 */
+        if (*opt == 2 && len == 4) {
+            if ((void *)(opt + 4) > data_end)
+                break;
 
-			__be16 *mss_ptr = (__be16 *)(opt + 2);
-			__be16 old_mss = *mss_ptr;
+            __be16 *mss_ptr = (__be16 *)(opt + 2);
+            __be16 old_mss = *mss_ptr;
 
-			if (bpf_ntohs(old_mss) > TACHYON_TARGET_MSS) {
-				__be16 new_mss = bpf_htons(TACHYON_TARGET_MSS);
-				*mss_ptr = new_mss;
-				update_tcp_csum(&tcph->check, old_mss, new_mss);
-			}
-			break;
-		}
-		opt += len;
-	}
+            if (bpf_ntohs(old_mss) > TACHYON_TARGET_MSS) {
+                __be16 new_mss = bpf_htons(TACHYON_TARGET_MSS);
+                *mss_ptr = new_mss;
+                update_tcp_csum(&tcph->check, old_mss, new_mss);
+            }
+            break;
+        }
+        opt += len;
+    }
 }
 
 /* Retrieve per-CPU stats pointer (map lookup with zero key) */
 static __always_inline struct tachyon_stats *get_stats(void)
 {
-	__u32 zero = 0;
-	return bpf_map_lookup_elem(&stats_map, &zero);
+    __u32 zero = 0;
+    return bpf_map_lookup_elem(&stats_map, &zero);
 }
 
 /* Increment a stats counter (deferred map lookup, safe if map missing) */
-#define STAT_INC(field) do {                        \
-	struct tachyon_stats *_s = get_stats();      \
-	if (_s) _s->field++;                         \
-} while (0)
+#define STAT_INC(field)                         \
+    do {                                        \
+        struct tachyon_stats *_s = get_stats(); \
+        if (_s)                                 \
+            _s->field++;                        \
+    } while (0)
 
 /* Retrieve global config pointer */
 static __always_inline struct tachyon_config *get_config(void)
 {
-	__u32 zero = 0;
-	return bpf_map_lookup_elem(&config_map, &zero);
+    __u32 zero = 0;
+    return bpf_map_lookup_elem(&config_map, &zero);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -318,213 +316,212 @@ static __always_inline struct tachyon_config *get_config(void)
 SEC("xdp")
 int xdp_tx_path(struct xdp_md *ctx)
 {
-	void *data     = (void *)(long)ctx->data;
-	void *data_end = (void *)(long)ctx->data_end;
+    void *data = (void *)(long)ctx->data;
+    void *data_end = (void *)(long)ctx->data_end;
 
-	/* --- Validate inner packet (fast reject, no stats needed) --- */
-	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > data_end)
-		return XDP_PASS;
-	if (eth->h_proto != ETH_P_IP_BE)
-		return XDP_PASS;
+    /* --- Validate inner packet (fast reject, no stats needed) --- */
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) > data_end)
+        return XDP_PASS;
+    if (eth->h_proto != ETH_P_IP_BE)
+        return XDP_PASS;
 
-	struct iphdr *iph_inner = (void *)(eth + 1);
-	if ((void *)(iph_inner + 1) > data_end)
-		return XDP_PASS;
+    struct iphdr *iph_inner = (void *)(eth + 1);
+    if ((void *)(iph_inner + 1) > data_end)
+        return XDP_PASS;
 
-	/* Clamp MSS before encapsulation to prevent inner fragmentation */
-	tcp_mss_clamp(iph_inner, data_end);
+    /* Clamp MSS before encapsulation to prevent inner fragmentation */
+    tcp_mss_clamp(iph_inner, data_end);
 
-	/* --- Session lookup by destination IP (LPM trie for multi-peer routing) --- */
-	struct tachyon_lpm_key_v4 lpm_key = {
-		.prefixlen = 32,
-		.addr      = iph_inner->daddr,
-	};
-	__u32 *sid_p = bpf_map_lookup_elem(&lpm_route_v4, &lpm_key);
-	if (!sid_p) {
-		/* Fallback to legacy direct-IP map for backward compatibility */
-		sid_p = bpf_map_lookup_elem(&ip_to_session_map, &iph_inner->daddr);
-		if (!sid_p)
-			return XDP_PASS;  /* Not a tunnel destination */
-	}
-	__u32 session_id = *sid_p;
+    /* --- Session lookup by destination IP (LPM trie for multi-peer routing) --- */
+    struct tachyon_lpm_key_v4 lpm_key = {
+        .prefixlen = 32,
+        .addr = iph_inner->daddr,
+    };
+    __u32 *sid_p = bpf_map_lookup_elem(&lpm_route_v4, &lpm_key);
+    if (!sid_p) {
+        /* Fallback to legacy direct-IP map for backward compatibility */
+        sid_p = bpf_map_lookup_elem(&ip_to_session_map, &iph_inner->daddr);
+        if (!sid_p)
+            return XDP_PASS; /* Not a tunnel destination */
+    }
+    __u32 session_id = *sid_p;
 
-	struct tachyon_session *sess = bpf_map_lookup_elem(&session_map, &session_id);
-	if (!sess) {
-		STAT_INC(rx_invalid_session);
-		return XDP_DROP;
-	}
+    struct tachyon_session *sess = bpf_map_lookup_elem(&session_map, &session_id);
+    if (!sess) {
+        STAT_INC(rx_invalid_session);
+        return XDP_DROP;
+    }
 
-	/* --- TX Rate Limiting (token bucket, under session spinlock) --- */
-	struct tachyon_rate_cfg *rl = bpf_map_lookup_elem(&rate_limit_map, &session_id);
-	if (rl && rl->tx_rate_bps > 0) {
-		__u64 pkt_len = (__u64)(data_end - data);
-		__u64 now_ns  = bpf_ktime_get_ns();
+    /* --- TX Rate Limiting (token bucket, under session spinlock) --- */
+    struct tachyon_rate_cfg *rl = bpf_map_lookup_elem(&rate_limit_map, &session_id);
+    if (rl && rl->tx_rate_bps > 0) {
+        __u64 pkt_len = (__u64)(data_end - data);
+        __u64 now_ns = bpf_ktime_get_ns();
 
-		bpf_spin_lock(&sess->replay_lock);
-		__u64 elapsed = now_ns - sess->tx_rl_last_ns;
-		__u64 refill  = (rl->tx_rate_bps * elapsed) / 1000000000ULL;
-		sess->tx_rl_tokens += refill;
-		if (sess->tx_rl_tokens > rl->tx_burst)
-			sess->tx_rl_tokens = rl->tx_burst;
-		sess->tx_rl_last_ns = now_ns;
+        bpf_spin_lock(&sess->replay_lock);
+        __u64 elapsed = now_ns - sess->tx_rl_last_ns;
+        __u64 refill = (rl->tx_rate_bps * elapsed) / 1000000000ULL;
+        sess->tx_rl_tokens += refill;
+        if (sess->tx_rl_tokens > rl->tx_burst)
+            sess->tx_rl_tokens = rl->tx_burst;
+        sess->tx_rl_last_ns = now_ns;
 
-		if (sess->tx_rl_tokens < pkt_len) {
-			bpf_spin_unlock(&sess->replay_lock);
-			STAT_INC(tx_ratelimit_drops);
-			return XDP_DROP;
-		}
-		sess->tx_rl_tokens -= pkt_len;
-		bpf_spin_unlock(&sess->replay_lock);
-	}
+        if (sess->tx_rl_tokens < pkt_len) {
+            bpf_spin_unlock(&sess->replay_lock);
+            STAT_INC(tx_ratelimit_drops);
+            return XDP_DROP;
+        }
+        sess->tx_rl_tokens -= pkt_len;
+        bpf_spin_unlock(&sess->replay_lock);
+    }
 
-	/* --- Per-CPU sequence number generation --- */
-	__u64 *tx_seq_ptr = bpf_map_lookup_elem(&session_tx_seq, &session_id);
-	if (!tx_seq_ptr) {
-		STAT_INC(tx_headroom_errors);
-		return XDP_DROP;
-	}
+    /* --- Per-CPU sequence number generation --- */
+    __u64 *tx_seq_ptr = bpf_map_lookup_elem(&session_tx_seq, &session_id);
+    if (!tx_seq_ptr) {
+        STAT_INC(tx_headroom_errors);
+        return XDP_DROP;
+    }
 
-	__u64 local_seq = *tx_seq_ptr;
-	*tx_seq_ptr = local_seq + 1;
+    __u64 local_seq = *tx_seq_ptr;
+    *tx_seq_ptr = local_seq + 1;
 
-	__u32 cpu_id = bpf_get_smp_processor_id();
-	__u64 final_seq = ((__u64)cpu_id << TACHYON_SEQ_CPU_SHIFT) |
-			  (local_seq & TACHYON_SEQ_NUM_MASK);
+    __u32 cpu_id = bpf_get_smp_processor_id();
+    __u64 final_seq = ((__u64)cpu_id << TACHYON_SEQ_CPU_SHIFT) | (local_seq & TACHYON_SEQ_NUM_MASK);
 
-	/* Save fields from inner packet before buffer adjustments invalidate pointers */
-	__u8 src_mac[6];
-	__builtin_memcpy(src_mac, eth->h_source, 6);
-	__u8 inner_tos = iph_inner->tos;  /* For DSCP/ECN copy to outer header */
+    /* Save fields from inner packet before buffer adjustments invalidate pointers */
+    __u8 src_mac[6];
+    __builtin_memcpy(src_mac, eth->h_source, 6);
+    __u8 inner_tos = iph_inner->tos; /* For DSCP/ECN copy to outer header */
 
-	/* --- Load global config --- */
-	struct tachyon_config *cfg = get_config();
-	__u16 tport  = cfg ? cfg->listen_port_net : bpf_htons(TACHYON_DEFAULT_PORT);
-	__u8 mimicry = cfg ? cfg->mimicry_type : TACHYON_MIMICRY_QUIC;
+    /* --- Load global config --- */
+    struct tachyon_config *cfg = get_config();
+    __u16 tport = cfg ? cfg->listen_port_net : bpf_htons(TACHYON_DEFAULT_PORT);
+    __u8 mimicry = cfg ? cfg->mimicry_type : TACHYON_MIMICRY_QUIC;
 
-	/* --- QUIC Mimicry: Bimodal packet-size shaping ---
+    /* --- QUIC Mimicry: Bimodal packet-size shaping ---
 	 * Pre-generate random values to minimize BPF helper calls.
 	 * rand_a: padding distribution + mimicry fields
 	 * rand_b: dedicated nonce_salt entropy (must be unique per-packet)
 	 */
-	__u32 rand_a = bpf_get_prandom_u32();
-	__u32 rand_b = bpf_get_prandom_u32();
+    __u32 rand_a = bpf_get_prandom_u32();
+    __u32 rand_b = bpf_get_prandom_u32();
 
-	__u32 current_inner_len = (__u32)(data_end - data);
-	__u16 pad_len = 0;
+    __u32 current_inner_len = (__u32)(data_end - data);
+    __u16 pad_len = 0;
 
-	if (mimicry == TACHYON_MIMICRY_QUIC) {
-		__u32 max_pad = TACHYON_TARGET_OUTER_LEN -
-			        (current_inner_len + TACHYON_TX_HEAD_ADJUST + TACHYON_AEAD_TAG_LEN);
+    if (mimicry == TACHYON_MIMICRY_QUIC) {
+        __u32 max_pad = TACHYON_TARGET_OUTER_LEN -
+                        (current_inner_len + TACHYON_TX_HEAD_ADJUST + TACHYON_AEAD_TAG_LEN);
 
-		if (max_pad < TACHYON_MAX_FRAME_LEN) {  /* unsigned underflow = huge = skip */
-			__u32 prob = rand_a % 100;
+        if (max_pad < TACHYON_MAX_FRAME_LEN) { /* unsigned underflow = huge = skip */
+            __u32 prob = rand_a % 100;
 
-			if (prob < TACHYON_PAD_FULL_THRESH) {
-				/* 60%: Pad to near-MTU (mimic bulk transfer) */
-				pad_len = max_pad - (rand_a & TACHYON_PAD_JITTER_MASK);
-			} else if (prob < TACHYON_PAD_ACK_THRESH) {
-				/* 30%: Small padding (mimic QUIC ACKs) */
-				pad_len = rand_a & TACHYON_PAD_ACK_MAX;
-			} else {
-				/* 10%: Random size (break statistical patterns) */
-				pad_len = rand_a % max_pad;
-			}
+            if (prob < TACHYON_PAD_FULL_THRESH) {
+                /* 60%: Pad to near-MTU (mimic bulk transfer) */
+                pad_len = max_pad - (rand_a & TACHYON_PAD_JITTER_MASK);
+            } else if (prob < TACHYON_PAD_ACK_THRESH) {
+                /* 30%: Small padding (mimic QUIC ACKs) */
+                pad_len = rand_a & TACHYON_PAD_ACK_MAX;
+            } else {
+                /* 10%: Random size (break statistical patterns) */
+                pad_len = rand_a % max_pad;
+            }
 
-			if (pad_len > (__u16)max_pad)
-				pad_len = max_pad;
-			pad_len &= TACHYON_PAD_MAX_BITS;
-		}
-	}
+            if (pad_len > (__u16)max_pad)
+                pad_len = max_pad;
+            pad_len &= TACHYON_PAD_MAX_BITS;
+        }
+    }
 
-	/* --- Adjust buffer: add tail for AEAD tag + padding, prepend outer headers --- */
-	if (bpf_xdp_adjust_tail(ctx, TACHYON_AEAD_TAG_LEN + pad_len)) {
-		STAT_INC(tx_headroom_errors);
-		return XDP_DROP;
-	}
-	if (bpf_xdp_adjust_head(ctx, -(int)TACHYON_TX_HEAD_ADJUST)) {
-		STAT_INC(tx_headroom_errors);
-		return XDP_DROP;
-	}
+    /* --- Adjust buffer: add tail for AEAD tag + padding, prepend outer headers --- */
+    if (bpf_xdp_adjust_tail(ctx, TACHYON_AEAD_TAG_LEN + pad_len)) {
+        STAT_INC(tx_headroom_errors);
+        return XDP_DROP;
+    }
+    if (bpf_xdp_adjust_head(ctx, -(int)TACHYON_TX_HEAD_ADJUST)) {
+        STAT_INC(tx_headroom_errors);
+        return XDP_DROP;
+    }
 
-	/* Re-derive pointers after buffer adjustment */
-	data     = (void *)(long)ctx->data;
-	data_end = (void *)(long)ctx->data_end;
+    /* Re-derive pointers after buffer adjustment */
+    data = (void *)(long)ctx->data;
+    data_end = (void *)(long)ctx->data_end;
 
-	if (data + TACHYON_OUTER_HDR_LEN > data_end) {
-		STAT_INC(tx_headroom_errors);
-		return XDP_DROP;
-	}
+    if (data + TACHYON_OUTER_HDR_LEN > data_end) {
+        STAT_INC(tx_headroom_errors);
+        return XDP_DROP;
+    }
 
-	/* --- Construct outer headers --- */
-	struct ethhdr          *oeth = data;
-	struct iphdr           *oip  = data + TACHYON_ETH_HDR_LEN;
-	struct udphdr          *oudp = data + TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN;
-	struct tachyon_ghost_hdr *gh = data + TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN +
-				       TACHYON_UDP_HDR_LEN;
+    /* --- Construct outer headers --- */
+    struct ethhdr *oeth = data;
+    struct iphdr *oip = data + TACHYON_ETH_HDR_LEN;
+    struct udphdr *oudp = data + TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN;
+    struct tachyon_ghost_hdr *gh =
+        data + TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN + TACHYON_UDP_HDR_LEN;
 
-	/* Ghost header: QUIC mimicry flags + session + sequence + nonce
+    /* Ghost header: QUIC mimicry flags + session + sequence + nonce
 	 * Derive spin_bit, pn_len, and CID entropy from rand_a (already fetched).
 	 * This avoids 3 extra bpf_get_prandom_u32() calls (~50 cycles saved). */
-	if (mimicry == TACHYON_MIMICRY_QUIC) {
-		__u8 spin_bit = (rand_a >> 8) & TACHYON_QUIC_SPIN_BIT;
-		__u8 pn_len   = (rand_a >> 16) & TACHYON_QUIC_PN_LEN_MASK;
-		gh->quic_flags = TACHYON_QUIC_FIXED_BIT | spin_bit | pn_len;
+    if (mimicry == TACHYON_MIMICRY_QUIC) {
+        __u8 spin_bit = (rand_a >> 8) & TACHYON_QUIC_SPIN_BIT;
+        __u8 pn_len = (rand_a >> 16) & TACHYON_QUIC_PN_LEN_MASK;
+        gh->quic_flags = TACHYON_QUIC_FIXED_BIT | spin_bit | pn_len;
 
-		/* Reuse rand_a bits as fake QUIC Connection ID */
-		gh->pad[0] = rand_a & 0xFF;
-		gh->pad[1] = (rand_a >> 8) & 0xFF;
-		gh->pad[2] = (rand_a >> 16) & 0xFF;
-	} else {
-		gh->quic_flags = TACHYON_QUIC_FIXED_BIT;
-		gh->pad[0] = gh->pad[1] = gh->pad[2] = 0;
-	}
+        /* Reuse rand_a bits as fake QUIC Connection ID */
+        gh->pad[0] = rand_a & 0xFF;
+        gh->pad[1] = (rand_a >> 8) & 0xFF;
+        gh->pad[2] = (rand_a >> 16) & 0xFF;
+    } else {
+        gh->quic_flags = TACHYON_QUIC_FIXED_BIT;
+        gh->pad[0] = gh->pad[1] = gh->pad[2] = 0;
+    }
 
-	gh->session_id = bpf_htonl(session_id);
-	gh->seq        = bpf_cpu_to_be64(final_seq);
-	gh->nonce_salt = rand_b;  /* Dedicated entropy for IV uniqueness */
+    gh->session_id = bpf_htonl(session_id);
+    gh->seq = bpf_cpu_to_be64(final_seq);
+    gh->nonce_salt = rand_b; /* Dedicated entropy for IV uniqueness */
 
-	/* Outer Ethernet */
-	__builtin_memcpy(oeth->h_dest, sess->peer_mac, 6);
-	__builtin_memcpy(oeth->h_source, src_mac, 6);
-	oeth->h_proto = ETH_P_IP_BE;
+    /* Outer Ethernet */
+    __builtin_memcpy(oeth->h_dest, sess->peer_mac, 6);
+    __builtin_memcpy(oeth->h_source, src_mac, 6);
+    oeth->h_proto = ETH_P_IP_BE;
 
-	/* Outer IPv4 - copy inner DSCP+ECN to outer per RFC 6040 */
-	oip->version  = 4;
-	oip->ihl      = 5;
-	oip->tos      = inner_tos;       /* Preserve DSCP and ECN from inner */
-	oip->tot_len  = bpf_htons(data_end - (void *)oip);
-	oip->id       = 0;
-	oip->frag_off = bpf_htons(IP_DF);
-	oip->ttl      = 64;
-	oip->protocol = IPPROTO_UDP;
-	oip->saddr    = sess->local_ip;
-	oip->daddr    = sess->peer_ip;
-	calc_ipv4_csum(oip);
+    /* Outer IPv4 - copy inner DSCP+ECN to outer per RFC 6040 */
+    oip->version = 4;
+    oip->ihl = 5;
+    oip->tos = inner_tos; /* Preserve DSCP and ECN from inner */
+    oip->tot_len = bpf_htons(data_end - (void *)oip);
+    oip->id = 0;
+    oip->frag_off = bpf_htons(IP_DF);
+    oip->ttl = 64;
+    oip->protocol = IPPROTO_UDP;
+    oip->saddr = sess->local_ip;
+    oip->daddr = sess->peer_ip;
+    calc_ipv4_csum(oip);
 
-	/* Outer UDP */
-	oudp->source = tport;
-	oudp->dest   = tport;
-	oudp->len    = bpf_htons(data_end - (void *)oudp);
-	oudp->check  = 0;
+    /* Outer UDP */
+    oudp->source = tport;
+    oudp->dest = tport;
+    oudp->len = bpf_htons(data_end - (void *)oudp);
+    oudp->check = 0;
 
-	/* --- Encrypt payload --- */
-	if (bpf_ghost_encrypt(ctx, session_id) != 0) {
-		STAT_INC(tx_crypto_errors);
-		emit_event(ctx, TACHYON_EVT_CRYPTO_ERROR, session_id, final_seq);
-		return XDP_DROP;
-	}
+    /* --- Encrypt payload --- */
+    if (bpf_ghost_encrypt(ctx, session_id) != 0) {
+        STAT_INC(tx_crypto_errors);
+        emit_event(ctx, TACHYON_EVT_CRYPTO_ERROR, session_id, final_seq);
+        return XDP_DROP;
+    }
 
-	/* --- Update TX statistics (deferred lookup - only on success path) --- */
-	{
-		struct tachyon_stats *s = get_stats();
-		if (s) {
-			s->tx_packets++;
-			s->tx_bytes += (data_end - data);
-		}
-	}
+    /* --- Update TX statistics (deferred lookup - only on success path) --- */
+    {
+        struct tachyon_stats *s = get_stats();
+        if (s) {
+            s->tx_packets++;
+            s->tx_bytes += (data_end - data);
+        }
+    }
 
-	return bpf_redirect_map(&tx_port, TACHYON_TXPORT_PHYS, 0);
+    return bpf_redirect_map(&tx_port, TACHYON_TXPORT_PHYS, 0);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -543,88 +540,91 @@ int xdp_tx_path(struct xdp_md *ctx)
 SEC("xdp")
 int xdp_rx_path(struct xdp_md *ctx)
 {
-	void *data_end = (void *)(long)ctx->data_end;
-	void *data     = (void *)(long)ctx->data;
+    void *data_end = (void *)(long)ctx->data_end;
+    void *data = (void *)(long)ctx->data;
 
-	/* --- Validate outer headers (fast reject, no stats lookup needed) --- */
-	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > data_end)
-		return XDP_PASS;
-	if (eth->h_proto != ETH_P_IP_BE)
-		return XDP_PASS;
+    /* --- Validate outer headers (fast reject, no stats lookup needed) --- */
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) > data_end)
+        return XDP_PASS;
+    if (eth->h_proto != ETH_P_IP_BE)
+        return XDP_PASS;
 
-	struct iphdr *iph = (void *)(eth + 1);
-	if ((void *)(iph + 1) > data_end || iph->protocol != IPPROTO_UDP)
-		return XDP_PASS;
+    struct iphdr *iph = (void *)(eth + 1);
+    if ((void *)(iph + 1) > data_end || iph->protocol != IPPROTO_UDP)
+        return XDP_PASS;
 
-	struct udphdr *udph = (void *)(iph + 1);
-	if ((void *)(udph + 1) > data_end)
-		return XDP_PASS;
+    struct udphdr *udph = (void *)(iph + 1);
+    if ((void *)(udph + 1) > data_end)
+        return XDP_PASS;
 
-	/* Port filter: only process packets on our listen port */
-	struct tachyon_config *cfg = get_config();
-	if (cfg && udph->dest != cfg->listen_port_net)
-		return XDP_PASS;
+    /* Port filter: only process packets on our listen port */
+    struct tachyon_config *cfg = get_config();
+    if (cfg && udph->dest != cfg->listen_port_net)
+        return XDP_PASS;
 
-	struct tachyon_ghost_hdr *gh = (void *)(udph + 1);
-	if ((void *)(gh + 1) > data_end) {
-		STAT_INC(rx_malformed);
-		return XDP_DROP;
-	}
+    struct tachyon_ghost_hdr *gh = (void *)(udph + 1);
+    if ((void *)(gh + 1) > data_end) {
+        STAT_INC(rx_malformed);
+        return XDP_DROP;
+    }
 
-	/* Stats lookup deferred past fast-reject path (saves map lookup on non-tunnel pkts) */
-	struct tachyon_stats *stats = get_stats();
+    /* Stats lookup deferred past fast-reject path (saves map lookup on non-tunnel pkts) */
+    struct tachyon_stats *stats = get_stats();
 
-	/* Save outer header fields before they are stripped (for DSCP/ECN and roaming) */
-	__u8  saved_outer_tos = iph->tos;
-	__u32 saved_src_ip    = iph->saddr;
-	__u16 saved_src_port  = udph->source;
-	__u8  saved_src_mac[6];
-	__builtin_memcpy(saved_src_mac, eth->h_source, 6);
+    /* Save outer header fields before they are stripped (for DSCP/ECN and roaming) */
+    __u8 saved_outer_tos = iph->tos;
+    __u32 saved_src_ip = iph->saddr;
+    __u16 saved_src_port = udph->source;
+    __u8 saved_src_mac[6];
+    __builtin_memcpy(saved_src_mac, eth->h_source, 6);
 
-	/* --- Control plane packet routing (with AF_XDP fast-path) --- */
-	if ((gh->quic_flags & TACHYON_CP_FLAG_MASK) == TACHYON_CP_FLAG_PREFIX) {
-		__u32 src_ip = iph->saddr;
-		__u64 now = bpf_ktime_get_ns();
-		__u64 *last_ts = bpf_map_lookup_elem(&cp_ratelimit_map, &src_ip);
+    /* --- Control plane packet routing (with AF_XDP fast-path) --- */
+    if ((gh->quic_flags & TACHYON_CP_FLAG_MASK) == TACHYON_CP_FLAG_PREFIX) {
+        __u32 src_ip = iph->saddr;
+        __u64 now = bpf_ktime_get_ns();
+        __u64 *last_ts = bpf_map_lookup_elem(&cp_ratelimit_map, &src_ip);
 
-		if (last_ts) {
-			if (now - *last_ts < TACHYON_CP_RATELIMIT_NS) {
-				if (stats) stats->rx_ratelimit_drops++;
-				return XDP_DROP;
-			}
-			*last_ts = now;
-		} else {
-			bpf_map_update_elem(&cp_ratelimit_map, &src_ip, &now, BPF_ANY);
-		}
+        if (last_ts) {
+            if (now - *last_ts < TACHYON_CP_RATELIMIT_NS) {
+                if (stats)
+                    stats->rx_ratelimit_drops++;
+                return XDP_DROP;
+            }
+            *last_ts = now;
+        } else {
+            bpf_map_update_elem(&cp_ratelimit_map, &src_ip, &now, BPF_ANY);
+        }
 
-		/* Try AF_XDP zero-copy path first; fall back to XDP_PASS (kernel socket) */
-		return bpf_redirect_map(&xsk_map, ctx->rx_queue_index, XDP_PASS);
-	}
+        /* Try AF_XDP zero-copy path first; fall back to XDP_PASS (kernel socket) */
+        return bpf_redirect_map(&xsk_map, ctx->rx_queue_index, XDP_PASS);
+    }
 
-	/* --- Session validation --- */
-	__u32 session_id = bpf_ntohl(gh->session_id);
-	if (session_id == 0 || session_id >= TACHYON_MAX_SESSIONS) {
-		if (stats) stats->rx_invalid_session++;
-		return XDP_DROP;
-	}
+    /* --- Session validation --- */
+    __u32 session_id = bpf_ntohl(gh->session_id);
+    if (session_id == 0 || session_id >= TACHYON_MAX_SESSIONS) {
+        if (stats)
+            stats->rx_invalid_session++;
+        return XDP_DROP;
+    }
 
-	struct tachyon_session *sess = bpf_map_lookup_elem(&session_map, &session_id);
-	if (!sess) {
-		if (stats) stats->rx_invalid_session++;
-		return XDP_DROP;
-	}
+    struct tachyon_session *sess = bpf_map_lookup_elem(&session_map, &session_id);
+    if (!sess) {
+        if (stats)
+            stats->rx_invalid_session++;
+        return XDP_DROP;
+    }
 
-	/* --- Decode sequence number --- */
-	__u64 raw_seq    = bpf_be64_to_cpu(gh->seq);
-	__u32 sender_cpu = (raw_seq >> TACHYON_SEQ_CPU_SHIFT) & (TACHYON_MAX_TX_CPUS - 1);
-	__u64 pkt_seq    = raw_seq & TACHYON_SEQ_NUM_MASK;
+    /* --- Decode sequence number --- */
+    __u64 raw_seq = bpf_be64_to_cpu(gh->seq);
+    __u32 sender_cpu = (raw_seq >> TACHYON_SEQ_CPU_SHIFT) & (TACHYON_MAX_TX_CPUS - 1);
+    __u64 pkt_seq = raw_seq & TACHYON_SEQ_NUM_MASK;
 
-	/* Bounds check for verifier (sender_cpu is already masked, can't happen) */
-	if (sender_cpu >= TACHYON_MAX_TX_CPUS)
-		return XDP_DROP;
+    /* Bounds check for verifier (sender_cpu is already masked, can't happen) */
+    if (sender_cpu >= TACHYON_MAX_TX_CPUS)
+        return XDP_DROP;
 
-	/* ── Unified Critical Section: Replay Check + Decrypt + Bitmap Commit ──
+    /* ── Unified Critical Section: Replay Check + Decrypt + Bitmap Commit ──
 	 *
 	 * We perform replay pre-check, then decrypt, then commit the bitmap
 	 * update all conceptually linked. The decrypt happens outside the lock
@@ -633,216 +633,230 @@ int xdp_rx_path(struct xdp_md *ctx)
 	 * crypto operations.
 	 */
 
-	/* Phase 1: Replay pre-check (under lock) */
-	bpf_spin_lock(&sess->replay_lock);
-	__u64 drop_flag = 0;
+    /* Phase 1: Replay pre-check (under lock) */
+    bpf_spin_lock(&sess->replay_lock);
+    __u64 drop_flag = 0;
 
-	if (pkt_seq <= sess->rx_highest_seq[sender_cpu]) {
-		__u64 delta = sess->rx_highest_seq[sender_cpu] - pkt_seq;
-		if (delta >= TACHYON_REPLAY_WINDOW) {
-			drop_flag = 1;
-		} else {
-			__u64 word = delta >> 6;       /* delta / 64 */
-			__u64 bit  = delta & 63;       /* delta % 64 */
-			__u64 mask = 1ULL << bit;
+    if (pkt_seq <= sess->rx_highest_seq[sender_cpu]) {
+        __u64 delta = sess->rx_highest_seq[sender_cpu] - pkt_seq;
+        if (delta >= TACHYON_REPLAY_WINDOW) {
+            drop_flag = 1;
+        } else {
+            __u64 word = delta >> 6; /* delta / 64 */
+            __u64 bit = delta & 63;  /* delta % 64 */
+            __u64 mask = 1ULL << bit;
 
-			/* Direct array indexing with verifier guard */
-			if (word < TACHYON_REPLAY_WORDS &&
-			    (sess->rx_bitmap[sender_cpu][word] & mask))
-				drop_flag = 1;
-		}
-	}
-	bpf_spin_unlock(&sess->replay_lock);
+            /* Direct array indexing with verifier guard */
+            if (word < TACHYON_REPLAY_WORDS && (sess->rx_bitmap[sender_cpu][word] & mask))
+                drop_flag = 1;
+        }
+    }
+    bpf_spin_unlock(&sess->replay_lock);
 
-	if (drop_flag) {
-		if (stats) stats->rx_replay_drops++;
-		emit_event(ctx, TACHYON_EVT_REPLAY_DROP, session_id, pkt_seq);
-		return XDP_DROP;
-	}
+    if (drop_flag) {
+        if (stats)
+            stats->rx_replay_drops++;
+        emit_event(ctx, TACHYON_EVT_REPLAY_DROP, session_id, pkt_seq);
+        return XDP_DROP;
+    }
 
-	/* Phase 2: Decrypt and authenticate (outside lock) */
-	if (bpf_ghost_decrypt(ctx, session_id) != 0) {
-		if (stats) stats->rx_crypto_errors++;
-		emit_event(ctx, TACHYON_EVT_CRYPTO_ERROR, session_id, pkt_seq);
-		return XDP_DROP;
-	}
+    /* Phase 2: Decrypt and authenticate (outside lock) */
+    if (bpf_ghost_decrypt(ctx, session_id) != 0) {
+        if (stats)
+            stats->rx_crypto_errors++;
+        emit_event(ctx, TACHYON_EVT_CRYPTO_ERROR, session_id, pkt_seq);
+        return XDP_DROP;
+    }
 
-	/* Phase 3: Commit bitmap update (under lock, after successful auth) */
-	bpf_spin_lock(&sess->replay_lock);
+    /* Phase 3: Commit bitmap update (under lock, after successful auth) */
+    bpf_spin_lock(&sess->replay_lock);
 
-	if (pkt_seq > sess->rx_highest_seq[sender_cpu]) {
-		__u64 delta = pkt_seq - sess->rx_highest_seq[sender_cpu];
+    if (pkt_seq > sess->rx_highest_seq[sender_cpu]) {
+        __u64 delta = pkt_seq - sess->rx_highest_seq[sender_cpu];
 
-		if (delta >= TACHYON_REPLAY_WINDOW) {
-			/* Sequence jumped beyond window - reset bitmap */
-			sess->rx_bitmap[sender_cpu][0] = 0;
-			sess->rx_bitmap[sender_cpu][1] = 0;
-			sess->rx_bitmap[sender_cpu][2] = 0;
-			sess->rx_bitmap[sender_cpu][3] = 0;
-		} else {
-			/* Slide the bitmap window forward by delta positions */
-			__u64 w0 = sess->rx_bitmap[sender_cpu][0];
-			__u64 w1 = sess->rx_bitmap[sender_cpu][1];
-			__u64 w2 = sess->rx_bitmap[sender_cpu][2];
-			__u64 w3 = sess->rx_bitmap[sender_cpu][3];
+        if (delta >= TACHYON_REPLAY_WINDOW) {
+            /* Sequence jumped beyond window - reset bitmap */
+            sess->rx_bitmap[sender_cpu][0] = 0;
+            sess->rx_bitmap[sender_cpu][1] = 0;
+            sess->rx_bitmap[sender_cpu][2] = 0;
+            sess->rx_bitmap[sender_cpu][3] = 0;
+        } else {
+            /* Slide the bitmap window forward by delta positions */
+            __u64 w0 = sess->rx_bitmap[sender_cpu][0];
+            __u64 w1 = sess->rx_bitmap[sender_cpu][1];
+            __u64 w2 = sess->rx_bitmap[sender_cpu][2];
+            __u64 w3 = sess->rx_bitmap[sender_cpu][3];
 
-			#pragma unroll
-			for (int i = 0; i < 3; i++) {
-				if (delta >= 64) {
-					w3 = w2; w2 = w1; w1 = w0; w0 = 0;
-					delta -= 64;
-				}
-			}
-			if (delta > 0 && delta < 64) {
-				w3 = (w3 << delta) | (w2 >> (64 - delta));
-				w2 = (w2 << delta) | (w1 >> (64 - delta));
-				w1 = (w1 << delta) | (w0 >> (64 - delta));
-				w0 = (w0 << delta);
-			}
+#pragma unroll
+            for (int i = 0; i < 3; i++) {
+                if (delta >= 64) {
+                    w3 = w2;
+                    w2 = w1;
+                    w1 = w0;
+                    w0 = 0;
+                    delta -= 64;
+                }
+            }
+            if (delta > 0 && delta < 64) {
+                w3 = (w3 << delta) | (w2 >> (64 - delta));
+                w2 = (w2 << delta) | (w1 >> (64 - delta));
+                w1 = (w1 << delta) | (w0 >> (64 - delta));
+                w0 = (w0 << delta);
+            }
 
-			sess->rx_bitmap[sender_cpu][0] = w0;
-			sess->rx_bitmap[sender_cpu][1] = w1;
-			sess->rx_bitmap[sender_cpu][2] = w2;
-			sess->rx_bitmap[sender_cpu][3] = w3;
-		}
-		sess->rx_highest_seq[sender_cpu] = pkt_seq;
-		sess->rx_bitmap[sender_cpu][0] |= 1ULL; /* Mark current packet */
-	} else {
-		/* Out-of-order packet within window - mark its bit */
-		__u64 delta = sess->rx_highest_seq[sender_cpu] - pkt_seq;
-		__u64 word = delta >> 6;
-		__u64 bit  = delta & 63;
-		__u64 mask = 1ULL << bit;
+            sess->rx_bitmap[sender_cpu][0] = w0;
+            sess->rx_bitmap[sender_cpu][1] = w1;
+            sess->rx_bitmap[sender_cpu][2] = w2;
+            sess->rx_bitmap[sender_cpu][3] = w3;
+        }
+        sess->rx_highest_seq[sender_cpu] = pkt_seq;
+        sess->rx_bitmap[sender_cpu][0] |= 1ULL; /* Mark current packet */
+    } else {
+        /* Out-of-order packet within window - mark its bit */
+        __u64 delta = sess->rx_highest_seq[sender_cpu] - pkt_seq;
+        __u64 word = delta >> 6;
+        __u64 bit = delta & 63;
+        __u64 mask = 1ULL << bit;
 
-		/* Check for duplicate (shouldn't happen after Phase 1, but guard) */
-		if (word < TACHYON_REPLAY_WORDS) {
-			if (sess->rx_bitmap[sender_cpu][word] & mask) {
-				bpf_spin_unlock(&sess->replay_lock);
-				if (stats) stats->rx_replay_drops++;
-				return XDP_DROP;
-			}
-			sess->rx_bitmap[sender_cpu][word] |= mask;
-		}
-	}
-	bpf_spin_unlock(&sess->replay_lock);
+        /* Check for duplicate (shouldn't happen after Phase 1, but guard) */
+        if (word < TACHYON_REPLAY_WORDS) {
+            if (sess->rx_bitmap[sender_cpu][word] & mask) {
+                bpf_spin_unlock(&sess->replay_lock);
+                if (stats)
+                    stats->rx_replay_drops++;
+                return XDP_DROP;
+            }
+            sess->rx_bitmap[sender_cpu][word] |= mask;
+        }
+    }
+    bpf_spin_unlock(&sess->replay_lock);
 
-	/* ── RX Rate Limiting (after auth to prevent amplification) ── */
-	{
-		struct tachyon_rate_cfg *rl = bpf_map_lookup_elem(&rate_limit_map, &session_id);
-		if (rl && rl->rx_rate_bps > 0) {
-			__u64 pkt_len = (__u64)(data_end - data);
-			__u64 now_ns  = bpf_ktime_get_ns();
+    /* ── RX Rate Limiting (after auth to prevent amplification) ── */
+    {
+        struct tachyon_rate_cfg *rl = bpf_map_lookup_elem(&rate_limit_map, &session_id);
+        if (rl && rl->rx_rate_bps > 0) {
+            __u64 pkt_len = (__u64)(data_end - data);
+            __u64 now_ns = bpf_ktime_get_ns();
 
-			bpf_spin_lock(&sess->replay_lock);
-			__u64 elapsed = now_ns - sess->rx_rl_last_ns;
-			__u64 refill  = (rl->rx_rate_bps * elapsed) / 1000000000ULL;
-			sess->rx_rl_tokens += refill;
-			if (sess->rx_rl_tokens > rl->rx_burst)
-				sess->rx_rl_tokens = rl->rx_burst;
-			sess->rx_rl_last_ns = now_ns;
+            bpf_spin_lock(&sess->replay_lock);
+            __u64 elapsed = now_ns - sess->rx_rl_last_ns;
+            __u64 refill = (rl->rx_rate_bps * elapsed) / 1000000000ULL;
+            sess->rx_rl_tokens += refill;
+            if (sess->rx_rl_tokens > rl->rx_burst)
+                sess->rx_rl_tokens = rl->rx_burst;
+            sess->rx_rl_last_ns = now_ns;
 
-			if (sess->rx_rl_tokens < pkt_len) {
-				bpf_spin_unlock(&sess->replay_lock);
-				if (stats) stats->rx_ratelimit_data_drops++;
-				return XDP_DROP;
-			}
-			sess->rx_rl_tokens -= pkt_len;
-			bpf_spin_unlock(&sess->replay_lock);
-		}
-	}
+            if (sess->rx_rl_tokens < pkt_len) {
+                bpf_spin_unlock(&sess->replay_lock);
+                if (stats)
+                    stats->rx_ratelimit_data_drops++;
+                return XDP_DROP;
+            }
+            sess->rx_rl_tokens -= pkt_len;
+            bpf_spin_unlock(&sess->replay_lock);
+        }
+    }
 
-	/* ── Peer Roaming Detection (after successful auth) ── */
-	if (saved_src_ip != sess->peer_ip || saved_src_port != sess->peer_port) {
-		/* Authenticated packet from a new endpoint - peer has roamed */
-		sess->peer_ip   = saved_src_ip;
-		sess->peer_port = saved_src_port;
-		__builtin_memcpy(sess->peer_mac, saved_src_mac, 6);
-		if (stats) stats->rx_roam_events++;
-		emit_event(ctx, TACHYON_EVT_PEER_ROAM, session_id, pkt_seq);
-	}
+    /* ── Peer Roaming Detection (after successful auth) ── */
+    if (saved_src_ip != sess->peer_ip || saved_src_port != sess->peer_port) {
+        /* Authenticated packet from a new endpoint - peer has roamed */
+        sess->peer_ip = saved_src_ip;
+        sess->peer_port = saved_src_port;
+        __builtin_memcpy(sess->peer_mac, saved_src_mac, 6);
+        if (stats)
+            stats->rx_roam_events++;
+        emit_event(ctx, TACHYON_EVT_PEER_ROAM, session_id, pkt_seq);
+    }
 
-	/* ── Strip Outer Headers and Trim Dynamic Padding ── */
-	if (bpf_xdp_adjust_head(ctx, TACHYON_TX_HEAD_ADJUST)) {
-		if (stats) stats->rx_malformed++;
-		return XDP_DROP;
-	}
+    /* ── Strip Outer Headers and Trim Dynamic Padding ── */
+    if (bpf_xdp_adjust_head(ctx, TACHYON_TX_HEAD_ADJUST)) {
+        if (stats)
+            stats->rx_malformed++;
+        return XDP_DROP;
+    }
 
-	data     = (void *)(long)ctx->data;
-	data_end = (void *)(long)ctx->data_end;
-	eth = data;
-	if ((void *)(eth + 1) > data_end) {
-		if (stats) stats->rx_malformed++;
-		return XDP_DROP;
-	}
+    data = (void *)(long)ctx->data;
+    data_end = (void *)(long)ctx->data_end;
+    eth = data;
+    if ((void *)(eth + 1) > data_end) {
+        if (stats)
+            stats->rx_malformed++;
+        return XDP_DROP;
+    }
 
-	struct iphdr *decrypted_iph = (void *)(eth + 1);
-	if ((void *)(decrypted_iph + 1) > data_end) {
-		if (stats) stats->rx_malformed++;
-		return XDP_DROP;
-	}
+    struct iphdr *decrypted_iph = (void *)(eth + 1);
+    if ((void *)(decrypted_iph + 1) > data_end) {
+        if (stats)
+            stats->rx_malformed++;
+        return XDP_DROP;
+    }
 
-	/* Validate inner IPv4 total length */
-	__u32 inner_ip_len = bpf_ntohs(decrypted_iph->tot_len);
-	if (inner_ip_len < sizeof(struct iphdr) || inner_ip_len > TACHYON_MAX_FRAME_LEN) {
-		if (stats) stats->rx_malformed++;
-		return XDP_DROP;
-	}
+    /* Validate inner IPv4 total length */
+    __u32 inner_ip_len = bpf_ntohs(decrypted_iph->tot_len);
+    if (inner_ip_len < sizeof(struct iphdr) || inner_ip_len > TACHYON_MAX_FRAME_LEN) {
+        if (stats)
+            stats->rx_malformed++;
+        return XDP_DROP;
+    }
 
-	/* Trim AEAD tag and padding from the tail (unsigned for verifier efficiency) */
-	__u32 current_frame_len  = (__u32)(data_end - data);
-	__u32 expected_frame_len = sizeof(struct ethhdr) + inner_ip_len;
+    /* Trim AEAD tag and padding from the tail (unsigned for verifier efficiency) */
+    __u32 current_frame_len = (__u32)(data_end - data);
+    __u32 expected_frame_len = sizeof(struct ethhdr) + inner_ip_len;
 
-	if (current_frame_len < expected_frame_len + TACHYON_AEAD_TAG_LEN) {
-		if (stats) stats->rx_malformed++;
-		return XDP_DROP;
-	}
-	int trim_amount = (int)(current_frame_len - expected_frame_len);
+    if (current_frame_len < expected_frame_len + TACHYON_AEAD_TAG_LEN) {
+        if (stats)
+            stats->rx_malformed++;
+        return XDP_DROP;
+    }
+    int trim_amount = (int)(current_frame_len - expected_frame_len);
 
-	if (trim_amount < TACHYON_AEAD_TAG_LEN || trim_amount > TACHYON_MAX_FRAME_LEN) {
-		if (stats) stats->rx_malformed++;
-		return XDP_DROP;
-	}
+    if (trim_amount < TACHYON_AEAD_TAG_LEN || trim_amount > TACHYON_MAX_FRAME_LEN) {
+        if (stats)
+            stats->rx_malformed++;
+        return XDP_DROP;
+    }
 
-	if (bpf_xdp_adjust_tail(ctx, -trim_amount)) {
-		if (stats) stats->rx_malformed++;
-		return XDP_DROP;
-	}
+    if (bpf_xdp_adjust_tail(ctx, -trim_amount)) {
+        if (stats)
+            stats->rx_malformed++;
+        return XDP_DROP;
+    }
 
-	/* Re-derive pointers after tail adjustment */
-	data     = (void *)(long)ctx->data;
-	data_end = (void *)(long)ctx->data_end;
-	eth = data;
-	if ((void *)(eth + 1) > data_end)
-		return XDP_DROP;
+    /* Re-derive pointers after tail adjustment */
+    data = (void *)(long)ctx->data;
+    data_end = (void *)(long)ctx->data_end;
+    eth = data;
+    if ((void *)(eth + 1) > data_end)
+        return XDP_DROP;
 
-	/* Clamp MSS on decrypted SYN packets too */
-	decrypted_iph = (void *)(eth + 1);
-	if ((void *)(decrypted_iph + 1) <= data_end) {
-		tcp_mss_clamp(decrypted_iph, data_end);
+    /* Clamp MSS on decrypted SYN packets too */
+    decrypted_iph = (void *)(eth + 1);
+    if ((void *)(decrypted_iph + 1) <= data_end) {
+        tcp_mss_clamp(decrypted_iph, data_end);
 
-		/* RFC 6040: Propagate ECN Congestion Experienced from outer to inner */
-		__u8 outer_ecn = saved_outer_tos & 0x03;
-		__u8 inner_ecn = decrypted_iph->tos & 0x03;
-		if (outer_ecn == 0x03 && inner_ecn != 0x00) {
-			/* Outer experienced congestion, inner is ECN-capable: set CE */
-			decrypted_iph->tos = (decrypted_iph->tos & 0xFC) | 0x03;
-			/* Incremental IPv4 checksum update not needed here since
+        /* RFC 6040: Propagate ECN Congestion Experienced from outer to inner */
+        __u8 outer_ecn = saved_outer_tos & 0x03;
+        __u8 inner_ecn = decrypted_iph->tos & 0x03;
+        if (outer_ecn == 0x03 && inner_ecn != 0x00) {
+            /* Outer experienced congestion, inner is ECN-capable: set CE */
+            decrypted_iph->tos = (decrypted_iph->tos & 0xFC) | 0x03;
+            /* Incremental IPv4 checksum update not needed here since
 			 * the inner packet will be rechecked by the receiving stack */
-		}
-	}
+        }
+    }
 
-	/* Rewrite Ethernet: broadcast dest, zero source (for local delivery) */
-	__builtin_memset(eth->h_dest, 0xff, ETH_ALEN);
-	__builtin_memset(eth->h_source, 0x00, ETH_ALEN);
-	eth->h_proto = ETH_P_IP_BE;
+    /* Rewrite Ethernet: broadcast dest, zero source (for local delivery) */
+    __builtin_memset(eth->h_dest, 0xff, ETH_ALEN);
+    __builtin_memset(eth->h_source, 0x00, ETH_ALEN);
+    eth->h_proto = ETH_P_IP_BE;
 
-	/* --- Update RX statistics --- */
-	if (stats) {
-		stats->rx_packets++;
-		stats->rx_bytes += (data_end - data);
-	}
+    /* --- Update RX statistics --- */
+    if (stats) {
+        stats->rx_packets++;
+        stats->rx_bytes += (data_end - data);
+    }
 
-	return bpf_redirect_map(&tx_port, TACHYON_TXPORT_VETH, 0);
+    return bpf_redirect_map(&tx_port, TACHYON_TXPORT_VETH, 0);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -855,35 +869,34 @@ int xdp_rx_path(struct xdp_md *ctx)
 SEC("syscall")
 int ghost_key_init(void *ctx)
 {
-	__u32 zero = 0;
-	struct tachyon_key_init *kid = bpf_map_lookup_elem(&key_init_map, &zero);
+    __u32 zero = 0;
+    struct tachyon_key_init *kid = bpf_map_lookup_elem(&key_init_map, &zero);
 
-	if (!kid)
-		return -1;
+    if (!kid)
+        return -1;
 
-	return bpf_ghost_set_key(kid->session_id,
-				 kid->tx_key, TACHYON_AEAD_KEY_LEN,
-				 kid->rx_key, TACHYON_AEAD_KEY_LEN);
+    return bpf_ghost_set_key(kid->session_id, kid->tx_key, TACHYON_AEAD_KEY_LEN, kid->rx_key,
+                             TACHYON_AEAD_KEY_LEN);
 }
 
 /* Cipher selection syscall program (called before ghost_key_init for AES-GCM) */
 SEC("syscall")
 int ghost_cipher_init(void *ctx)
 {
-	__u32 zero = 0;
-	struct tachyon_key_init *kid = bpf_map_lookup_elem(&key_init_map, &zero);
+    __u32 zero = 0;
+    struct tachyon_key_init *kid = bpf_map_lookup_elem(&key_init_map, &zero);
 
-	if (!kid)
-		return -1;
+    if (!kid)
+        return -1;
 
-	return bpf_ghost_set_cipher(kid->session_id, 0 /* cipher_type from config */);
+    return bpf_ghost_set_cipher(kid->session_id, 0 /* cipher_type from config */);
 }
 
 /* Dummy XDP program for the ingress veth (prevents kernel stack processing) */
 SEC("xdp")
 int xdp_dummy(struct xdp_md *ctx)
 {
-	return XDP_PASS;
+    return XDP_PASS;
 }
 
 char _license[] SEC("license") = "GPL";

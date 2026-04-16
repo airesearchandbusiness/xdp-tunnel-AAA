@@ -23,8 +23,8 @@
  * Buffer overflow is prevented by clamping total_len to sizeof(buffer).
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static void send_mimic_quic(int sock, const void *msg, size_t msg_len,
-                            int type, const struct sockaddr_in *dest)
+static void send_mimic_quic(int sock, const void *msg, size_t msg_len, int type,
+                            const struct sockaddr_in *dest)
 {
     uint8_t buffer[1500];
 
@@ -66,8 +66,8 @@ static void send_mimic_quic(int sock, const void *msg, size_t msg_len,
     if (total_len > msg_len)
         RAND_bytes(buffer + msg_len, total_len - msg_len);
 
-    if (sendto(sock, buffer, total_len, 0,
-               reinterpret_cast<const struct sockaddr *>(dest), sizeof(*dest)) < 0)
+    if (sendto(sock, buffer, total_len, 0, reinterpret_cast<const struct sockaddr *>(dest),
+               sizeof(*dest)) < 0)
         LOG_WARN("sendto failed: %s", strerror(errno));
 }
 
@@ -75,13 +75,19 @@ static void send_mimic_quic(int sock, const void *msg, size_t msg_len,
  * BPF Key Injection & Replay State Reset
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id,
-                                  uint8_t *tx_key, uint8_t *rx_key)
+static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id, uint8_t *tx_key,
+                                  uint8_t *rx_key)
 {
     struct bpf_map *map = bpf_object__find_map_by_name(obj, "key_init_map");
-    if (!map) { LOG_ERR("BPF map 'key_init_map' not found"); return; }
+    if (!map) {
+        LOG_ERR("BPF map 'key_init_map' not found");
+        return;
+    }
     int key_map_fd = bpf_map__fd(map);
-    if (key_map_fd < 0) { LOG_ERR("key_init_map fd invalid"); return; }
+    if (key_map_fd < 0) {
+        LOG_ERR("key_init_map fd invalid");
+        return;
+    }
 
     uint32_t zero = 0;
     userspace_key_init kid{};
@@ -91,10 +97,14 @@ static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id,
     bpf_map_update_elem(key_map_fd, &zero, &kid, BPF_ANY);
 
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, "ghost_key_init");
-    if (!prog) { LOG_ERR("BPF program 'ghost_key_init' not found"); return; }
+    if (!prog) {
+        LOG_ERR("BPF program 'ghost_key_init' not found");
+        return;
+    }
     int prog_fd = bpf_program__fd(prog);
     if (prog_fd >= 0) {
-        struct bpf_test_run_opts topts{};
+        struct bpf_test_run_opts topts {
+        };
         topts.sz = sizeof(topts);
         bpf_prog_test_run_opts(prog_fd, &topts);
     }
@@ -112,12 +122,14 @@ static void reset_bpf_replay_state(struct bpf_object *obj, uint32_t session_id,
                                    const uint8_t *peer_mac)
 {
     struct bpf_map *map = bpf_object__find_map_by_name(obj, "session_map");
-    if (!map) return;
+    if (!map)
+        return;
     int sess_fd = bpf_map__fd(map);
-    if (sess_fd < 0) return;
+    if (sess_fd < 0)
+        return;
 
     userspace_session sess{};
-    sess.peer_ip  = peer_ip_net;
+    sess.peer_ip = peer_ip_net;
     sess.local_ip = local_ip_net;
     memcpy(sess.peer_mac, peer_mac, 6);
     bpf_map_update_elem(sess_fd, &session_id, &sess, BPF_ANY);
@@ -129,8 +141,8 @@ static void reset_bpf_replay_state(struct bpf_object *obj, uint32_t session_id,
 static const uint8_t ZERO_IKM[TACHYON_AEAD_KEY_LEN] = {0};
 
 /* Build the 44-byte transcript associated data for PKT_AUTH messages */
-static void build_transcript_ad(uint8_t *out, uint32_t session_id_net,
-                                uint64_t client_nonce, const uint8_t *cookie)
+static void build_transcript_ad(uint8_t *out, uint32_t session_id_net, uint64_t client_nonce,
+                                const uint8_t *cookie)
 {
     memcpy(out, &session_id_net, 4);
     memcpy(out + 4, &client_nonce, 8);
@@ -139,16 +151,14 @@ static void build_transcript_ad(uint8_t *out, uint32_t session_id_net,
 
 /* Derive session TX/RX keys from session master secret */
 static void derive_session_keys(const uint8_t *early_secret, const uint8_t *eph_ss,
-                                bool is_initiator,
-                                uint8_t *tx_key, uint8_t *rx_key)
+                                bool is_initiator, uint8_t *tx_key, uint8_t *rx_key)
 {
     uint8_t session_master[32];
-    derive_kdf(early_secret, 32, eph_ss, 32,
-               TACHYON_KDF_SESSION_MASTER, session_master);
+    derive_kdf(early_secret, 32, eph_ss, 32, TACHYON_KDF_SESSION_MASTER, session_master);
 
     /* Initiator's TX = Client-TX, Responder's TX = Server-TX */
-    const char *my_tx_label  = is_initiator ? TACHYON_KDF_CLIENT_TX : TACHYON_KDF_SERVER_TX;
-    const char *my_rx_label  = is_initiator ? TACHYON_KDF_SERVER_TX : TACHYON_KDF_CLIENT_TX;
+    const char *my_tx_label = is_initiator ? TACHYON_KDF_CLIENT_TX : TACHYON_KDF_SERVER_TX;
+    const char *my_rx_label = is_initiator ? TACHYON_KDF_SERVER_TX : TACHYON_KDF_CLIENT_TX;
 
     derive_kdf(session_master, 32, ZERO_IKM, 32, my_tx_label, tx_key);
     derive_kdf(session_master, 32, ZERO_IKM, 32, my_rx_label, rx_key);
@@ -167,7 +177,7 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub)
 {
     /* First check equality in constant time */
     if (CRYPTO_memcmp(my_pub, peer_pub, TACHYON_X25519_KEY_LEN) == 0)
-        return -1;  /* Equal keys - error */
+        return -1; /* Equal keys - error */
 
     /* Constant-time greater-than: scan all bytes, accumulate result */
     int gt = 0, lt = 0;
@@ -184,9 +194,8 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub)
  * Control Plane Main Loop
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
-                       uint32_t session_id, uint32_t peer_ip_net,
-                       uint32_t local_ip_net, const uint8_t *peer_mac)
+void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t session_id,
+                       uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac)
 {
     LOG_INFO("Booting Tachyon AKE v%d.0...", TACHYON_PROTO_VERSION);
     init_crypto_globals();
@@ -227,8 +236,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
     }
 
     std::string safe_psk = cfg.psk.empty() ? TACHYON_KDF_DEFAULT_PSK : cfg.psk;
-    derive_kdf(reinterpret_cast<const uint8_t *>(safe_psk.data()), safe_psk.size(),
-               static_ss, 32, TACHYON_KDF_EARLY_SECRET, early_secret);
+    derive_kdf(reinterpret_cast<const uint8_t *>(safe_psk.data()), safe_psk.size(), static_ss, 32,
+               TACHYON_KDF_EARLY_SECRET, early_secret);
     derive_kdf(early_secret, 32, ZERO_IKM, 32, TACHYON_KDF_CP_AEAD, cp_enc_key);
 
     OPENSSL_cleanse(static_ss, 32);
@@ -248,12 +257,13 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
     {
         int opt = 1;
         setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        struct timeval tv = {1, 0};  /* 1 second timeout */
+        struct timeval tv = {1, 0}; /* 1 second timeout */
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-        struct sockaddr_in addr{};
-        addr.sin_family      = AF_INET;
-        addr.sin_port        = htons(cfg.listen_port);
+        struct sockaddr_in addr {
+        };
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(cfg.listen_port);
         addr.sin_addr.s_addr = INADDR_ANY;
 
         if (bind(sock, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
@@ -264,26 +274,27 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
     }
 
     {
-        struct sockaddr_in p_addr{};
+        struct sockaddr_in p_addr {
+        };
         p_addr.sin_family = AF_INET;
-        p_addr.sin_port   = htons(cfg.listen_port);
+        p_addr.sin_port = htons(cfg.listen_port);
         inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &p_addr.sin_addr);
 
         /* Control plane state */
         NonceCache seen_nonces;
         bool handshake_active = true;
-        bool first_boot       = true;
+        bool first_boot = true;
 
-        uint8_t  my_eph_priv[32] = {0}, my_eph_pub[32] = {0};
-        uint64_t my_nonce        = 0;
-        uint64_t last_init_send  = 0;
+        uint8_t my_eph_priv[32] = {0}, my_eph_pub[32] = {0};
+        uint64_t my_nonce = 0;
+        uint64_t last_init_send = 0;
         uint64_t last_rekey_success = time(nullptr);
-        uint64_t last_rx_time    = time(nullptr);
-        uint64_t last_tx_time    = time(nullptr);
+        uint64_t last_rx_time = time(nullptr);
+        uint64_t last_tx_time = time(nullptr);
 
         /* Jittered timers for anti-fingerprinting */
         uint64_t keepalive_interval = TACHYON_KEEPALIVE_BASE;
-        uint64_t retry_interval     = TACHYON_RETRY_BASE;
+        uint64_t retry_interval = TACHYON_RETRY_BASE;
 
         LOG_INFO("Role: %s", is_initiator ? "Initiator" : "Responder");
 
@@ -322,13 +333,16 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
 
                 uint8_t dummy[16];
                 RAND_bytes(dummy, 16);
-                cp_aead_encrypt(cp_enc_key, dummy, 16, k_ad, 12,
-                                k_nonce, kmsg.ciphertext, kmsg.ciphertext + 16);
+                cp_aead_encrypt(cp_enc_key, dummy, 16, k_ad, 12, k_nonce, kmsg.ciphertext,
+                                kmsg.ciphertext + 16);
 
                 send_mimic_quic(sock, &kmsg, sizeof(kmsg), TACHYON_PKT_KEEPALIVE, &p_addr);
                 last_tx_time = now;
-                { uint32_t _j; RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
-                  keepalive_interval = TACHYON_KEEPALIVE_BASE + (_j % TACHYON_KEEPALIVE_JITTER); }
+                {
+                    uint32_t _j;
+                    RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
+                    keepalive_interval = TACHYON_KEEPALIVE_BASE + (_j % TACHYON_KEEPALIVE_JITTER);
+                }
             }
 
             /* Rekey trigger (initiator only) */
@@ -340,8 +354,7 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
             }
 
             /* Send PKT_INIT (initiator only, during handshake) */
-            if (is_initiator && handshake_active &&
-                (now - last_init_send >= retry_interval)) {
+            if (is_initiator && handshake_active && (now - last_init_send >= retry_interval)) {
                 if (my_nonce == 0)
                     RAND_bytes(reinterpret_cast<uint8_t *>(&my_nonce), 8);
 
@@ -354,16 +367,19 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 send_mimic_quic(sock, &msg, sizeof(msg), TACHYON_PKT_INIT, &p_addr);
                 last_init_send = now;
                 last_tx_time = now;
-                { uint32_t _j; RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
-                  retry_interval = TACHYON_RETRY_BASE + (_j % TACHYON_RETRY_JITTER); }
+                {
+                    uint32_t _j;
+                    RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j));
+                    retry_interval = TACHYON_RETRY_BASE + (_j % TACHYON_RETRY_JITTER);
+                }
             }
 
             /* Receive incoming packet */
             uint8_t buf[2000];
             struct sockaddr_in src;
             socklen_t slen = sizeof(src);
-            int n = recvfrom(sock, buf, sizeof(buf), 0,
-                             reinterpret_cast<struct sockaddr *>(&src), &slen);
+            int n = recvfrom(sock, buf, sizeof(buf), 0, reinterpret_cast<struct sockaddr *>(&src),
+                             &slen);
             if (n <= 0)
                 continue;
 
@@ -378,7 +394,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
             /* ── Handle PKT_KEEPALIVE ── */
             if (flag == TACHYON_PKT_KEEPALIVE && n >= (int)sizeof(MsgKeepalive)) {
                 auto *msg = reinterpret_cast<MsgKeepalive *>(buf);
-                if (ntohl(msg->session_id) != session_id) continue;
+                if (ntohl(msg->session_id) != session_id)
+                    continue;
 
                 uint8_t k_ad[12];
                 memcpy(k_ad, &msg->session_id, 4);
@@ -386,34 +403,38 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 uint8_t k_nonce[12] = {0};
                 memcpy(k_nonce, &msg->timestamp, 8);
                 uint8_t decrypted[16];
-                cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16,
-                                k_ad, 12, k_nonce, msg->ciphertext + 16, decrypted);
+                cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
+                                msg->ciphertext + 16, decrypted);
             }
             /* ── Handle PKT_INIT (responder only) ── */
             else if (flag == TACHYON_PKT_INIT && n >= (int)sizeof(MsgInit)) {
-                if (is_initiator) continue;
+                if (is_initiator)
+                    continue;
                 auto *msg = reinterpret_cast<MsgInit *>(buf);
-                if (ntohl(msg->session_id) != session_id) continue;
+                if (ntohl(msg->session_id) != session_id)
+                    continue;
 
                 LOG_INFO("Received PKT_INIT, sending COOKIE...");
                 MsgCookie cmsg = {};
                 cmsg.flags = TACHYON_PKT_COOKIE;
                 cmsg.session_id = htonl(session_id);
                 cmsg.client_nonce = msg->client_nonce;
-                generate_cookie(cookie_secret, src.sin_addr.s_addr,
-                                msg->client_nonce, current_window, cmsg.cookie);
+                generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
+                                current_window, cmsg.cookie);
                 send_mimic_quic(sock, &cmsg, sizeof(cmsg), TACHYON_PKT_COOKIE, &src);
                 last_tx_time = now;
             }
             /* ── Handle PKT_COOKIE (initiator only) ── */
             else if (flag == TACHYON_PKT_COOKIE && n >= (int)sizeof(MsgCookie)) {
-                if (!is_initiator) continue;
+                if (!is_initiator)
+                    continue;
                 auto *msg = reinterpret_cast<MsgCookie *>(buf);
                 if (ntohl(msg->session_id) != session_id || msg->client_nonce != my_nonce)
                     continue;
 
                 LOG_INFO("Received PKT_COOKIE, sending AUTH...");
-                if (!generate_x25519_keypair(my_eph_priv, my_eph_pub)) continue;
+                if (!generate_x25519_keypair(my_eph_priv, my_eph_pub))
+                    continue;
 
                 MsgAuth amsg = {};
                 amsg.flags = TACHYON_PKT_AUTH;
@@ -427,25 +448,28 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
 
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &my_nonce, 8);
-                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44,
-                                cp_nonce, amsg.ciphertext, amsg.ciphertext + 32);
+                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
+                                amsg.ciphertext, amsg.ciphertext + 32);
 
                 send_mimic_quic(sock, &amsg, sizeof(amsg), TACHYON_PKT_AUTH, &p_addr);
                 last_tx_time = now;
             }
             /* ── Handle PKT_AUTH (responder only) ── */
             else if (flag == TACHYON_PKT_AUTH && n >= (int)sizeof(MsgAuth)) {
-                if (is_initiator) continue;
+                if (is_initiator)
+                    continue;
                 auto *msg = reinterpret_cast<MsgAuth *>(buf);
-                if (ntohl(msg->session_id) != session_id) continue;
-                if (seen_nonces.exists(msg->client_nonce)) continue;
+                if (ntohl(msg->session_id) != session_id)
+                    continue;
+                if (seen_nonces.exists(msg->client_nonce))
+                    continue;
 
                 /* Validate cookie (current + previous window for clock skew) */
                 uint8_t c1[32], c2[32];
-                generate_cookie(cookie_secret, src.sin_addr.s_addr,
-                                msg->client_nonce, current_window, c1);
-                generate_cookie(cookie_secret, src.sin_addr.s_addr,
-                                msg->client_nonce, current_window - 1, c2);
+                generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
+                                current_window, c1);
+                generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
+                                current_window - 1, c2);
 
                 if (CRYPTO_memcmp(c1, msg->cookie, TACHYON_HMAC_LEN) != 0 &&
                     CRYPTO_memcmp(c2, msg->cookie, TACHYON_HMAC_LEN) != 0)
@@ -459,18 +483,17 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &msg->client_nonce, 8);
 
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32,
-                                     transcript_ad, 44, cp_nonce,
+                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, transcript_ad, 44, cp_nonce,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
                 seen_nonces.add(msg->client_nonce, now);
                 if (msg->is_rekey == 0)
-                    reset_bpf_replay_state(obj, session_id, peer_ip_net,
-                                           local_ip_net, peer_mac);
+                    reset_bpf_replay_state(obj, session_id, peer_ip_net, local_ip_net, peer_mac);
 
                 /* Generate our ephemeral keypair */
-                if (!generate_x25519_keypair(my_eph_priv, my_eph_pub)) continue;
+                if (!generate_x25519_keypair(my_eph_priv, my_eph_pub))
+                    continue;
 
                 /* Derive session keys (responder: is_initiator=false) */
                 uint8_t eph_ss[32], tx_key[32], rx_key[32];
@@ -497,8 +520,8 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &srv_nonce, 8);
 
-                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12,
-                                f_nonce, fmsg.ciphertext, fmsg.ciphertext + 32);
+                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
+                                fmsg.ciphertext + 32);
                 send_mimic_quic(sock, &fmsg, sizeof(fmsg), TACHYON_PKT_FINISH, &src);
                 last_tx_time = now;
 
@@ -508,9 +531,11 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
             }
             /* ── Handle PKT_FINISH (initiator only) ── */
             else if (flag == TACHYON_PKT_FINISH && n >= (int)sizeof(MsgFinish)) {
-                if (!is_initiator || !handshake_active) continue;
+                if (!is_initiator || !handshake_active)
+                    continue;
                 auto *msg = reinterpret_cast<MsgFinish *>(buf);
-                if (ntohl(msg->session_id) != session_id) continue;
+                if (ntohl(msg->session_id) != session_id)
+                    continue;
 
                 /* Decrypt peer ephemeral public key */
                 uint8_t peer_eph_pub[32];
@@ -520,8 +545,7 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &msg->server_nonce, 8);
 
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32,
-                                     f_ad, 12, f_nonce,
+                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, f_ad, 12, f_nonce,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
