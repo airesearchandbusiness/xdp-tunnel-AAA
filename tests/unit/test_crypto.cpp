@@ -476,3 +476,59 @@ TEST_F(CryptoTest, SessionKeyDerivationSymmetry) {
     /* Client TX == Server RX */
     EXPECT_EQ(memcmp(cli_tx, srv_rx, 32), 0);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Edge-Case Tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST_F(CryptoTest, AeadEncryptDecryptEmptyPlaintext) {
+    uint8_t key[32], nonce[12];
+    memset(key, 0x42, sizeof(key));
+    memset(nonce, 0x01, sizeof(nonce));
+
+    uint8_t tag[TACHYON_AEAD_TAG_LEN];
+    /* Encrypt zero bytes -- only produces a tag */
+    ASSERT_TRUE(cp_aead_encrypt(key, nullptr, 0, nullptr, 0, nonce, nullptr, tag));
+
+    /* Decrypt zero bytes -- verifies tag only */
+    ASSERT_TRUE(cp_aead_decrypt(key, nullptr, 0, nullptr, 0, nonce, tag, nullptr));
+}
+
+TEST_F(CryptoTest, AeadEncryptDecryptLargePlaintext) {
+    uint8_t key[32], nonce[12];
+    memset(key, 0xAA, sizeof(key));
+    memset(nonce, 0x55, sizeof(nonce));
+
+    /* 8KB plaintext -- exercises buffer management */
+    std::vector<uint8_t> pt(8192);
+    for (size_t i = 0; i < pt.size(); i++)
+        pt[i] = static_cast<uint8_t>(i & 0xFF);
+
+    std::vector<uint8_t> ct(pt.size());
+    uint8_t tag[TACHYON_AEAD_TAG_LEN];
+
+    ASSERT_TRUE(cp_aead_encrypt(key, pt.data(), pt.size(), nullptr, 0, nonce, ct.data(), tag));
+
+    std::vector<uint8_t> recovered(pt.size());
+    ASSERT_TRUE(
+        cp_aead_decrypt(key, ct.data(), ct.size(), nullptr, 0, nonce, tag, recovered.data()));
+    EXPECT_EQ(memcmp(pt.data(), recovered.data(), pt.size()), 0);
+}
+
+TEST_F(CryptoTest, HkdfEmptySalt) {
+    /* RFC 5869 Section 2.2: empty salt treated as all-zero salt of HashLen bytes */
+    uint8_t ikm[32], out1[32], out2[32];
+    memset(ikm, 0xBB, sizeof(ikm));
+
+    /* Derive with zero-length salt */
+    uint8_t zero_salt[32] = {0};
+    ASSERT_TRUE(derive_kdf(zero_salt, 0, ikm, 32, "test-label", out1));
+
+    /* Derive with explicit zero salt of same length */
+    ASSERT_TRUE(derive_kdf(zero_salt, 32, ikm, 32, "test-label", out2));
+
+    /* Both should produce valid (non-zero) output */
+    uint8_t zeros[32] = {0};
+    EXPECT_NE(memcmp(out1, zeros, 32), 0);
+    EXPECT_NE(memcmp(out2, zeros, 32), 0);
+}
