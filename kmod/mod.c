@@ -55,6 +55,10 @@ MODULE_VERSION("1.1");
 #define TACHYON_CIPHER_TYPE_AES128_GCM  1
 #define TACHYON_CIPHER_TYPE_AES256_GCM  2
 
+#define TACHYON_CIPHER_TYPE_CHACHA20    0
+#define TACHYON_CIPHER_TYPE_AES128_GCM  1
+#define TACHYON_CIPHER_TYPE_AES256_GCM  2
+
 #define TACHYON_CIPHER_NAME     TACHYON_CIPHER_CHACHA
 #define TACHYON_LOG_PREFIX      "tachyon_crypto: "
 
@@ -69,9 +73,6 @@ int bpf_ghost_set_key(u32 session_id, u8 *tx_key, u32 tx_key__sz,
 int bpf_ghost_encrypt(struct xdp_md *ctx, u32 session_id);
 int bpf_ghost_decrypt(struct xdp_md *ctx, u32 session_id);
 int bpf_ghost_set_cipher(u32 session_id, u32 cipher_type);
-
-/* Forward declaration for session engine lifecycle */
-static void destroy_session_engine(struct session_engine *se);
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Session Engine - Per-Session Crypto State
