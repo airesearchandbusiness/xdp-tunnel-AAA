@@ -1,23 +1,34 @@
 ## Summary
 
-Brief description of the change and why it is needed.
+<!-- What does this PR do? Link the related issue if applicable (Fixes #123). -->
 
-## Changes
-
-- ...
-
-## Testing
-
-- [ ] `make test-unit` passes (114 tests)
-- [ ] `make lint` passes (clang-format, cppcheck, shellcheck)
-- [ ] No new warnings introduced
-- [ ] Changes to `common.h` mirrored in `loader/tachyon.h`
-
-## Type of Change
+## Type of change
 
 - [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor (no behavior change)
+- [ ] New feature / enhancement
+- [ ] Refactor (no behaviour change)
+- [ ] CI / tooling change
 - [ ] Documentation
-- [ ] CI/CD
 - [ ] Security fix
+
+## Pre-merge checklist
+
+### Required
+- [ ] `make test-unit` passes locally (160+ tests)
+- [ ] `make format` was run (or `make format-check` is clean)
+- [ ] `make lint` passes (clang-format, cppcheck, shellcheck)
+- [ ] CI is green: lint · build · build/gcc · build/clang-18 · test/unit
+
+### Wire-format changes (if `common.h` was modified)
+- [ ] Struct changes mirrored in `loader/tachyon.h`
+- [ ] Struct changes mirrored in `kmod/mod.c`
+- [ ] Sizes verified with `static_assert` or manual check
+
+### Crypto changes (if `loader/crypto.cpp` was modified)
+- [ ] New test cases added to `tests/unit/test_crypto.cpp`
+- [ ] No real keys, IVs, or secrets committed (use deterministic test vectors)
+- [ ] `make test-sanitize` clean (ASan + UBSan)
+
+### Security-sensitive changes
+- [ ] Reviewed the [SECURITY.md](../SECURITY.md) threat model
+- [ ] No new external dependencies without a corresponding vulnerability scan

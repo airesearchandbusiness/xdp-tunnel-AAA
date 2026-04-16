@@ -200,6 +200,56 @@ format-check:
 	@find src/ loader/ tests/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
 		| xargs clang-format --dry-run --Werror --style=file
 
+lint: format-check
+	@echo "\n[LINT] Running shellcheck..."
+	@find tests/ -name '*.sh' -exec shellcheck -x -S warning {} +
+	@echo "\n[LINT] Running cppcheck..."
+	@cppcheck \
+		--enable=warning,performance,portability \
+		--error-exitcode=1 \
+		--suppress=missingInclude \
+		--suppress=missingIncludeSystem \
+		--inline-suppr \
+		--std=c11 \
+		src/ loader/
+	@echo "\n[LINT] All checks passed."
+
+coverage:
+	@echo "\n[COV] Building with coverage instrumentation..."
+	@cmake -B build/coverage -S tests \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DENABLE_COVERAGE=ON \
+		-DBUILD_XDP_TESTS=OFF \
+		-DBUILD_FUZZ_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/coverage -j$$(nproc) > /dev/null 2>&1
+	@cd build/coverage && ctest --output-on-failure --timeout 60
+	@echo "\n[COV] Collecting coverage data..."
+	@lcov --capture --directory build/coverage \
+		--output-file build/coverage/coverage.info \
+		--ignore-errors mismatch 2>/dev/null
+	@lcov --remove build/coverage/coverage.info \
+		'/usr/*' '*/tests/*' '*/googletest/*' \
+		--output-file build/coverage/coverage-filtered.info 2>/dev/null
+	@genhtml build/coverage/coverage-filtered.info \
+		--output-directory build/coverage/html \
+		--title "Tachyon XDP Tunnel" \
+		--legend --demangle-cpp 2>/dev/null
+	@echo "\n[COV] HTML report: build/coverage/html/index.html"
+
+test-xdp:
+	@echo "\n[TEST] Running XDP/BPF tests (requires root + loaded XDP program)..."
+	@sudo tests/xdp/run_xdp_tests.sh
+
+test-integration:
+	@echo "\n[TEST] Running integration tests (requires root)..."
+	@sudo tests/integration/test_tunnel_e2e.sh
+	@sudo tests/integration/test_key_rotation.sh
+	@sudo tests/integration/test_dpd.sh
+
+test-all: test-unit test-sanitize test-tsan test-valgrind test-xdp test-integration
+	@echo "\n[TEST] All test tiers complete."
+
 # ── Cleanup ──
 
 clean:

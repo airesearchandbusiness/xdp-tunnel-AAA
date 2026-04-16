@@ -1,25 +1,43 @@
-# Tachyon XDP Tunnel - Code Ownership
+# Tachyon XDP Tunnel — Code Owners
 #
-# Each line is a file pattern followed by one or more owners.
-# Order matters: later patterns override earlier ones.
+# Owners are automatically requested for review when their paths change.
+# The last matching rule wins for each path.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# Default: all changes require review
-*                           @airesearchandbusiness
+# Default: all changes request review from the core team
+*                                   @airesearchandbusiness
 
-# Kernel module (critical security component)
-/kmod/                      @airesearchandbusiness
+# ── Wire-format critical invariant ───────────────────────────────────────────
+# Changes to these three files MUST be reviewed together; a mismatch causes
+# silent data corruption (see CONTRIBUTING.md § Architecture Notes).
+/src/common.h                       @airesearchandbusiness
+/loader/tachyon.h                   @airesearchandbusiness
+/kmod/mod.c                         @airesearchandbusiness
 
-# XDP/eBPF data plane (critical performance/security)
-/src/                       @airesearchandbusiness
+# ── Crypto implementation ─────────────────────────────────────────────────────
+# High-risk code; any change requires security-specialist review.
+/loader/crypto.cpp                  @airesearchandbusiness
+/tests/unit/test_crypto.cpp         @airesearchandbusiness
+/tests/fuzz/fuzz_crypto.cpp         @airesearchandbusiness
+/tests/benchmarks/bench_crypto.cpp  @airesearchandbusiness
 
-# Cryptographic operations (security-sensitive)
-/loader/crypto.cpp          @airesearchandbusiness
-/loader/network.cpp         @airesearchandbusiness
+# ── XDP / BPF data plane ─────────────────────────────────────────────────────
+# Kernel-space privilege boundary; performance and correctness critical.
+/src/xdp_core.c                     @airesearchandbusiness
+/src/                               @airesearchandbusiness
+/tests/xdp/                         @airesearchandbusiness
 
-# CI/CD and build system
-/.github/                   @airesearchandbusiness
-/Makefile                   @airesearchandbusiness
-/docker/                    @airesearchandbusiness
+# ── Kernel module (DKMS) ─────────────────────────────────────────────────────
+/kmod/                              @airesearchandbusiness
+/dkms.conf                          @airesearchandbusiness
 
-# Tests
-/tests/                     @airesearchandbusiness
+# ── CI / build system ────────────────────────────────────────────────────────
+# Changes here affect every contributor's safety net and release pipeline.
+/.github/workflows/                 @airesearchandbusiness
+/.github/actions/                   @airesearchandbusiness
+/Makefile                           @airesearchandbusiness
+/tests/CMakeLists.txt               @airesearchandbusiness
+/tests/CMakePresets.json            @airesearchandbusiness
+/codecov.yml                        @airesearchandbusiness
+/.clang-tidy                        @airesearchandbusiness
+/.clang-format                      @airesearchandbusiness

@@ -38,6 +38,10 @@ jobs:
         with:
           fetch-depth: 0  # full history for gitleaks
 
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'cppcheck'
+
       - name: clang-format
         run: |
           find tests/ src/ loader/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
@@ -45,6 +49,31 @@ jobs:
 
       - name: shellcheck
         run: find tests/ -name '*.sh' -exec shellcheck -x -S warning {} +
+
+      - name: cppcheck
+        run: |
+          cppcheck \
+            --enable=warning,performance,portability \
+            --error-exitcode=1 \
+            --suppress=missingInclude \
+            --suppress=missingIncludeSystem \
+            --inline-suppr \
+            --std=c11 \
+            src/ loader/ \
+            2>&1 | tee cppcheck-report.txt
+          if grep -q "^[^:]*:[0-9]*:[0-9]*: error:" cppcheck-report.txt; then
+            echo "::error::cppcheck found errors — see report above"
+            exit 1
+          fi
+          echo "cppcheck: clean"
+
+      - name: Upload cppcheck report
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: cppcheck-report
+          path: cppcheck-report.txt
+          if-no-files-found: ignore
 
       - name: Secret scanning (gitleaks)
         uses: gitleaks/gitleaks-action@v2
@@ -228,6 +257,51 @@ PYEOF
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:cpp"
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Stage 4b: Dependency Vulnerability Scan (Trivy)
+  # ════════════════════════════════════════════════════════════════════════
+
+  trivy:
+    name: "security / trivy"
+    runs-on: ubuntu-24.04
+    needs: lint
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write  # upload SARIF to GitHub Code Scanning
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'        # never fail CI — results appear in Security tab
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy'
+
+      - name: Summarise findings
+        if: always()
+        run: |
+          echo "## Trivy Vulnerability Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if command -v jq &>/dev/null && [[ -f trivy-results.sarif ]]; then
+            COUNT=$(jq '[.runs[].results[]] | length' trivy-results.sarif 2>/dev/null || echo 0)
+            echo "CRITICAL/HIGH findings: **${COUNT}** (see Security → Code Scanning)" \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Results uploaded to Security → Code Scanning tab." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # ════════════════════════════════════════════════════════════════════════
   # Stage 5: Coverage Upload
