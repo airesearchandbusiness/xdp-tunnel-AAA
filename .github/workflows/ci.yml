@@ -121,7 +121,17 @@ jobs:
       - name: Run unit tests
         run: |
           chmod +x build/test_* 2>/dev/null || true
-          cd build && ctest --output-on-failure --timeout 60
+          mkdir -p build/test-results
+          cd build && ctest --output-on-failure --timeout 60 \
+            --output-junit test-results/unit.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: test-results-unit
+          path: build/test-results/unit.xml
+          if-no-files-found: ignore
 
   # ════════════════════════════════════════════════════════════════════════
   # Stage 4: Security Scanning
@@ -197,7 +207,18 @@ jobs:
           cmake --build build/cov -j$(nproc)
 
       - name: Run unit tests
-        run: cd build/cov && ctest --output-on-failure --timeout 60
+        run: |
+          mkdir -p build/cov/test-results
+          cd build/cov && ctest --output-on-failure --timeout 60 \
+            --output-junit test-results/coverage.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: test-results-coverage
+          path: build/cov/test-results/coverage.xml
+          if-no-files-found: ignore
 
       - name: Collect coverage data
         run: |
@@ -255,7 +276,18 @@ jobs:
         env:
           ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:detect_leaks=1"
           UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
-        run: cd build/san && ctest --output-on-failure --timeout 120
+        run: |
+          mkdir -p build/san/test-results
+          cd build/san && ctest --output-on-failure --timeout 120 \
+            --output-junit test-results/sanitize.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: test-results-sanitize
+          path: build/san/test-results/sanitize.xml
+          if-no-files-found: ignore
 
   # ════════════════════════════════════════════════════════════════════════
   # Stage 7: Static Analysis (clang-tidy)

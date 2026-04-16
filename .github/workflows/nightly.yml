@@ -1,6 +1,6 @@
 # Tachyon XDP Tunnel - Nightly Extended Tests
 #
-# Runs fuzz testing, extended integration tests, and performance benchmarks.
+# Runs fuzz testing, extended sanitizer scan, integration tests, and benchmarks.
 # Triggered: Daily at 03:00 UTC, or manual dispatch.
 
 name: Nightly
@@ -234,7 +234,52 @@ jobs:
           cat benchmark_result.json
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: benchmark-results
           path: benchmark_result.json
+
+  # ════════════════════════════════════════════════════════════════════════
+  # Extended Sanitizer Run (ASan + UBSan — nightly deep scan)
+  # ════════════════════════════════════════════════════════════════════════
+
+  sanitize-extended:
+    name: "sanitize / extended (ASan+UBSan)"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            clang-18 libssl-dev cmake ninja-build pkg-config \
+            libgtest-dev libgmock-dev
+
+      - name: Build with sanitizers
+        run: |
+          cmake -B build/san -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_SANITIZE=ON \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF \
+            -G Ninja
+          cmake --build build/san -j$(nproc)
+
+      - name: Run extended sanitizer tests
+        env:
+          ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:detect_leaks=1:check_initialization_order=1:strict_init_order=1:detect_stack_use_after_return=1"
+          UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1:report_error_type=1"
+        run: |
+          mkdir -p build/san/test-results
+          cd build/san && ctest --output-on-failure --timeout 300 \
+            --output-junit test-results/sanitize-nightly.xml
+
+      - name: Upload sanitizer test results
+        if: always()
+        uses: actions/upload-artifact@v8
+        with:
+          name: sanitize-extended-results
+          path: build/san/test-results/sanitize-nightly.xml
+          if-no-files-found: ignore
