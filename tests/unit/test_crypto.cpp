@@ -21,15 +21,13 @@
  * Test Fixture - Manages OpenSSL crypto global state
  * ══════════════════════════════════════════════════════════════════════════ */
 
-class CryptoTest : public ::testing::Test
-{
+class CryptoTest : public ::testing::Test {
   protected:
     void SetUp() override { init_crypto_globals(); }
     void TearDown() override { free_crypto_globals(); }
 
     /* Helper: convert hex string to byte vector */
-    static std::vector<uint8_t> from_hex(const std::string &hex)
-    {
+    static std::vector<uint8_t> from_hex(const std::string &hex) {
         std::vector<uint8_t> bytes(hex.size() / 2);
         for (size_t i = 0; i < bytes.size(); i++)
             sscanf(&hex[i * 2], "%2hhx", &bytes[i]);
@@ -37,8 +35,7 @@ class CryptoTest : public ::testing::Test
     }
 
     /* Helper: convert bytes to hex string */
-    static std::string to_hex(const uint8_t *data, size_t len)
-    {
+    static std::string to_hex(const uint8_t *data, size_t len) {
         std::string hex;
         hex.reserve(len * 2);
         for (size_t i = 0; i < len; i++) {
@@ -54,8 +51,7 @@ class CryptoTest : public ::testing::Test
  * HMAC-SHA256 Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, HmacSha256BasicRoundtrip)
-{
+TEST_F(CryptoTest, HmacSha256BasicRoundtrip) {
     uint8_t key[32];
     memset(key, 0x0b, sizeof(key));
 
@@ -69,8 +65,7 @@ TEST_F(CryptoTest, HmacSha256BasicRoundtrip)
     EXPECT_EQ(memcmp(mac1, mac2, TACHYON_HMAC_LEN), 0);
 }
 
-TEST_F(CryptoTest, HmacSha256DifferentKeysDifferentMacs)
-{
+TEST_F(CryptoTest, HmacSha256DifferentKeysDifferentMacs) {
     uint8_t key1[32], key2[32];
     memset(key1, 0x01, sizeof(key1));
     memset(key2, 0x02, sizeof(key2));
@@ -84,8 +79,7 @@ TEST_F(CryptoTest, HmacSha256DifferentKeysDifferentMacs)
     EXPECT_NE(memcmp(mac1, mac2, TACHYON_HMAC_LEN), 0);
 }
 
-TEST_F(CryptoTest, HmacSha256DifferentDataDifferentMacs)
-{
+TEST_F(CryptoTest, HmacSha256DifferentDataDifferentMacs) {
     uint8_t key[32];
     memset(key, 0xaa, sizeof(key));
 
@@ -99,8 +93,7 @@ TEST_F(CryptoTest, HmacSha256DifferentDataDifferentMacs)
     EXPECT_NE(memcmp(mac1, mac2, TACHYON_HMAC_LEN), 0);
 }
 
-TEST_F(CryptoTest, HmacSha256EmptyData)
-{
+TEST_F(CryptoTest, HmacSha256EmptyData) {
     uint8_t key[32];
     memset(key, 0x0b, sizeof(key));
 
@@ -116,8 +109,7 @@ TEST_F(CryptoTest, HmacSha256EmptyData)
  * Cookie Generation Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, CookieDeterministic)
-{
+TEST_F(CryptoTest, CookieDeterministic) {
     uint8_t secret[32];
     memset(secret, 0xaa, sizeof(secret));
 
@@ -128,8 +120,7 @@ TEST_F(CryptoTest, CookieDeterministic)
     EXPECT_EQ(memcmp(cookie1, cookie2, TACHYON_HMAC_LEN), 0);
 }
 
-TEST_F(CryptoTest, CookieDifferentInputsDifferentCookies)
-{
+TEST_F(CryptoTest, CookieDifferentInputsDifferentCookies) {
     uint8_t secret[32];
     memset(secret, 0xaa, sizeof(secret));
 
@@ -140,8 +131,7 @@ TEST_F(CryptoTest, CookieDifferentInputsDifferentCookies)
     EXPECT_NE(memcmp(cookie1, cookie2, TACHYON_HMAC_LEN), 0);
 }
 
-TEST_F(CryptoTest, CookieDifferentWindowDifferentCookies)
-{
+TEST_F(CryptoTest, CookieDifferentWindowDifferentCookies) {
     uint8_t secret[32];
     memset(secret, 0xaa, sizeof(secret));
 
@@ -156,8 +146,7 @@ TEST_F(CryptoTest, CookieDifferentWindowDifferentCookies)
  * X25519 ECDH Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, EcdhRoundtrip)
-{
+TEST_F(CryptoTest, EcdhRoundtrip) {
     uint8_t priv_a[32], pub_a[32], priv_b[32], pub_b[32];
 
     ASSERT_TRUE(generate_x25519_keypair(priv_a, pub_a));
@@ -171,8 +160,7 @@ TEST_F(CryptoTest, EcdhRoundtrip)
     EXPECT_EQ(memcmp(ss_ab, ss_ba, 32), 0);
 }
 
-TEST_F(CryptoTest, EcdhDifferentPeersDifferentSecrets)
-{
+TEST_F(CryptoTest, EcdhDifferentPeersDifferentSecrets) {
     uint8_t priv_a[32], pub_a[32];
     uint8_t priv_b[32], pub_b[32];
     uint8_t priv_c[32], pub_c[32];
@@ -188,8 +176,7 @@ TEST_F(CryptoTest, EcdhDifferentPeersDifferentSecrets)
     EXPECT_NE(memcmp(ss_ab, ss_ac, 32), 0);
 }
 
-TEST_F(CryptoTest, EcdhRejectsZeroPublicKey)
-{
+TEST_F(CryptoTest, EcdhRejectsZeroPublicKey) {
     uint8_t priv[32], pub[32];
     ASSERT_TRUE(generate_x25519_keypair(priv, pub));
 
@@ -204,8 +191,7 @@ TEST_F(CryptoTest, EcdhRejectsZeroPublicKey)
  * Key Generation Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, GenerateKeypairProducesValidKeys)
-{
+TEST_F(CryptoTest, GenerateKeypairProducesValidKeys) {
     uint8_t priv[32], pub[32];
     ASSERT_TRUE(generate_x25519_keypair(priv, pub));
 
@@ -215,8 +201,7 @@ TEST_F(CryptoTest, GenerateKeypairProducesValidKeys)
     EXPECT_NE(memcmp(pub, zero, 32), 0);
 }
 
-TEST_F(CryptoTest, GenerateKeypairUniquePerCall)
-{
+TEST_F(CryptoTest, GenerateKeypairUniquePerCall) {
     uint8_t priv1[32], pub1[32], priv2[32], pub2[32];
     ASSERT_TRUE(generate_x25519_keypair(priv1, pub1));
     ASSERT_TRUE(generate_x25519_keypair(priv2, pub2));
@@ -225,8 +210,7 @@ TEST_F(CryptoTest, GenerateKeypairUniquePerCall)
     EXPECT_NE(memcmp(pub1, pub2, 32), 0);
 }
 
-TEST_F(CryptoTest, GetPublicKeyConsistency)
-{
+TEST_F(CryptoTest, GetPublicKeyConsistency) {
     uint8_t priv[32], pub_gen[32], pub_derived[32];
     ASSERT_TRUE(generate_x25519_keypair(priv, pub_gen));
     ASSERT_TRUE(get_public_key(priv, pub_derived));
@@ -238,8 +222,7 @@ TEST_F(CryptoTest, GetPublicKeyConsistency)
  * HKDF-SHA256 Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, HkdfDeterministic)
-{
+TEST_F(CryptoTest, HkdfDeterministic) {
     uint8_t salt[32], ikm[32];
     memset(salt, 0x01, sizeof(salt));
     memset(ikm, 0x02, sizeof(ikm));
@@ -251,8 +234,7 @@ TEST_F(CryptoTest, HkdfDeterministic)
     EXPECT_EQ(memcmp(out1, out2, TACHYON_AEAD_KEY_LEN), 0);
 }
 
-TEST_F(CryptoTest, HkdfDifferentLabelsDifferentKeys)
-{
+TEST_F(CryptoTest, HkdfDifferentLabelsDifferentKeys) {
     uint8_t salt[32], ikm[32];
     memset(salt, 0x01, sizeof(salt));
     memset(ikm, 0x02, sizeof(ikm));
@@ -264,8 +246,7 @@ TEST_F(CryptoTest, HkdfDifferentLabelsDifferentKeys)
     EXPECT_NE(memcmp(out1, out2, TACHYON_AEAD_KEY_LEN), 0);
 }
 
-TEST_F(CryptoTest, HkdfWithTachyonLabels)
-{
+TEST_F(CryptoTest, HkdfWithTachyonLabels) {
     uint8_t salt[32], ikm[32];
     memset(salt, 0xaa, sizeof(salt));
     memset(ikm, 0xbb, sizeof(ikm));
@@ -278,8 +259,7 @@ TEST_F(CryptoTest, HkdfWithTachyonLabels)
     EXPECT_NE(memcmp(early, zero, TACHYON_AEAD_KEY_LEN), 0);
 }
 
-TEST_F(CryptoTest, HkdfDifferentSaltsDifferentKeys)
-{
+TEST_F(CryptoTest, HkdfDifferentSaltsDifferentKeys) {
     uint8_t salt1[32], salt2[32], ikm[32];
     memset(salt1, 0x01, sizeof(salt1));
     memset(salt2, 0x02, sizeof(salt2));
@@ -296,8 +276,7 @@ TEST_F(CryptoTest, HkdfDifferentSaltsDifferentKeys)
  * ChaCha20-Poly1305 AEAD Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, AeadEncryptDecryptRoundtrip)
-{
+TEST_F(CryptoTest, AeadEncryptDecryptRoundtrip) {
     uint8_t key[32], nonce[12];
     memset(key, 0x42, sizeof(key));
     memset(nonce, 0x00, sizeof(nonce));
@@ -313,8 +292,7 @@ TEST_F(CryptoTest, AeadEncryptDecryptRoundtrip)
     EXPECT_EQ(memcmp(plaintext, decrypted, pt_len), 0);
 }
 
-TEST_F(CryptoTest, AeadEncryptDecryptWithAD)
-{
+TEST_F(CryptoTest, AeadEncryptDecryptWithAD) {
     uint8_t key[32], nonce[12];
     memset(key, 0x42, sizeof(key));
     memset(nonce, 0x01, sizeof(nonce));
@@ -332,8 +310,7 @@ TEST_F(CryptoTest, AeadEncryptDecryptWithAD)
     EXPECT_EQ(memcmp(plaintext, decrypted, pt_len), 0);
 }
 
-TEST_F(CryptoTest, AeadTamperCiphertext)
-{
+TEST_F(CryptoTest, AeadTamperCiphertext) {
     uint8_t key[32], nonce[12];
     memset(key, 0x42, sizeof(key));
     memset(nonce, 0x02, sizeof(nonce));
@@ -351,8 +328,7 @@ TEST_F(CryptoTest, AeadTamperCiphertext)
     EXPECT_FALSE(cp_aead_decrypt(key, ct, pt_len, nullptr, 0, nonce, tag, decrypted));
 }
 
-TEST_F(CryptoTest, AeadTamperTag)
-{
+TEST_F(CryptoTest, AeadTamperTag) {
     uint8_t key[32], nonce[12];
     memset(key, 0x42, sizeof(key));
     memset(nonce, 0x03, sizeof(nonce));
@@ -370,8 +346,7 @@ TEST_F(CryptoTest, AeadTamperTag)
     EXPECT_FALSE(cp_aead_decrypt(key, ct, pt_len, nullptr, 0, nonce, tag, decrypted));
 }
 
-TEST_F(CryptoTest, AeadTamperAD)
-{
+TEST_F(CryptoTest, AeadTamperAD) {
     uint8_t key[32], nonce[12];
     memset(key, 0x42, sizeof(key));
     memset(nonce, 0x04, sizeof(nonce));
@@ -390,8 +365,7 @@ TEST_F(CryptoTest, AeadTamperAD)
         cp_aead_decrypt(key, ct, pt_len, bad_ad, sizeof(bad_ad) - 1, nonce, tag, decrypted));
 }
 
-TEST_F(CryptoTest, AeadWrongKeyDecryptFails)
-{
+TEST_F(CryptoTest, AeadWrongKeyDecryptFails) {
     uint8_t key1[32], key2[32], nonce[12];
     memset(key1, 0x42, sizeof(key1));
     memset(key2, 0x43, sizeof(key2));
@@ -407,8 +381,7 @@ TEST_F(CryptoTest, AeadWrongKeyDecryptFails)
     EXPECT_FALSE(cp_aead_decrypt(key2, ct, pt_len, nullptr, 0, nonce, tag, decrypted));
 }
 
-TEST_F(CryptoTest, AeadDifferentNoncesDifferentCiphertext)
-{
+TEST_F(CryptoTest, AeadDifferentNoncesDifferentCiphertext) {
     uint8_t key[32], nonce1[12], nonce2[12];
     memset(key, 0x42, sizeof(key));
     memset(nonce1, 0x00, sizeof(nonce1));
@@ -432,8 +405,7 @@ TEST_F(CryptoTest, AeadDifferentNoncesDifferentCiphertext)
  *   ECDH -> early_secret -> cp_enc_key -> session keys
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, FullKeyDerivationChain)
-{
+TEST_F(CryptoTest, FullKeyDerivationChain) {
     /* Generate two static keypairs */
     uint8_t priv_a[32], pub_a[32], priv_b[32], pub_b[32];
     ASSERT_TRUE(generate_x25519_keypair(priv_a, pub_a));
@@ -477,8 +449,7 @@ TEST_F(CryptoTest, FullKeyDerivationChain)
  * Verifies that initiator's TX key == responder's RX key and vice versa.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(CryptoTest, SessionKeyDerivationSymmetry)
-{
+TEST_F(CryptoTest, SessionKeyDerivationSymmetry) {
     uint8_t early_secret[32], eph_ss[32];
     memset(early_secret, 0xaa, sizeof(early_secret));
     memset(eph_ss, 0xbb, sizeof(eph_ss));

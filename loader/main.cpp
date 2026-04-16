@@ -12,21 +12,19 @@
 
 #include "tachyon.h"
 
-static void print_usage(const char *prog)
-{
+static void print_usage(const char *prog) {
     fprintf(stderr,
-        "Tachyon XDP Tunnel v%d.0\n\n"
-        "Usage:\n"
-        "  %s up <config.conf>     Create tunnel and start daemon\n"
-        "  %s down <config.conf>   Tear down tunnel\n"
-        "  %s show <config.conf>   Display tunnel statistics\n"
-        "  %s genkey               Generate X25519 private key\n"
-        "  %s pubkey               Derive public key (reads private from stdin)\n",
-        TACHYON_PROTO_VERSION, prog, prog, prog, prog, prog);
+            "Tachyon XDP Tunnel v%d.0\n\n"
+            "Usage:\n"
+            "  %s up <config.conf>     Create tunnel and start daemon\n"
+            "  %s down <config.conf>   Tear down tunnel\n"
+            "  %s show <config.conf>   Display tunnel statistics\n"
+            "  %s genkey               Generate X25519 private key\n"
+            "  %s pubkey               Derive public key (reads private from stdin)\n",
+            TACHYON_PROTO_VERSION, prog, prog, prog, prog, prog);
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;
@@ -56,8 +54,7 @@ int main(int argc, char **argv)
         }
         uint8_t priv[TACHYON_X25519_KEY_LEN];
         if (!hex2bin(priv_hex, priv, TACHYON_X25519_KEY_LEN)) {
-            LOG_ERR("Invalid private key: expected %d hex characters",
-                    TACHYON_X25519_KEY_LEN * 2);
+            LOG_ERR("Invalid private key: expected %d hex characters", TACHYON_X25519_KEY_LEN * 2);
             return 1;
         }
         uint8_t pub[TACHYON_X25519_KEY_LEN];
@@ -81,9 +78,12 @@ int main(int argc, char **argv)
 
     std::string conf = argv[2];
 
-    if (cmd == "up")        command_up(conf);
-    else if (cmd == "down") command_down(conf);
-    else if (cmd == "show") command_show(conf);
+    if (cmd == "up")
+        command_up(conf);
+    else if (cmd == "down")
+        command_down(conf);
+    else if (cmd == "show")
+        command_show(conf);
     else {
         LOG_ERR("Unknown command: %s", cmd.c_str());
         print_usage(argv[0]);

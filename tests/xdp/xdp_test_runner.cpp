@@ -38,9 +38,9 @@ extern "C" {
 
 /* XDP action codes */
 #ifndef XDP_DROP
-#define XDP_DROP     1
-#define XDP_PASS     2
-#define XDP_TX       3
+#define XDP_DROP 1
+#define XDP_PASS 2
+#define XDP_TX 3
 #define XDP_REDIRECT 4
 #endif
 
@@ -48,8 +48,7 @@ extern "C" {
  * Test Fixture - Loads BPF object and initializes maps
  * ══════════════════════════════════════════════════════════════════════════ */
 
-class XdpTest : public ::testing::Test
-{
+class XdpTest : public ::testing::Test {
   protected:
     struct bpf_object *obj_ = nullptr;
     int tx_prog_fd_ = -1;
@@ -59,8 +58,7 @@ class XdpTest : public ::testing::Test
     int ip_sess_fd_ = -1;
     int stats_fd_ = -1;
 
-    void SetUp() override
-    {
+    void SetUp() override {
         /* Check for root privileges */
         if (geteuid() != 0) {
             GTEST_SKIP() << "XDP tests require root privileges";
@@ -133,8 +131,7 @@ class XdpTest : public ::testing::Test
         }
     }
 
-    void TearDown() override
-    {
+    void TearDown() override {
         if (obj_)
             bpf_object__close(obj_);
     }
@@ -144,8 +141,7 @@ class XdpTest : public ::testing::Test
     /* Build a minimal Ethernet + IPv4 + TCP packet */
     std::vector<uint8_t> build_inner_tcp_packet(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port,
                                                 uint16_t dst_port, bool syn = false,
-                                                uint16_t mss = 0)
-    {
+                                                uint16_t mss = 0) {
         size_t eth_len = sizeof(struct ethhdr);
         size_t ip_len = sizeof(struct iphdr);
         size_t tcp_len = sizeof(struct tcphdr);
@@ -189,8 +185,7 @@ class XdpTest : public ::testing::Test
     }
 
     /* Build a minimal Ethernet + ARP packet */
-    std::vector<uint8_t> build_arp_packet()
-    {
+    std::vector<uint8_t> build_arp_packet() {
         size_t total = sizeof(struct ethhdr) + 28; /* ARP is 28 bytes */
         std::vector<uint8_t> pkt(total, 0);
 
@@ -202,8 +197,7 @@ class XdpTest : public ::testing::Test
 
     /* Build a minimal encapsulated packet for RX path */
     std::vector<uint8_t> build_encap_packet(uint32_t session_id, uint8_t quic_flags,
-                                            size_t payload_len)
-    {
+                                            size_t payload_len) {
         size_t total = TACHYON_OUTER_HDR_LEN + payload_len + TACHYON_AEAD_TAG_LEN;
         std::vector<uint8_t> pkt(total, 0);
 
@@ -246,8 +240,7 @@ class XdpTest : public ::testing::Test
         bool success;
     };
 
-    test_result run_xdp_test(int prog_fd, const std::vector<uint8_t> &pkt_in)
-    {
+    test_result run_xdp_test(int prog_fd, const std::vector<uint8_t> &pkt_in) {
         test_result result = {};
         result.data_out.resize(4096, 0);
 
@@ -268,8 +261,7 @@ class XdpTest : public ::testing::Test
  * TX Path Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(XdpTest, TxPathRequiresProgram)
-{
+TEST_F(XdpTest, TxPathRequiresProgram) {
     if (tx_prog_fd_ < 0)
         GTEST_SKIP() << "TX program not found";
 
@@ -285,8 +277,7 @@ TEST_F(XdpTest, TxPathRequiresProgram)
         << "Valid packet to known peer should not be dropped";
 }
 
-TEST_F(XdpTest, TxNonIpv4Passthrough)
-{
+TEST_F(XdpTest, TxNonIpv4Passthrough) {
     if (tx_prog_fd_ < 0)
         GTEST_SKIP() << "TX program not found";
 
@@ -296,8 +287,7 @@ TEST_F(XdpTest, TxNonIpv4Passthrough)
     EXPECT_EQ(result.retval, (uint32_t)XDP_PASS) << "Non-IPv4 packets should pass through";
 }
 
-TEST_F(XdpTest, TxUnknownDestination)
-{
+TEST_F(XdpTest, TxUnknownDestination) {
     if (tx_prog_fd_ < 0)
         GTEST_SKIP() << "TX program not found";
 
@@ -313,8 +303,7 @@ TEST_F(XdpTest, TxUnknownDestination)
  * RX Path Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(XdpTest, RxControlPlaneRouting)
-{
+TEST_F(XdpTest, RxControlPlaneRouting) {
     if (rx_prog_fd_ < 0)
         GTEST_SKIP() << "RX program not found";
 
@@ -328,8 +317,7 @@ TEST_F(XdpTest, RxControlPlaneRouting)
         << "Control plane packets should be passed to userspace";
 }
 
-TEST_F(XdpTest, RxMalformedTooShort)
-{
+TEST_F(XdpTest, RxMalformedTooShort) {
     if (rx_prog_fd_ < 0)
         GTEST_SKIP() << "RX program not found";
 
@@ -346,8 +334,7 @@ TEST_F(XdpTest, RxMalformedTooShort)
         << "Malformed packet should be safely handled";
 }
 
-TEST_F(XdpTest, RxNonUdpPassthrough)
-{
+TEST_F(XdpTest, RxNonUdpPassthrough) {
     if (rx_prog_fd_ < 0)
         GTEST_SKIP() << "RX program not found";
 
@@ -370,8 +357,7 @@ TEST_F(XdpTest, RxNonUdpPassthrough)
     EXPECT_EQ(result.retval, (uint32_t)XDP_PASS) << "Non-UDP packets should pass through RX path";
 }
 
-TEST_F(XdpTest, RxWrongPort)
-{
+TEST_F(XdpTest, RxWrongPort) {
     if (rx_prog_fd_ < 0)
         GTEST_SKIP() << "RX program not found";
 
@@ -392,8 +378,7 @@ TEST_F(XdpTest, RxWrongPort)
  * MSS Clamping Test
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(XdpTest, TxMssClamping)
-{
+TEST_F(XdpTest, TxMssClamping) {
     if (tx_prog_fd_ < 0)
         GTEST_SKIP() << "TX program not found";
 
@@ -434,8 +419,7 @@ TEST_F(XdpTest, TxMssClamping)
  * Packet Structure Validation
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST_F(XdpTest, GhostHeaderLayout)
-{
+TEST_F(XdpTest, GhostHeaderLayout) {
     /* Verify ghost header field offsets */
     struct tachyon_ghost_hdr hdr = {};
     hdr.quic_flags = 0x42;
