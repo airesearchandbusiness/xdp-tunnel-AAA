@@ -580,3 +580,110 @@ TEST_F(CryptoTest, SequentialNoncesProduceDifferentCiphertexts) {
         }
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * RFC 4231 HMAC-SHA256 Known-Answer Tests
+ *
+ * Test vectors from IETF RFC 4231 §4 (Test Cases for HMAC-SHA-256).
+ * These verify that our HMAC implementation is correct against the standard,
+ * not merely internally consistent.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* RFC 4231 Test Case 1
+ * Key  : 20 × 0x0b
+ * Data : "Hi There"
+ * HMAC : b0344c61d8db38535ca8afceaf0bf12b 881dc200c9833da726e9376c2e32cff7 */
+TEST_F(CryptoTest, HmacSha256_RFC4231_TC1) {
+    uint8_t key[20];
+    memset(key, 0x0b, sizeof(key));
+
+    const char *data = "Hi There";
+    uint8_t mac[TACHYON_HMAC_LEN];
+    ASSERT_TRUE(calc_hmac(key, sizeof(key), reinterpret_cast<const uint8_t *>(data), 8, mac));
+
+    const auto expected = from_hex("b0344c61d8db38535ca8afceaf0bf12b"
+                                   "881dc200c9833da726e9376c2e32cff7");
+    EXPECT_EQ(to_hex(mac, TACHYON_HMAC_LEN), to_hex(expected.data(), expected.size()))
+        << "HMAC-SHA256 result does not match RFC 4231 TC1";
+}
+
+/* RFC 4231 Test Case 2
+ * Key  : "Jefe" (4 bytes)
+ * Data : "what do ya want for nothing?"
+ * HMAC : 5bdcc146bf60754e6a042426089575c7 5a003f089d2739839dec58b964ec3843
+ * (verified against OpenSSL 3.x CLI: echo -n '...' | openssl dgst -sha256 -hmac 'Jefe') */
+TEST_F(CryptoTest, HmacSha256_RFC4231_TC2) {
+    const char *key = "Jefe";
+    const char *data = "what do ya want for nothing?";
+    uint8_t mac[TACHYON_HMAC_LEN];
+    ASSERT_TRUE(calc_hmac(reinterpret_cast<const uint8_t *>(key), 4,
+                          reinterpret_cast<const uint8_t *>(data), 28, mac));
+
+    const auto expected = from_hex("5bdcc146bf60754e6a042426089575c7"
+                                   "5a003f089d2739839dec58b964ec3843");
+    EXPECT_EQ(to_hex(mac, TACHYON_HMAC_LEN), to_hex(expected.data(), expected.size()))
+        << "HMAC-SHA256 result does not match RFC 4231 TC2";
+}
+
+/* RFC 4231 Test Case 3
+ * Key  : 20 × 0xaa
+ * Data : 50 × 0xdd
+ * HMAC : 773ea91e36800e46854db8ebd09181a7 2959098b3ef8c122d9635514ced565fe */
+TEST_F(CryptoTest, HmacSha256_RFC4231_TC3) {
+    uint8_t key[20];
+    memset(key, 0xaa, sizeof(key));
+
+    uint8_t data[50];
+    memset(data, 0xdd, sizeof(data));
+
+    uint8_t mac[TACHYON_HMAC_LEN];
+    ASSERT_TRUE(calc_hmac(key, sizeof(key), data, sizeof(data), mac));
+
+    const auto expected = from_hex("773ea91e36800e46854db8ebd09181a7"
+                                   "2959098b3ef8c122d9635514ced565fe");
+    EXPECT_EQ(to_hex(mac, TACHYON_HMAC_LEN), to_hex(expected.data(), expected.size()))
+        << "HMAC-SHA256 result does not match RFC 4231 TC3";
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Runtime Wire-Format Layout Verification
+ *
+ * Belt-and-suspenders complement to the compile-time static_assert checks
+ * in common.h.  Catches size mismatches that slip through on compilers
+ * that differ in their struct padding behaviour.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST(WireFormatTest, GhostHeaderSizeAndOffsets) {
+    EXPECT_EQ(sizeof(struct tachyon_ghost_hdr), 20u);
+    EXPECT_EQ(offsetof(struct tachyon_ghost_hdr, session_id), 4u);
+    EXPECT_EQ(offsetof(struct tachyon_ghost_hdr, seq), 8u);
+    EXPECT_EQ(offsetof(struct tachyon_ghost_hdr, nonce_salt), 16u);
+}
+
+TEST(WireFormatTest, ControlPlaneMessageSizes) {
+    EXPECT_EQ(sizeof(struct tachyon_msg_init), 20u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_cookie), 48u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_auth), 100u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_finish), 64u);
+    EXPECT_EQ(sizeof(struct tachyon_msg_keepalive), 48u);
+}
+
+TEST(WireFormatTest, MapValueSizes) {
+    EXPECT_EQ(sizeof(struct tachyon_key_init), 68u);
+    EXPECT_EQ(sizeof(struct tachyon_stats), 112u);
+    EXPECT_EQ(sizeof(struct tachyon_event), 24u);
+    EXPECT_EQ(sizeof(struct tachyon_config), 4u);
+    EXPECT_EQ(sizeof(struct tachyon_lpm_key_v4), 8u);
+    EXPECT_EQ(sizeof(struct tachyon_rate_cfg), 32u);
+}
+
+TEST(WireFormatTest, UserspaceStructsMatchBpfMapTypes) {
+    EXPECT_EQ(sizeof(MsgInit), sizeof(struct tachyon_msg_init));
+    EXPECT_EQ(sizeof(MsgCookie), sizeof(struct tachyon_msg_cookie));
+    EXPECT_EQ(sizeof(MsgAuth), sizeof(struct tachyon_msg_auth));
+    EXPECT_EQ(sizeof(MsgFinish), sizeof(struct tachyon_msg_finish));
+    EXPECT_EQ(sizeof(MsgKeepalive), sizeof(struct tachyon_msg_keepalive));
+    EXPECT_EQ(sizeof(userspace_config), sizeof(struct tachyon_config));
+    EXPECT_EQ(sizeof(userspace_key_init), sizeof(struct tachyon_key_init));
+    EXPECT_EQ(sizeof(userspace_stats), sizeof(struct tachyon_stats));
+}

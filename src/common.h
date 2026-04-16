@@ -26,6 +26,7 @@ extern "C" {
 
 #if !defined(__KERNEL__) && !defined(__BPF__)
 #include <stdint.h>
+#include <stddef.h> /* offsetof */
 #include <string.h>
 /* Avoid conflicts with kernel types from <linux/types.h> which
  * may be pulled in transitively by <sys/stat.h> in C++ builds. */
@@ -346,6 +347,76 @@ struct tachyon_msg_keepalive {
  * Filesystem Paths
  * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_BPF_PIN_BASE "/sys/fs/bpf/tachyon"
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Compile-Time Layout Verification
+ *
+ * Catch struct size / offset regressions before they cause silent
+ * data corruption across the BPF, kernel-module, and userspace
+ * compilation contexts.  Skipped in kernel-module builds (no stddef.h).
+ *
+ * In C contexts:    uses _Static_assert + __builtin_offsetof (clang/gcc)
+ * In C++ contexts:  uses static_assert  + offsetof (C++11)
+ * ────────────────────────────────────────────────────────────────────────── */
+#ifndef __KERNEL__
+
+#ifdef __cplusplus
+#define TACHYON_SASSERT(cond, msg) static_assert((cond), msg)
+#define TACHYON_FIELD_OFFSET(T, f) offsetof(T, f)
+#else
+#define TACHYON_SASSERT(cond, msg) _Static_assert((cond), msg)
+#define TACHYON_FIELD_OFFSET(T, f) __builtin_offsetof(T, f)
+#endif
+
+/* Ghost header — 20-byte wire format */
+TACHYON_SASSERT(sizeof(struct tachyon_ghost_hdr) == 20,
+                "tachyon_ghost_hdr must be exactly 20 bytes on the wire");
+TACHYON_SASSERT(TACHYON_FIELD_OFFSET(struct tachyon_ghost_hdr, session_id) == 4,
+                "ghost_hdr.session_id must be at wire offset 4");
+TACHYON_SASSERT(TACHYON_FIELD_OFFSET(struct tachyon_ghost_hdr, seq) == 8,
+                "ghost_hdr.seq must be at wire offset 8");
+TACHYON_SASSERT(TACHYON_FIELD_OFFSET(struct tachyon_ghost_hdr, nonce_salt) == 16,
+                "ghost_hdr.nonce_salt must be at wire offset 16");
+
+/* BPF map value types */
+TACHYON_SASSERT(sizeof(struct tachyon_config) == 4, "tachyon_config must be 4 bytes");
+TACHYON_SASSERT(sizeof(struct tachyon_key_init) == 68,
+                "tachyon_key_init must be 68 bytes (4 + 32 + 32)");
+TACHYON_SASSERT(sizeof(struct tachyon_lpm_key_v4) == 8,
+                "tachyon_lpm_key_v4 must be 8 bytes (4 + 4)");
+TACHYON_SASSERT(sizeof(struct tachyon_rate_cfg) == 32, "tachyon_rate_cfg must be 32 bytes (4 x 8)");
+TACHYON_SASSERT(sizeof(struct tachyon_event) == 24,
+                "tachyon_event must be 24 bytes (4 + 4 + 8 + 8)");
+TACHYON_SASSERT(sizeof(struct tachyon_stats) == 112, "tachyon_stats must be 112 bytes (14 x 8)");
+
+/* Control-plane message structs (all packed) */
+TACHYON_SASSERT(sizeof(struct tachyon_msg_init) == 20,
+                "tachyon_msg_init must be 20 bytes on the wire");
+TACHYON_SASSERT(sizeof(struct tachyon_msg_cookie) == 48,
+                "tachyon_msg_cookie must be 48 bytes on the wire");
+TACHYON_SASSERT(sizeof(struct tachyon_msg_auth) == 100,
+                "tachyon_msg_auth must be 100 bytes on the wire");
+TACHYON_SASSERT(sizeof(struct tachyon_msg_finish) == 64,
+                "tachyon_msg_finish must be 64 bytes on the wire");
+TACHYON_SASSERT(sizeof(struct tachyon_msg_keepalive) == 48,
+                "tachyon_msg_keepalive must be 48 bytes on the wire");
+
+/* Constant relationships */
+TACHYON_SASSERT(TACHYON_OUTER_HDR_LEN == 62, "outer header sum must be 62 bytes (14+20+8+20)");
+TACHYON_SASSERT(TACHYON_REPLAY_WINDOW == TACHYON_REPLAY_WORDS * 64,
+                "replay window must equal replay words times bitmap word width");
+TACHYON_SASSERT((TACHYON_SEQ_CPU_MASK | TACHYON_SEQ_NUM_MASK) == 0xFFFFFFFFFFFFFFFFULL,
+                "seq masks must cover all 64 bits with no gaps");
+TACHYON_SASSERT((TACHYON_SEQ_CPU_MASK & TACHYON_SEQ_NUM_MASK) == 0, "seq masks must not overlap");
+TACHYON_SASSERT(TACHYON_AEAD_TAG_LEN == 16, "Poly1305 tag must be 16 bytes");
+TACHYON_SASSERT(TACHYON_AEAD_KEY_LEN == 32, "ChaCha20 key must be 32 bytes");
+TACHYON_SASSERT(TACHYON_X25519_KEY_LEN == 32, "X25519 key must be 32 bytes");
+TACHYON_SASSERT(TACHYON_HMAC_LEN == 32, "HMAC-SHA256 output must be 32 bytes");
+
+#undef TACHYON_SASSERT
+#undef TACHYON_FIELD_OFFSET
+
+#endif /* !__KERNEL__ */
 
 #ifdef __cplusplus
 }

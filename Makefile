@@ -32,11 +32,27 @@ BINDIR      ?= $(PREFIX)/bin
 SYSCONFDIR  ?= /etc/tachyon
 SYSTEMDDIR  ?= /etc/systemd/system
 
-# Compiler flags
+# Compiler flags — production hardening
+# -D_FORTIFY_SOURCE=2: glibc buffer-overflow detection (requires -O1+)
+# -fstack-protector-strong: stack canary on functions with local arrays/pointers
+# -fPIE + -pie: position-independent executable (defeats ROP on ASLR kernels)
+# -Wformat-security: warn on non-literal format strings
+# -Wswitch-enum: require exhaustive switch coverage of enum values
+# Linker:
+# -z relro,-z now: full RELRO — all PLT entries resolved at startup, GOT read-only
+# -z noexecstack: mark stack segment as non-executable
 CXX         ?= g++
 CXXFLAGS    := -O2 -Wall -Wextra -std=c++17 \
+               -D_FORTIFY_SOURCE=2 \
+               -fstack-protector-strong \
+               -fPIE \
+               -Wformat -Wformat-security \
+               -Wswitch-enum \
                -DTACHYON_VERSION=\"$(VERSION)\"
-LDFLAGS     := -lbpf -lcrypto -lelf -lz
+LDFLAGS     := -Wl,-z,relro,-z,now \
+               -Wl,-z,noexecstack \
+               -pie \
+               -lbpf -lcrypto -lelf -lz
 
 # Loader source files
 LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \

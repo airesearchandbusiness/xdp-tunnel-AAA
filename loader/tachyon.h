@@ -9,6 +9,8 @@
 #define TACHYON_CTRL_H
 
 /* ── Standard Library ── */
+#include <cassert>
+#include <cctype>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
@@ -280,6 +282,10 @@ inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len) {
     if (hex.size() != bin_len * 2)
         return false;
     for (size_t i = 0; i < bin_len; i++) {
+        const auto hi = static_cast<unsigned char>(hex[i * 2]);
+        const auto lo = static_cast<unsigned char>(hex[i * 2 + 1]);
+        if (!isxdigit(hi) || !isxdigit(lo))
+            return false; /* reject non-hex characters early */
         if (sscanf(&hex[i * 2], "%2hhx", &bin[i]) != 1)
             return false;
     }
@@ -292,7 +298,11 @@ inline bool parse_mac(const std::string &str, uint8_t mac[6]) {
 }
 
 inline std::string trim(std::string s) {
-    s.erase(0, s.find_first_not_of(" \t\r\n"));
+    const auto first = s.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+        return {}; /* all whitespace */
+    s.erase(0, first);
+    /* find_last_not_of cannot return npos here: s now starts with non-whitespace */
     s.erase(s.find_last_not_of(" \t\r\n") + 1);
     return s;
 }
@@ -303,5 +313,31 @@ inline bool run_cmd(const std::string &cmd) {
         LOG_WARN("Command failed (exit %d): %s", ret, cmd.c_str());
     return ret == 0;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Compile-Time Cross-Structure Verification
+ *
+ * Ensure userspace mirror structs remain identical in size to their
+ * common.h counterparts so BPF map reads/writes never silently corrupt.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static_assert(sizeof(userspace_config) == sizeof(struct tachyon_config),
+              "userspace_config layout must match tachyon_config");
+static_assert(sizeof(userspace_key_init) == sizeof(struct tachyon_key_init),
+              "userspace_key_init layout must match tachyon_key_init");
+static_assert(sizeof(userspace_stats) == sizeof(struct tachyon_stats),
+              "userspace_stats layout must match tachyon_stats");
+
+/* Control-plane message structs: userspace #pragma pack(1) vs common.h __attribute__((packed)) */
+static_assert(sizeof(MsgInit) == sizeof(struct tachyon_msg_init),
+              "MsgInit must match tachyon_msg_init wire size");
+static_assert(sizeof(MsgCookie) == sizeof(struct tachyon_msg_cookie),
+              "MsgCookie must match tachyon_msg_cookie wire size");
+static_assert(sizeof(MsgAuth) == sizeof(struct tachyon_msg_auth),
+              "MsgAuth must match tachyon_msg_auth wire size");
+static_assert(sizeof(MsgFinish) == sizeof(struct tachyon_msg_finish),
+              "MsgFinish must match tachyon_msg_finish wire size");
+static_assert(sizeof(MsgKeepalive) == sizeof(struct tachyon_msg_keepalive),
+              "MsgKeepalive must match tachyon_msg_keepalive wire size");
 
 #endif /* TACHYON_CTRL_H */

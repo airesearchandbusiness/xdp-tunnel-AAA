@@ -266,15 +266,19 @@ bool generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out) {
     }
 
     size_t len = TACHYON_X25519_KEY_LEN;
-    bool ok = (EVP_PKEY_get_raw_private_key(pk, priv_out, &len) > 0);
+    bool ok =
+        (EVP_PKEY_get_raw_private_key(pk, priv_out, &len) > 0 && len == TACHYON_X25519_KEY_LEN);
     if (ok) {
         len = TACHYON_X25519_KEY_LEN;
-        ok = (EVP_PKEY_get_raw_public_key(pk, pub_out, &len) > 0);
+        ok = (EVP_PKEY_get_raw_public_key(pk, pub_out, &len) > 0 && len == TACHYON_X25519_KEY_LEN);
     }
 
     EVP_PKEY_free(pk);
-    if (!ok)
-        LOG_ERR("X25519 key extraction failed");
+    if (!ok) {
+        LOG_ERR("X25519 key extraction failed or length mismatch");
+        OPENSSL_cleanse(priv_out, TACHYON_X25519_KEY_LEN);
+        OPENSSL_cleanse(pub_out, TACHYON_X25519_KEY_LEN);
+    }
     return ok;
 }
 
@@ -286,7 +290,11 @@ bool get_public_key(const uint8_t *priv, uint8_t *pub_out) {
     }
 
     size_t len = TACHYON_X25519_KEY_LEN;
-    bool ok = (EVP_PKEY_get_raw_public_key(pk, pub_out, &len) > 0);
+    bool ok = (EVP_PKEY_get_raw_public_key(pk, pub_out, &len) > 0 && len == TACHYON_X25519_KEY_LEN);
     EVP_PKEY_free(pk);
+    if (!ok) {
+        LOG_ERR("Public key extraction failed or length mismatch");
+        OPENSSL_cleanse(pub_out, TACHYON_X25519_KEY_LEN);
+    }
     return ok;
 }
