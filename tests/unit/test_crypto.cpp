@@ -187,6 +187,47 @@ TEST_F(CryptoTest, EcdhRejectsZeroPublicKey) {
     EXPECT_FALSE(do_ecdh(priv, zero_pub, ss));
 }
 
+/* RFC 7748 Section 6.1 - X25519 Known-Answer Test
+ *
+ *   Alice private : 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a
+ *   Alice public  : 8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+ *   Bob   private : 5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb
+ *   Bob   public  : de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
+ *   Shared secret : 4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742
+ */
+TEST_F(CryptoTest, X25519_RFC7748_Section6_1) {
+    auto alice_priv = from_hex("77076d0a7318a57d3c16c17251b26645"
+                               "df4c2f87ebc0992ab177fba51db92c2a");
+    auto alice_pub_expected = from_hex("8520f0098930a754748b7ddcb43ef75a"
+                                       "0dbf3a0d26381af4eba4a98eaa9b4e6a");
+    auto bob_priv = from_hex("5dab087e624a8a4b79e17f8b83800ee6"
+                             "6f3bb1292618b6fd1c2f8b27ff88e0eb");
+    auto bob_pub_expected = from_hex("de9edb7d7b7dc1b4d35b61c2ece43537"
+                                     "3f8343c85b78674dadfc7e146f882b4f");
+    auto shared_expected = from_hex("4a5d9d5ba4ce2de1728e3bf480350f25"
+                                    "e07e21c947d19e3376f09b3c1e161742");
+
+    /* Public-key derivation must match the RFC */
+    uint8_t alice_pub[32], bob_pub[32];
+    ASSERT_TRUE(get_public_key(alice_priv.data(), alice_pub));
+    ASSERT_TRUE(get_public_key(bob_priv.data(), bob_pub));
+
+    EXPECT_EQ(to_hex(alice_pub, 32), to_hex(alice_pub_expected.data(), 32))
+        << "Alice public key does not match RFC 7748 Section 6.1";
+    EXPECT_EQ(to_hex(bob_pub, 32), to_hex(bob_pub_expected.data(), 32))
+        << "Bob public key does not match RFC 7748 Section 6.1";
+
+    /* ECDH in both directions yields the RFC shared secret */
+    uint8_t ss_ab[32], ss_ba[32];
+    ASSERT_TRUE(do_ecdh(alice_priv.data(), bob_pub, ss_ab));
+    ASSERT_TRUE(do_ecdh(bob_priv.data(), alice_pub, ss_ba));
+
+    EXPECT_EQ(to_hex(ss_ab, 32), to_hex(shared_expected.data(), 32))
+        << "Alice->Bob shared secret does not match RFC 7748 Section 6.1";
+    EXPECT_EQ(to_hex(ss_ba, 32), to_hex(shared_expected.data(), 32))
+        << "Bob->Alice shared secret does not match RFC 7748 Section 6.1";
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Key Generation Tests
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -396,6 +437,55 @@ TEST_F(CryptoTest, AeadDifferentNoncesDifferentCiphertext) {
     ASSERT_TRUE(cp_aead_encrypt(key, plaintext, pt_len, nullptr, 0, nonce2, ct2, tag2));
 
     EXPECT_NE(memcmp(ct1, ct2, pt_len), 0);
+}
+
+/* RFC 8439 Section 2.8.2 - ChaCha20-Poly1305 AEAD Known-Answer Test
+ *
+ *   Key        : 808182...9e9f                              (32 bytes)
+ *   Nonce (IV) : 070000004041424344454647                   (12 bytes)
+ *   AAD        : 50515253c0c1c2c3c4c5c6c7                   (12 bytes)
+ *   Plaintext  : "Ladies and Gentlemen of the class of '99: ..." (114 bytes)
+ *   Ciphertext : d31a8d34...6116
+ *   Tag (Poly1305): 1ae10b594f09e26a7e902ecbd0600691
+ */
+TEST_F(CryptoTest, AeadRFC8439_Section2_8_2) {
+    auto key = from_hex("808182838485868788898a8b8c8d8e8f"
+                        "909192939495969798999a9b9c9d9e9f");
+    auto nonce = from_hex("070000004041424344454647");
+    auto aad = from_hex("50515253c0c1c2c3c4c5c6c7");
+
+    const char *pt_str = "Ladies and Gentlemen of the class of '99: "
+                         "If I could offer you only one tip for the future, "
+                         "sunscreen would be it.";
+    const size_t pt_len = strlen(pt_str);
+    ASSERT_EQ(pt_len, 114u);
+
+    auto expected_ct = from_hex("d31a8d34648e60db7b86afbc53ef7ec2"
+                                "a4aded51296e08fea9e2b5a736ee62d6"
+                                "3dbea45e8ca9671282fafb69da92728b"
+                                "1a71de0a9e060b2905d6a5b67ecd3b36"
+                                "92ddbd7f2d778b8c9803aee328091b58"
+                                "fab324e4fad675945585808b4831d7bc"
+                                "3ff4def08e4b7a9de576d26586cec64b"
+                                "6116");
+    auto expected_tag = from_hex("1ae10b594f09e26a7e902ecbd0600691");
+
+    std::vector<uint8_t> ct(pt_len);
+    uint8_t tag[TACHYON_AEAD_TAG_LEN];
+
+    ASSERT_TRUE(cp_aead_encrypt(key.data(), reinterpret_cast<const uint8_t *>(pt_str), pt_len,
+                                aad.data(), aad.size(), nonce.data(), ct.data(), tag));
+
+    EXPECT_EQ(to_hex(ct.data(), ct.size()), to_hex(expected_ct.data(), expected_ct.size()))
+        << "Ciphertext does not match RFC 8439 Section 2.8.2";
+    EXPECT_EQ(to_hex(tag, TACHYON_AEAD_TAG_LEN), to_hex(expected_tag.data(), expected_tag.size()))
+        << "Tag does not match RFC 8439 Section 2.8.2";
+
+    /* Decrypt roundtrip recovers the plaintext */
+    std::vector<uint8_t> decrypted(pt_len);
+    ASSERT_TRUE(cp_aead_decrypt(key.data(), ct.data(), pt_len, aad.data(), aad.size(), nonce.data(),
+                                tag, decrypted.data()));
+    EXPECT_EQ(memcmp(decrypted.data(), pt_str, pt_len), 0);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

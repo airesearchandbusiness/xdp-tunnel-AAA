@@ -58,7 +58,7 @@ void command_up(const std::string &conf_file) {
     if (!p_idx || !o_idx || !i_idx) {
         LOG_ERR("Failed to resolve interface indices (phys=%u, out=%u, in=%u)", p_idx, o_idx,
                 i_idx);
-        run_cmd("ip link del " + v_in + " 2>/dev/null");
+        run_cmd("ip link del " + v_in, /*quiet=*/true);
         return;
     }
 
@@ -67,7 +67,7 @@ void command_up(const std::string &conf_file) {
     ssize_t exe_len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (exe_len <= 0) {
         LOG_ERR("Failed to resolve executable path");
-        run_cmd("ip link del " + v_in + " 2>/dev/null");
+        run_cmd("ip link del " + v_in, /*quiet=*/true);
         return;
     }
     exe_path[exe_len] = '\0';
@@ -85,14 +85,14 @@ void command_up(const std::string &conf_file) {
     struct bpf_object *obj = bpf_object__open_file(xdp_obj_path.c_str(), nullptr);
     if (!obj) {
         LOG_ERR("Failed to open BPF object: %s", xdp_obj_path.c_str());
-        run_cmd("ip link del " + v_in + " 2>/dev/null");
+        run_cmd("ip link del " + v_in, /*quiet=*/true);
         return;
     }
 
     if (bpf_object__load(obj)) {
         LOG_ERR("Failed to load BPF object into kernel");
         bpf_object__close(obj);
-        run_cmd("ip link del " + v_in + " 2>/dev/null");
+        run_cmd("ip link del " + v_in, /*quiet=*/true);
         return;
     }
 
@@ -192,8 +192,8 @@ void command_down(const std::string &conf_file) {
     std::string name = tunnel_name_from_conf(conf_file);
     std::string bpf_dir = std::string(TACHYON_BPF_PIN_BASE) + "/" + name;
 
-    run_cmd("ip link del t_" + name + "_in 2>/dev/null");
-    run_cmd("rm -rf " + bpf_dir);
+    run_cmd("ip link del t_" + name + "_in", /*quiet=*/true);
+    run_cmd("rm -rf " + bpf_dir, /*quiet=*/true);
     LOG_INFO("Tunnel '%s' torn down.", name.c_str());
 }
 

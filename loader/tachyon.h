@@ -29,8 +29,11 @@
 #include <unistd.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <net/if.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <linux/limits.h>
 
 /* ── BPF (optional - define TACHYON_NO_BPF to exclude for unit tests) ── */
@@ -271,7 +274,7 @@ void command_show(const std::string &conf_file);
  * Function Declarations - network.cpp
  * ══════════════════════════════════════════════════════════════════════════ */
 
-void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg, uint32_t session_id,
+void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t session_id,
                        uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac);
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -307,11 +310,61 @@ inline std::string trim(std::string s) {
     return s;
 }
 
-inline bool run_cmd(const std::string &cmd) {
-    int ret = system(cmd.c_str());
-    if (ret != 0)
-        LOG_WARN("Command failed (exit %d): %s", ret, cmd.c_str());
-    return ret == 0;
+/*
+ * run_cmd - Execute a shell-style command via fork/execvp.
+ *
+ * Security: uses fork+execvp instead of system() to prevent shell injection.
+ * The command string is whitespace-tokenised into an argv array; no shell
+ * interprets the result, so metacharacters ($(), ;, `, |, &&, >, etc.) pass
+ * through as literal argv entries rather than being interpreted.
+ *
+ * Limitations: callers must not use shell redirection (2>/dev/null), pipes,
+ * or quoted arguments containing spaces. All in-tree callers comply.
+ *
+ * Set quiet=true to silence child stdout/stderr and suppress the failure
+ * LOG_WARN — useful for best-effort teardown paths.
+ */
+inline bool run_cmd(const std::string &cmd, bool quiet = false) {
+    std::vector<std::string> tokens;
+    std::istringstream iss(cmd);
+    for (std::string tok; iss >> tok;)
+        tokens.push_back(std::move(tok));
+    if (tokens.empty())
+        return false;
+
+    std::vector<char *> argv;
+    argv.reserve(tokens.size() + 1);
+    for (auto &t : tokens)
+        argv.push_back(t.data());
+    argv.push_back(nullptr);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        LOG_ERR("fork() failed: %s", strerror(errno));
+        return false;
+    }
+    if (pid == 0) {
+        if (quiet) {
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) {
+                dup2(devnull, STDOUT_FILENO);
+                dup2(devnull, STDERR_FILENO);
+                close(devnull);
+            }
+        }
+        execvp(argv[0], argv.data());
+        _exit(127); /* execvp only returns on failure */
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        LOG_ERR("waitpid() failed: %s", strerror(errno));
+        return false;
+    }
+    bool ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    if (!ok && !quiet)
+        LOG_WARN("Command failed (status %d): %s", status, cmd.c_str());
+    return ok;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
