@@ -41,6 +41,35 @@ Tachyon implements several defense-in-depth measures:
 - **RCU-protected key rotation** for zero-downtime rekeying
 - **256-packet per-CPU replay window** for replay attack prevention
 
+### Control Plane Hardening
+
+- **No shell interpretation** -- `run_cmd()` uses `fork()/execvp()` instead of `system()`, eliminating command injection via config filenames
+- **Tunnel name sanitization** -- restricted to `[a-zA-Z0-9_-]` with a 10-char IFNAMSIZ-derived cap
+- **Root privilege check** -- `geteuid()` check before `up`/`down`/`show` commands
+- **Monotonic clock** -- all DPD, keepalive, rekey, and cookie-rotation timers use `CLOCK_MONOTONIC`, immune to NTP step adjustments
+- **Full crypto return checking** -- every `RAND_bytes()`, `cp_aead_encrypt()`, and `cp_aead_decrypt()` call site is return-value-checked
+- **DPD authentication ordering** -- `last_rx_time` is updated only after a packet passes AEAD authentication, not on bare receipt
+- **BPF attachment rollback** -- all-or-nothing XDP program attachment with automatic detach on partial failure
+- **Peer source-port validation** -- control plane filters by both IP and UDP source port
+- **Private key cleansing** -- `OPENSSL_cleanse` applied to `TunnelConfig` key strings immediately after static-key derivation
+- **IP/MAC semantic validation** -- rejects loopback, broadcast, link-local, and zero addresses in config
+- **Config file size guard** -- `parse_ini()` rejects files >64KB to prevent memory exhaustion
+- **NonceCache deduplication** -- duplicate nonce additions do not inflate the LRU list, preserving correct capacity accounting
+
+### Build Hardening
+
+- **`-D_FORTIFY_SOURCE=2`** -- glibc buffer-overflow detection
+- **`-fstack-protector-strong`** -- stack canary on functions with arrays/pointers
+- **`-fPIE` / `-pie`** -- position-independent executable for ASLR
+- **`-Wformat-security`** -- reject non-literal format strings
+- **`-Wl,-z,relro,-z,now`** -- full RELRO (GOT read-only after startup)
+- **`-Wl,-z,noexecstack`** -- non-executable stack
+
+### Compile-Time Verification
+
+- **20+ `static_assert` checks** verify wire-format struct sizes and field offsets across BPF, kernel, and userspace compilation contexts
+- **Cross-struct assertions** verify userspace C++ mirror types match BPF map value types byte-for-byte
+
 ## Supported Versions
 
 | Version | Supported |
