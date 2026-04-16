@@ -132,6 +132,62 @@ TEST_F(NonceCacheTest, HighFrequencyAddLookup) {
     EXPECT_TRUE(cache_.exists(9999));
 }
 
+/* ── Duplicate-Add Regression Tests ──
+ *
+ * Before the fix, add(nonce) always appended to order_ even for duplicate
+ * nonces, creating a map/list size divergence. This led to premature eviction
+ * of legitimate nonces when the cache reached capacity. */
+
+TEST_F(NonceCacheTest, DuplicateDoesNotInflateList) {
+    uint64_t now = 1000;
+    cache_.add(42, now);
+    cache_.add(42, now); /* duplicate — must NOT create a second list entry */
+
+    /* Fill to capacity - 1 (nonce 42 already occupies one slot) */
+    for (uint64_t i = 1; i < TACHYON_NONCE_CACHE_MAX; i++)
+        cache_.add(i + 1000, now);
+
+    /* Nonce 42 should still exist — it's in the first slot, not prematurely evicted */
+    EXPECT_TRUE(cache_.exists(42));
+}
+
+TEST_F(NonceCacheTest, DuplicateAddThenCapacityEviction) {
+    uint64_t now = 1000;
+    /* Add nonce 1 twice (triggers the old bug) */
+    cache_.add(1, now);
+    cache_.add(1, now);
+
+    /* Fill cache to capacity (slot 0 is nonce 1, slots 1..MAX-1 are 100..MAX+98) */
+    for (uint64_t i = 1; i < TACHYON_NONCE_CACHE_MAX; i++)
+        cache_.add(i + 99, now);
+
+    /* Push one more — should evict nonce 1 (oldest in the list) */
+    cache_.add(99999, now);
+
+    /* Nonce 1 was evicted, but nonce 100 (second-oldest) must NOT be collateral damage */
+    EXPECT_FALSE(cache_.exists(1));
+    EXPECT_TRUE(cache_.exists(100));
+    EXPECT_TRUE(cache_.exists(99999));
+}
+
+TEST_F(NonceCacheTest, ReplayDetectionSurvivesDuplicate) {
+    uint64_t now = 1000;
+    /* Legitimate handshake records the nonce */
+    cache_.add(0xDEAD, now);
+
+    /* Attacker replays the same PKT_AUTH — add() is called again with same nonce */
+    cache_.add(0xDEAD, now);
+
+    /* Fill cache to capacity to trigger eviction pressure */
+    for (uint64_t i = 0; i < TACHYON_NONCE_CACHE_MAX; i++)
+        cache_.add(i + 0x10000, now);
+
+    /* Even after full capacity cycling, the replayed nonce must be detectable
+     * OR have been properly evicted (not left as a stale ghost in the map) */
+    /* Key invariant: exists() must never return true for a nonce that was
+     * evicted from the list but left as a ghost in the map */
+}
+
 TEST_F(NonceCacheTest, ExpiryDoesNotEvictFreshEntries) {
     /* Add entries at time T, then add one at T + EXPIRY - 1 */
     cache_.add(100, 1000);

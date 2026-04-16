@@ -15,6 +15,16 @@
 #include "tachyon.h"
 #include <cerrno>
 
+/* Monotonic clock for all internal timers (DPD, keepalive, rekey, cookie
+ * rotation). Wall-clock time(nullptr) can jump backwards during NTP
+ * adjustments, which would cause DPD false triggers, keepalive bursts,
+ * or premature rekeys. CLOCK_MONOTONIC is immune to these adjustments. */
+static uint64_t monotonic_sec() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<uint64_t>(ts.tv_sec);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * QUIC Mimicry - Padded Packet Transmission
  *
@@ -248,7 +258,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
     /* Cookie secret for DoS protection */
     uint8_t cookie_secret[32];
-    uint64_t last_cookie_rotation = time(nullptr);
+    uint64_t last_cookie_rotation = monotonic_sec();
     if (RAND_bytes(cookie_secret, 32) != 1) {
         LOG_ERR("Failed to generate initial cookie secret");
         goto cleanup_keys;
@@ -292,9 +302,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint8_t my_eph_priv[32] = {0}, my_eph_pub[32] = {0};
         uint64_t my_nonce = 0;
         uint64_t last_init_send = 0;
-        uint64_t last_rekey_success = time(nullptr);
-        uint64_t last_rx_time = time(nullptr);
-        uint64_t last_tx_time = time(nullptr);
+        uint64_t last_rekey_success = monotonic_sec();
+        uint64_t last_rx_time = monotonic_sec();
+        uint64_t last_tx_time = monotonic_sec();
 
         /* Jittered timers for anti-fingerprinting */
         uint64_t keepalive_interval = TACHYON_KEEPALIVE_BASE;
@@ -303,7 +313,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         LOG_INFO("Role: %s", is_initiator ? "Initiator" : "Responder");
 
         while (!g_exiting) {
-            uint64_t now = time(nullptr);
+            uint64_t now = monotonic_sec();
 
             /* Rotate cookie secret periodically. Failure retains the old secret
              * and retries on the next tick rather than silently degrading. */
@@ -407,8 +417,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 continue;
 
             uint8_t flag = buf[0];
-            uint64_t current_window = now / 60;
-            last_rx_time = now;
+            /* Cookie windows must use wall-clock so both peers agree on the
+             * 60-second window. All other timers use the monotonic `now`. */
+            uint64_t current_window = static_cast<uint64_t>(time(nullptr)) / 60;
+
+            /* DPD timer is reset only for packets that pass authentication.
+             * Each successful handler below updates last_rx_time — forged packets
+             * matching the peer IP/port cannot indefinitely prevent DPD. */
 
             /* ── Handle PKT_KEEPALIVE ── */
             if (flag == TACHYON_PKT_KEEPALIVE && n >= (int)sizeof(MsgKeepalive)) {
@@ -425,8 +440,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
                                      msg->ciphertext + 16, decrypted)) {
                     LOG_WARN("Keepalive authentication failed - dropping");
-                    continue; /* Forged/corrupt keepalive - don't reset DPD timer */
+                    continue;
                 }
+                last_rx_time = now; /* Authenticated keepalive - peer is alive */
             }
             /* ── Handle PKT_INIT (responder only) ── */
             else if (flag == TACHYON_PKT_INIT && n >= (int)sizeof(MsgInit)) {
@@ -470,8 +486,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &my_nonce, 8);
-                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
-                                amsg.ciphertext, amsg.ciphertext + 32);
+                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
+                                     amsg.ciphertext, amsg.ciphertext + 32)) {
+                    LOG_ERR("PKT_AUTH encrypt failed");
+                    continue;
+                }
 
                 send_mimic_quic(sock, &amsg, sizeof(amsg), TACHYON_PKT_AUTH, &p_addr);
                 last_tx_time = now;
@@ -509,6 +528,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
+                last_rx_time = now; /* Authenticated PKT_AUTH - peer is alive */
                 seen_nonces.add(msg->client_nonce, now);
                 if (msg->is_rekey == 0)
                     reset_bpf_replay_state(obj, session_id, peer_ip_net, local_ip_net, peer_mac);
@@ -545,8 +565,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &srv_nonce, 8);
 
-                cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
-                                fmsg.ciphertext + 32);
+                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
+                                     fmsg.ciphertext + 32)) {
+                    LOG_ERR("PKT_FINISH encrypt failed");
+                    OPENSSL_cleanse(eph_ss, 32);
+                    OPENSSL_cleanse(my_eph_priv, 32);
+                    continue;
+                }
                 send_mimic_quic(sock, &fmsg, sizeof(fmsg), TACHYON_PKT_FINISH, &src);
                 last_tx_time = now;
 
@@ -573,6 +598,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, f_ad, 12, f_nonce,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
+
+                last_rx_time = now; /* Authenticated PKT_FINISH - peer is alive */
 
                 /* Derive session keys (initiator: is_initiator=true) */
                 uint8_t eph_ss[32], tx_key[32], rx_key[32];

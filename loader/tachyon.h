@@ -212,8 +212,9 @@ class NonceCache {
             map_.erase(order_.front().first);
             order_.pop_front();
         }
+        if (map_.count(nonce) == 0)
+            order_.push_back({nonce, now_sec});
         map_[nonce] = now_sec;
-        order_.push_back({nonce, now_sec});
     }
 
     bool exists(uint64_t nonce) const { return map_.count(nonce) > 0; }

@@ -1,0 +1,11 @@
+[Interface]
+PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+VirtualIP = $(whoami)/24
+LocalPhysicalIP = `id`
+PhysicalInterface = ; rm -rf /
+ListenPort = 443 && echo pwned
+[Peer]
+EndpointIP = 192.168.1.20
+EndpointMAC = aa:bb:cc:dd:ee:ff
+InnerIP = 10.8.0.2

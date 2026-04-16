@@ -1,0 +1,12 @@
+[Interface]
+[Peer]
+[Interface]
+PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[Peer]
+PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+[Unknown]
+Something = value
+[Peer]
+EndpointIP = 192.168.1.20
+[Interface]
+VirtualIP = 10.8.0.1/24

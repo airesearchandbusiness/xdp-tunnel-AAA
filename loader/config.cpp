@@ -41,6 +41,16 @@ static std::unordered_map<std::string, std::string> parse_ini(const std::string 
         return kv;
     }
 
+    /* Guard against unreasonably large files (DoS protection) */
+    file.seekg(0, std::ios::end);
+    auto file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    if (file_size > 65536) {
+        LOG_ERR("Config file too large (%lld bytes, max 64KB): %s",
+                static_cast<long long>(file_size), filename.c_str());
+        return kv;
+    }
+
     std::string line, section;
     int lineno = 0;
 

@@ -263,6 +263,33 @@ TEST_F(CryptoTest, GetPublicKeyConsistency) {
  * HKDF-SHA256 Tests
  * ══════════════════════════════════════════════════════════════════════════ */
 
+/* RFC 5869 Appendix A.1 - HKDF-SHA256 Extract-and-Expand Known-Answer Test
+ *
+ *   IKM  : 0b × 22
+ *   salt : 000102030405060708090a0b0c  (13 bytes)
+ *   info : f0f1f2f3f4f5f6f7f8f9         (10 bytes, null-free so safe as C string)
+ *   L=42 OKM: 3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865
+ *
+ * Since HKDF-Expand produces a continuous keystream, requesting only L=32
+ * yields the first 32 bytes of the above OKM, which is what derive_kdf() returns.
+ */
+TEST_F(CryptoTest, Hkdf_RFC5869_Appendix_A_1) {
+    uint8_t ikm[22];
+    memset(ikm, 0x0b, sizeof(ikm));
+    auto salt = from_hex("000102030405060708090a0b0c");
+    const char *info = "\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9";
+
+    auto expected_first32 =
+        from_hex("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf");
+
+    uint8_t out[TACHYON_AEAD_KEY_LEN];
+    ASSERT_TRUE(derive_kdf(salt.data(), salt.size(), ikm, sizeof(ikm), info, out));
+
+    EXPECT_EQ(to_hex(out, TACHYON_AEAD_KEY_LEN),
+              to_hex(expected_first32.data(), expected_first32.size()))
+        << "HKDF-SHA256 first 32 bytes do not match RFC 5869 Appendix A.1";
+}
+
 TEST_F(CryptoTest, HkdfDeterministic) {
     uint8_t salt[32], ikm[32];
     memset(salt, 0x01, sizeof(salt));
