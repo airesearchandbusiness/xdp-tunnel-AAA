@@ -132,23 +132,19 @@ TEST(ProtocolTest, PeerRoamEventType) {
  * A size mismatch causes silent data corruption during bpf_map_lookup.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-TEST(ProtocolTest, StatsLayoutMatchesUserspace)
-{
+TEST(ProtocolTest, StatsLayoutMatchesUserspace) {
     EXPECT_EQ(sizeof(struct tachyon_stats), sizeof(userspace_stats));
 }
 
-TEST(ProtocolTest, SessionLayoutMatchesUserspace)
-{
+TEST(ProtocolTest, SessionLayoutMatchesUserspace) {
     EXPECT_EQ(sizeof(struct tachyon_session), sizeof(userspace_session));
 }
 
-TEST(ProtocolTest, KeyInitLayoutMatchesUserspace)
-{
+TEST(ProtocolTest, KeyInitLayoutMatchesUserspace) {
     EXPECT_EQ(sizeof(struct tachyon_key_init), sizeof(userspace_key_init));
 }
 
-TEST(ProtocolTest, ConfigLayoutMatchesUserspace)
-{
+TEST(ProtocolTest, ConfigLayoutMatchesUserspace) {
     EXPECT_EQ(sizeof(struct tachyon_config), sizeof(userspace_config));
 }
 

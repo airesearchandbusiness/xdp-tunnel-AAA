@@ -9,8 +9,7 @@
 #include "tachyon.h"
 #include <cerrno>
 
-static void sig_handler(int)
-{
+static void sig_handler(int) {
     g_exiting = 1;
 }
 

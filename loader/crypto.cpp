@@ -36,8 +36,7 @@ void init_crypto_globals() {
     }
 }
 
-void free_crypto_globals()
-{
+void free_crypto_globals() {
     if (g_mac) {
         EVP_MAC_free(g_mac);
         g_mac = nullptr;
@@ -53,8 +52,7 @@ void free_crypto_globals()
  * ══════════════════════════════════════════════════════════════════════════ */
 
 bool calc_hmac(const uint8_t *key, size_t key_len, const uint8_t *data, size_t data_len,
-               uint8_t *out_mac)
-{
+               uint8_t *out_mac) {
     EVP_MAC_CTX *mctx = EVP_MAC_CTX_new(g_mac);
     if (!mctx) {
         LOG_ERR("EVP_MAC_CTX_new failed");
@@ -83,8 +81,7 @@ bool calc_hmac(const uint8_t *key, size_t key_len, const uint8_t *data, size_t d
 }
 
 void generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, uint64_t window,
-                     uint8_t *out_cookie)
-{
+                     uint8_t *out_cookie) {
     uint8_t buf[20];
     memcpy(buf, &client_ip, 4);
     memcpy(buf + 4, &nonce, 8);
@@ -96,8 +93,7 @@ void generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, 
  * X25519 ECDH
  * ══════════════════════════════════════════════════════════════════════════ */
 
-bool do_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_shared_secret)
-{
+bool do_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_shared_secret) {
     bool result = false;
 
     EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, nullptr, my_priv, 32);
@@ -157,8 +153,7 @@ cleanup_keys:
  * ══════════════════════════════════════════════════════════════════════════ */
 
 bool derive_kdf(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
-                const char *info, uint8_t *out_key)
-{
+                const char *info, uint8_t *out_key) {
     EVP_KDF_CTX *kctx = EVP_KDF_CTX_new(g_kdf);
     if (!kctx) {
         LOG_ERR("KDF: context allocation failed");
@@ -190,8 +185,7 @@ bool derive_kdf(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t
  * ══════════════════════════════════════════════════════════════════════════ */
 
 bool cp_aead_encrypt(const uint8_t *key, const uint8_t *pt, size_t pt_len, const uint8_t *ad,
-                     size_t ad_len, const uint8_t *nonce, uint8_t *ct, uint8_t *tag)
-{
+                     size_t ad_len, const uint8_t *nonce, uint8_t *ct, uint8_t *tag) {
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
         LOG_ERR("AEAD encrypt: context allocation failed");
@@ -228,8 +222,7 @@ out:
 }
 
 bool cp_aead_decrypt(const uint8_t *key, const uint8_t *ct, size_t ct_len, const uint8_t *ad,
-                     size_t ad_len, const uint8_t *nonce, const uint8_t *tag, uint8_t *pt)
-{
+                     size_t ad_len, const uint8_t *nonce, const uint8_t *tag, uint8_t *pt) {
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
         LOG_ERR("AEAD decrypt: context allocation failed");
@@ -285,8 +278,7 @@ bool generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out) {
     return ok;
 }
 
-bool get_public_key(const uint8_t *priv, uint8_t *pub_out)
-{
+bool get_public_key(const uint8_t *priv, uint8_t *pub_out) {
     EVP_PKEY *pk = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, nullptr, priv, 32);
     if (!pk) {
         LOG_ERR("Failed to load private key");

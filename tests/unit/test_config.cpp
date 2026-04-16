@@ -145,8 +145,7 @@ TEST_F(ConfigTest, ParseCustomPort) {
     EXPECT_EQ(cfg.listen_port, 51820);
 }
 
-TEST_F(ConfigTest, ParseNonNumericPort)
-{
+TEST_F(ConfigTest, ParseNonNumericPort) {
     auto path = write_config(
         "bad_port.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -164,8 +163,7 @@ TEST_F(ConfigTest, ParseNonNumericPort)
     EXPECT_EQ(cfg.listen_port, TACHYON_DEFAULT_PORT);
 }
 
-TEST_F(ConfigTest, ParseNonNumericMimicry)
-{
+TEST_F(ConfigTest, ParseNonNumericMimicry) {
     auto path = write_config(
         "bad_mimicry.conf",
         "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -183,8 +181,7 @@ TEST_F(ConfigTest, ParseNonNumericMimicry)
     EXPECT_EQ(cfg.mimicry_type, TACHYON_MIMICRY_QUIC);
 }
 
-TEST_F(ConfigTest, ParseCommentsAndWhitespace)
-{
+TEST_F(ConfigTest, ParseCommentsAndWhitespace) {
     auto path = write_config(
         "comments.conf",
         "# This is a comment\n"
