@@ -14,7 +14,7 @@
 ## Pre-merge checklist
 
 ### Required
-- [ ] `make test-unit` passes locally (186+ tests)
+- [ ] `make test-unit` passes locally (192+ tests)
 - [ ] `make format` was run (or `make format-check` is clean)
 - [ ] `make lint` passes (clang-format, cppcheck, shellcheck)
 - [ ] CI is green: lint · build · build/gcc · build/clang-18 · test/unit
