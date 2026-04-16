@@ -33,7 +33,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 
 # Compiler flags
 CXX         ?= g++
-CXXFLAGS    := -O2 -Wall -Wextra -Wpedantic -std=c++17 \
+CXXFLAGS    := -O2 -Wall -Wextra -std=c++17 \
                -DTACHYON_VERSION=\"$(VERSION)\"
 LDFLAGS     := -lbpf -lcrypto -lelf -lz
 
