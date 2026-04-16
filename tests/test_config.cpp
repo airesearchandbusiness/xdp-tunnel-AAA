@@ -12,8 +12,8 @@ struct TempConfig {
     std::string path;
     TempConfig(const std::string &content) {
         static int counter = 0;
-        path = "/tmp/tachyon_test_" + std::to_string(getpid()) +
-               "_" + std::to_string(counter++) + ".conf";
+        path = "/tmp/tachyon_test_" + std::to_string(getpid()) + "_" + std::to_string(counter++) +
+               ".conf";
         std::ofstream f(path);
         f << content;
     }
@@ -56,8 +56,7 @@ TEST(parse_valid_config) {
         "[Peer]\n"
         "EndpointIP = 192.168.1.20\n"
         "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
-        "InnerIP = 10.8.0.2\n"
-    );
+        "InnerIP = 10.8.0.2\n");
 
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, 5555);
@@ -75,8 +74,7 @@ TEST(parse_comments_and_empty_lines) {
         "\n"
         "[Interface]\n"
         "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n"
-        "ListenPort = 443\n"
-    );
+        "ListenPort = 443\n");
 
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, 443);
@@ -86,8 +84,7 @@ TEST(parse_comments_and_empty_lines) {
 TEST(parse_default_port) {
     TempConfig conf(
         "[Interface]\n"
-        "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n"
-    );
+        "PrivateKey = aabbccdd00112233445566778899aabbccddeeff0011223344556677889900aa\n");
 
     TunnelConfig cfg = parse_config(conf);
     ASSERT_EQ(cfg.listen_port, TACHYON_DEFAULT_PORT);

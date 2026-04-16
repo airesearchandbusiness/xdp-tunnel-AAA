@@ -22,7 +22,7 @@ TEST(config_size) {
 }
 
 TEST(key_init_size) {
-    ASSERT_EQ(sizeof(tachyon_key_init), 4 + 32 + 32);  /* session_id + tx + rx */
+    ASSERT_EQ(sizeof(tachyon_key_init), 4 + 32 + 32); /* session_id + tx + rx */
 }
 
 /* ── Control Plane Messages ── */
@@ -32,19 +32,19 @@ TEST(msg_init_size) {
 }
 
 TEST(msg_cookie_size) {
-    ASSERT_EQ(sizeof(MsgCookie), 48);  /* 4+4+8+32 */
+    ASSERT_EQ(sizeof(MsgCookie), 48); /* 4+4+8+32 */
 }
 
 TEST(msg_auth_size) {
-    ASSERT_EQ(sizeof(MsgAuth), 100);  /* 1+3+4+8+1+3+32+48 = 100 */
+    ASSERT_EQ(sizeof(MsgAuth), 100); /* 1+3+4+8+1+3+32+48 = 100 */
 }
 
 TEST(msg_finish_size) {
-    ASSERT_EQ(sizeof(MsgFinish), 64);  /* 1+3+4+8+48 = 64 */
+    ASSERT_EQ(sizeof(MsgFinish), 64); /* 1+3+4+8+48 = 64 */
 }
 
 TEST(msg_keepalive_size) {
-    ASSERT_EQ(sizeof(MsgKeepalive), 48);  /* 4+4+8+32 */
+    ASSERT_EQ(sizeof(MsgKeepalive), 48); /* 4+4+8+32 */
 }
 
 /* ── Constants Consistency ── */
@@ -55,8 +55,8 @@ TEST(tx_head_adjust_consistency) {
 }
 
 TEST(outer_hdr_len_consistency) {
-    int expected = TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN +
-                   TACHYON_UDP_HDR_LEN + TACHYON_GHOST_HDR_LEN;
+    int expected =
+        TACHYON_ETH_HDR_LEN + TACHYON_IP_HDR_LEN + TACHYON_UDP_HDR_LEN + TACHYON_GHOST_HDR_LEN;
     ASSERT_EQ(TACHYON_OUTER_HDR_LEN, expected);
 }
 
@@ -83,7 +83,7 @@ TEST(max_sessions) {
 /* ── Rate Limit Config Size ── */
 
 TEST(rate_cfg_size) {
-    ASSERT_EQ(sizeof(tachyon_rate_cfg), 32);  /* 4 x uint64_t */
+    ASSERT_EQ(sizeof(tachyon_rate_cfg), 32); /* 4 x uint64_t */
 }
 
 /* ── Runner ── */

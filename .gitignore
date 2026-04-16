@@ -1,6 +1,7 @@
 # Build artifacts
 *.o
 *.ko
+*.a
 *.mod
 *.mod.c
 *.order
@@ -10,10 +11,17 @@
 modules.order
 Module.symvers
 loader/tachyon
-tests/test_crypto
-tests/test_config
-tests/test_utils
-tests/test_protocol
+
+# CMake
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Coverage
+*.gcov
+*.gcda
+*.gcno
 
 # IDE and editor files
 .vscode/
@@ -23,6 +31,9 @@ tests/test_protocol
 *~
 .clangd/
 compile_commands.json
+tags
+cscope.*
+.DS_Store
 
 # Config files with secrets
 ghost.conf
@@ -31,6 +42,3 @@ ghost.conf
 !dkms.conf
 !tests/fixtures/*.conf
 !tests/fuzz/corpus/**/*.conf.seed
-
-# Test build artifacts
-build/

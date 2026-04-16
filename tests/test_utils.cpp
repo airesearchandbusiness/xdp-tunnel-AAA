@@ -34,14 +34,14 @@ TEST(hex2bin_full_key) {
 
 TEST(hex2bin_wrong_length) {
     uint8_t out[4];
-    ASSERT_FALSE(hex2bin("dead", out, 4));     /* Too short */
+    ASSERT_FALSE(hex2bin("dead", out, 4));       /* Too short */
     ASSERT_FALSE(hex2bin("deadbeef00", out, 4)); /* Too long */
 }
 
 TEST(hex2bin_empty) {
     uint8_t out[1];
     ASSERT_FALSE(hex2bin("", out, 1));
-    ASSERT_TRUE(hex2bin("", out, 0));  /* Zero-length is valid */
+    ASSERT_TRUE(hex2bin("", out, 0)); /* Zero-length is valid */
 }
 
 /* ── parse_mac Tests ── */
@@ -63,7 +63,7 @@ TEST(parse_mac_zeros) {
 TEST(parse_mac_invalid_format) {
     uint8_t mac[6];
     ASSERT_FALSE(parse_mac("not-a-mac", mac));
-    ASSERT_FALSE(parse_mac("aa:bb:cc:dd:ee", mac));    /* Too few */
+    ASSERT_FALSE(parse_mac("aa:bb:cc:dd:ee", mac)); /* Too few */
     ASSERT_FALSE(parse_mac("", mac));
 }
 
@@ -108,13 +108,13 @@ TEST(nonce_cache_add_and_exists) {
 
 TEST(nonce_cache_expiry) {
     NonceCache cache;
-    cache.add(100, 1000);  /* Added at time 1000 */
+    cache.add(100, 1000); /* Added at time 1000 */
     ASSERT_TRUE(cache.exists(100));
 
     /* Add another entry far in the future - should evict expired ones */
     cache.add(200, 1000 + TACHYON_NONCE_EXPIRY + 1);
-    ASSERT_FALSE(cache.exists(100));  /* Expired */
-    ASSERT_TRUE(cache.exists(200));   /* Fresh */
+    ASSERT_FALSE(cache.exists(100)); /* Expired */
+    ASSERT_TRUE(cache.exists(200));  /* Fresh */
 }
 
 TEST(nonce_cache_multiple_entries) {
@@ -131,7 +131,7 @@ TEST(nonce_cache_multiple_entries) {
 TEST(nonce_cache_overwrite) {
     NonceCache cache;
     cache.add(42, 100);
-    cache.add(42, 200);  /* Update timestamp */
+    cache.add(42, 200); /* Update timestamp */
     ASSERT_TRUE(cache.exists(42));
 }
 
