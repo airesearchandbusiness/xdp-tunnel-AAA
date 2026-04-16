@@ -75,8 +75,11 @@ struct userspace_session {
     uint32_t peer_ip;
     uint32_t local_ip;
     uint8_t  peer_mac[6];
-    uint8_t  _pad1[2];
-    uint32_t _pad2;
+    uint16_t peer_port;
+    uint64_t tx_rl_tokens;
+    uint64_t tx_rl_last_ns;
+    uint64_t rx_rl_tokens;
+    uint64_t rx_rl_last_ns;
     uint64_t rx_highest_seq[TACHYON_MAX_TX_CPUS];
     uint64_t rx_bitmap[TACHYON_MAX_TX_CPUS][TACHYON_REPLAY_WORDS];
 };
@@ -99,6 +102,9 @@ struct userspace_stats {
     uint64_t rx_ratelimit_drops;
     uint64_t tx_crypto_errors;
     uint64_t tx_headroom_errors;
+    uint64_t tx_ratelimit_drops;
+    uint64_t rx_ratelimit_data_drops;
+    uint64_t rx_roam_events;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════

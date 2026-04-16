@@ -175,6 +175,7 @@ enum tachyon_event_type {
     TACHYON_EVT_INVALID_SESSION = 2,
     TACHYON_EVT_MALFORMED_PKT   = 3,
     TACHYON_EVT_RATELIMIT_DROP  = 4,
+    TACHYON_EVT_PEER_ROAM       = 5,
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -223,8 +224,11 @@ struct tachyon_session {
     __u32 peer_ip;                         /* Remote physical IP (network)   */
     __u32 local_ip;                        /* Local physical IP (network)    */
     __u8  peer_mac[6];                     /* Remote MAC for L2 redirect     */
-    __u8  _pad1[2];
-    __u32 _pad2;                           /* Alignment padding              */
+    __u16 peer_port;                       /* Remote UDP port (network)      */
+    __u64 tx_rl_tokens;                    /* TX token bucket current tokens */
+    __u64 tx_rl_last_ns;                   /* TX token bucket last refill ts */
+    __u64 rx_rl_tokens;                    /* RX token bucket current tokens */
+    __u64 rx_rl_last_ns;                   /* RX token bucket last refill ts */
     __u64 rx_highest_seq[TACHYON_MAX_TX_CPUS]; /* Highest seq per sender CPU */
     __u64 rx_bitmap[TACHYON_MAX_TX_CPUS][TACHYON_REPLAY_WORDS]; /* Replay bitmap */
 };
@@ -249,6 +253,23 @@ struct tachyon_stats {
     __u64 rx_ratelimit_drops;              /* Control plane rate limited     */
     __u64 tx_crypto_errors;                /* TX encryption failures         */
     __u64 tx_headroom_errors;              /* Failed to adjust head/tail     */
+    __u64 tx_ratelimit_drops;              /* TX data plane rate limited     */
+    __u64 rx_ratelimit_data_drops;         /* RX data plane rate limited     */
+    __u64 rx_roam_events;                  /* Peer roaming detections        */
+};
+
+/* LPM trie key for IPv4 multi-peer routing */
+struct tachyon_lpm_key_v4 {
+    __u32 prefixlen;                       /* Prefix length in bits          */
+    __u32 addr;                            /* IPv4 address (network order)   */
+};
+
+/* Per-session token-bucket rate limiting configuration */
+struct tachyon_rate_cfg {
+    __u64 tx_rate_bps;                     /* TX rate limit (bytes/sec)      */
+    __u64 tx_burst;                        /* TX burst allowance (bytes)     */
+    __u64 rx_rate_bps;                     /* RX rate limit (bytes/sec)      */
+    __u64 rx_burst;                        /* RX burst allowance (bytes)     */
 };
 
 /* Event structure for perf_event reporting */

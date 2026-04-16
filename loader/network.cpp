@@ -541,7 +541,7 @@ void run_control_plane(struct bpf_object *obj, const TunnelConfig &cfg,
 
                 OPENSSL_cleanse(eph_ss, 32);
                 OPENSSL_cleanse(my_eph_priv, 32);
-                OPENSSL_cleanse(session_master, 32);
+                /* session_master is already cleansed inside derive_session_keys() */
                 LOG_INFO("Handshake complete (initiator). Datapath armed.");
             }
         } /* while (!g_exiting) */
