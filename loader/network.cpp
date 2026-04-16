@@ -15,6 +15,16 @@
 #include "tachyon.h"
 #include <cerrno>
 
+/* Monotonic clock for all internal timers (DPD, keepalive, rekey, cookie
+ * rotation). Wall-clock time(nullptr) can jump backwards during NTP
+ * adjustments, which would cause DPD false triggers, keepalive bursts,
+ * or premature rekeys. CLOCK_MONOTONIC is immune to these adjustments. */
+static uint64_t monotonic_sec() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<uint64_t>(ts.tv_sec);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * QUIC Mimicry - Padded Packet Transmission
  *
@@ -248,7 +258,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
     /* Cookie secret for DoS protection */
     uint8_t cookie_secret[32];
-    uint64_t last_cookie_rotation = time(nullptr);
+    uint64_t last_cookie_rotation = monotonic_sec();
     if (RAND_bytes(cookie_secret, 32) != 1) {
         LOG_ERR("Failed to generate initial cookie secret");
         goto cleanup_keys;
@@ -292,9 +302,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint8_t my_eph_priv[32] = {0}, my_eph_pub[32] = {0};
         uint64_t my_nonce = 0;
         uint64_t last_init_send = 0;
-        uint64_t last_rekey_success = time(nullptr);
-        uint64_t last_rx_time = time(nullptr);
-        uint64_t last_tx_time = time(nullptr);
+        uint64_t last_rekey_success = monotonic_sec();
+        uint64_t last_rx_time = monotonic_sec();
+        uint64_t last_tx_time = monotonic_sec();
 
         /* Jittered timers for anti-fingerprinting */
         uint64_t keepalive_interval = TACHYON_KEEPALIVE_BASE;
@@ -303,7 +313,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         LOG_INFO("Role: %s", is_initiator ? "Initiator" : "Responder");
 
         while (!g_exiting) {
-            uint64_t now = time(nullptr);
+            uint64_t now = monotonic_sec();
 
             /* Rotate cookie secret periodically. Failure retains the old secret
              * and retries on the next tick rather than silently degrading. */
@@ -407,7 +417,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 continue;
 
             uint8_t flag = buf[0];
-            uint64_t current_window = now / 60;
+            /* Cookie windows must use wall-clock so both peers agree on the
+             * 60-second window. All other timers use the monotonic `now`. */
+            uint64_t current_window = static_cast<uint64_t>(time(nullptr)) / 60;
 
             /* DPD timer is reset only for packets that pass authentication.
              * Each successful handler below updates last_rx_time — forged packets
