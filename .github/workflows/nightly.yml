@@ -20,7 +20,7 @@ on:
         default: 'true'
 
 permissions:
-  contents: read
+  contents: write   # benchmark-action pushes baselines to gh-pages
 
 concurrency:
   group: nightly-${{ github.ref }}
@@ -41,14 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            build-essential clang-18 llvm-18 \
-            libbpf-dev libelf-dev libssl-dev \
-            linux-headers-$(uname -r) \
-            cmake ninja-build pkg-config \
-            libgtest-dev libgmock-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'build-essential clang-18 llvm-18 libbpf-dev libelf-dev libssl-dev linux-headers-generic cmake ninja-build pkg-config libgtest-dev libgmock-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Build all targets
         run: |
@@ -63,7 +59,7 @@ jobs:
           cmake --build build -j$(nproc)
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: nightly-build
           path: |
@@ -83,10 +79,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libbpf-dev libssl-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Download build
         uses: actions/download-artifact@v8
@@ -112,7 +108,7 @@ jobs:
 
       - name: Upload crash artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: fuzz-crashes-config
           path: fuzz_artifacts/
@@ -125,10 +121,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libbpf-dev libssl-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Download build
         uses: actions/download-artifact@v8
@@ -153,7 +149,7 @@ jobs:
 
       - name: Upload crash artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: fuzz-crashes-crypto
           path: fuzz_artifacts/
@@ -170,11 +166,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libbpf-dev libssl-dev libelf-dev \
-            iproute2 iputils-ping kmod iperf3 jq
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libbpf-dev libssl-dev libelf-dev iproute2 iputils-ping kmod iperf3 jq'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Download build
         uses: actions/download-artifact@v8
@@ -210,11 +205,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            build-essential cmake ninja-build pkg-config \
-            libssl-dev libgtest-dev libgmock-dev jq
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'build-essential cmake ninja-build pkg-config libssl-dev libgtest-dev libgmock-dev jq'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Build benchmarks
         run: |
@@ -257,6 +251,21 @@ jobs:
           name: benchmark-results
           path: benchmark_result.json
 
+      - name: Store baseline & alert on regression
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: "Tachyon Crypto Benchmarks"
+          tool: googlecpp
+          output-file-path: benchmark_result.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: docs/benchmarks
+          comment-on-alert: true
+          alert-threshold: '110%'
+          fail-on-alert: false
+          summary-always: true
+
   # ════════════════════════════════════════════════════════════════════════
   # Extended Sanitizer Run (ASan + UBSan — nightly deep scan)
   # ════════════════════════════════════════════════════════════════════════
@@ -267,11 +276,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            clang-18 libssl-dev cmake ninja-build pkg-config \
-            libgtest-dev libgmock-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'clang-18 libssl-dev cmake ninja-build pkg-config libgtest-dev libgmock-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Build with sanitizers
         run: |
@@ -312,11 +320,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            valgrind libssl-dev cmake ninja-build pkg-config \
-            libgtest-dev libgmock-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'valgrind libssl-dev cmake ninja-build pkg-config libgtest-dev libgmock-dev'
+          cache-key-file: '.github/workflows/nightly.yml'
 
       - name: Build (no instrumentation — valgrind needs clean binary)
         run: |

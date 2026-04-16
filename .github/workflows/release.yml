@@ -75,6 +75,10 @@ jobs:
     name: "build-release"
     runs-on: ubuntu-24.04
     needs: validate
+    permissions:
+      id-token: write      # mint OIDC token for Sigstore signing
+      attestations: write  # upload SLSA attestation bundle to GitHub
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -147,6 +151,15 @@ jobs:
           path: |
             tachyon-*.tar.gz
             tachyon-crypto-*.tar.gz
+            SHA256SUMS-*.txt
+            sbom.spdx.json
+
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            tachyon-*-linux-amd64.tar.gz
+            tachyon-crypto-*-dkms.tar.gz
             SHA256SUMS-*.txt
             sbom.spdx.json
 

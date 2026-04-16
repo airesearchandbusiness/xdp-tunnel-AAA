@@ -93,6 +93,49 @@ jobs:
           retention-days: 1
 
   # ════════════════════════════════════════════════════════════════════════
+  # Stage 2b: Compiler Matrix (GCC + Clang — parallel correctness gate)
+  # ════════════════════════════════════════════════════════════════════════
+
+  build-matrix:
+    name: "build / ${{ matrix.name }}"
+    runs-on: ubuntu-24.04
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc
+            cc: gcc
+            cxx: g++
+            packages: 'libssl-dev'
+          - name: clang-18
+            cc: clang-18
+            cxx: clang++-18
+            packages: 'clang-18 libssl-dev'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: ${{ matrix.packages }}
+
+      - name: Configure (${{ matrix.name }})
+        run: |
+          cmake -B build/matrix -S tests \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-Werror" \
+            -DBUILD_XDP_TESTS=OFF \
+            -DBUILD_FUZZ_TESTS=OFF
+
+      - name: Build (${{ matrix.name }})
+        run: cmake --build build/matrix -j$(nproc)
+
+      - name: Test (${{ matrix.name }})
+        run: cd build/matrix && ctest --output-on-failure --timeout 60
+
+  # ════════════════════════════════════════════════════════════════════════
   # Stage 3: Unit Tests
   # ════════════════════════════════════════════════════════════════════════
 
