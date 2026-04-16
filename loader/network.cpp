@@ -408,7 +408,10 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
             uint8_t flag = buf[0];
             uint64_t current_window = now / 60;
-            last_rx_time = now;
+
+            /* DPD timer is reset only for packets that pass authentication.
+             * Each successful handler below updates last_rx_time — forged packets
+             * matching the peer IP/port cannot indefinitely prevent DPD. */
 
             /* ── Handle PKT_KEEPALIVE ── */
             if (flag == TACHYON_PKT_KEEPALIVE && n >= (int)sizeof(MsgKeepalive)) {
@@ -425,8 +428,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
                                      msg->ciphertext + 16, decrypted)) {
                     LOG_WARN("Keepalive authentication failed - dropping");
-                    continue; /* Forged/corrupt keepalive - don't reset DPD timer */
+                    continue;
                 }
+                last_rx_time = now; /* Authenticated keepalive - peer is alive */
             }
             /* ── Handle PKT_INIT (responder only) ── */
             else if (flag == TACHYON_PKT_INIT && n >= (int)sizeof(MsgInit)) {
@@ -509,6 +513,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
+                last_rx_time = now; /* Authenticated PKT_AUTH - peer is alive */
                 seen_nonces.add(msg->client_nonce, now);
                 if (msg->is_rekey == 0)
                     reset_bpf_replay_state(obj, session_id, peer_ip_net, local_ip_net, peer_mac);
@@ -573,6 +578,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, f_ad, 12, f_nonce,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
+
+                last_rx_time = now; /* Authenticated PKT_FINISH - peer is alive */
 
                 /* Derive session keys (initiator: is_initiator=true) */
                 uint8_t eph_ss[32], tx_key[32], rx_key[32];

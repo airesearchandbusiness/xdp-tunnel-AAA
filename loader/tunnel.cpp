@@ -142,30 +142,57 @@ void command_up(const std::string &conf_file) {
     if (ipsess_m)
         bpf_map_update_elem(bpf_map__fd(ipsess_m), &inner_net, &session_id, BPF_ANY);
 
-    /* Attach XDP programs (libbpf 1.0+ API: bpf_xdp_attach) */
-    auto attach_xdp = [&](const char *prog_name, unsigned int ifidx, const char *pin_name) {
+    /* Attach XDP programs with all-or-nothing transaction semantics.
+     * A partial attach leaves the kernel in a half-armed state where packets
+     * hit one side's BPF hook but not the other, silently dropping traffic.
+     * If any attachment fails, detach everything we already armed. */
+    auto attach_xdp = [&](const char *prog_name, unsigned int ifidx, const char *pin_name) -> bool {
         struct bpf_program *prog = bpf_object__find_program_by_name(obj, prog_name);
         if (!prog) {
             LOG_ERR("BPF program '%s' not found", prog_name);
-            return;
+            return false;
         }
         int prog_fd = bpf_program__fd(prog);
         if (prog_fd < 0) {
             LOG_ERR("Invalid fd for '%s'", prog_name);
-            return;
+            return false;
         }
         if (bpf_xdp_attach(ifidx, prog_fd, 0, NULL) < 0) {
             LOG_ERR("Failed to attach '%s' to ifindex %u", prog_name, ifidx);
-            return;
+            return false;
         }
         /* Pin program fd for later detach */
         std::string pin_path = bpf_dir + "/" + pin_name;
         bpf_program__pin(prog, pin_path.c_str());
+        return true;
     };
 
-    attach_xdp("xdp_rx_path", p_idx, "rx");
-    attach_xdp("xdp_tx_path", o_idx, "tx");
-    attach_xdp("xdp_dummy", i_idx, "dummy");
+    unsigned int attached_ifaces[3];
+    int attached_count = 0;
+    auto rollback_attach = [&]() {
+        for (int i = 0; i < attached_count; i++)
+            bpf_xdp_attach(attached_ifaces[i], -1, 0, NULL);
+        bpf_object__close(obj);
+        run_cmd("ip link del " + v_in, /*quiet=*/true);
+    };
+
+    if (!attach_xdp("xdp_rx_path", p_idx, "rx")) {
+        rollback_attach();
+        return;
+    }
+    attached_ifaces[attached_count++] = p_idx;
+
+    if (!attach_xdp("xdp_tx_path", o_idx, "tx")) {
+        rollback_attach();
+        return;
+    }
+    attached_ifaces[attached_count++] = o_idx;
+
+    if (!attach_xdp("xdp_dummy", i_idx, "dummy")) {
+        rollback_attach();
+        return;
+    }
+    attached_ifaces[attached_count++] = i_idx;
 
     LOG_INFO("Datapath UP: %s <-> %s (phys: %s, port: %d)", v_in.c_str(),
              cfg.peer_endpoint_ip.c_str(), cfg.physical_interface.c_str(), cfg.listen_port);
