@@ -412,3 +412,45 @@ TEST_F(ConfigTest, TunnelNameNoExtension) {
 TEST_F(ConfigTest, TunnelNameDeepPath) {
     EXPECT_EQ(tunnel_name_from_conf("/a/b/c/d/e/tunnel.conf"), "tunnel");
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Edge-Case & Boundary Tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST_F(ConfigTest, ParseConfigWithExtremelyLongKey) {
+    /* A key >64 chars should fail validation (not crash) */
+    std::string long_key(2000, 'a');
+    auto path = write_config(
+        "longkey.conf",
+        "PrivateKey = " + long_key +
+            "\n"
+            "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+            "VirtualIP = 10.8.0.1/24\n"
+            "LocalPhysicalIP = 192.168.1.10\n"
+            "PhysicalInterface = eth0\n"
+            "[Peer]\n"
+            "EndpointIP = 192.168.1.20\n"
+            "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+            "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    /* parse_config should not crash; validate should reject the long key */
+    EXPECT_EQ(cfg.private_key.size(), 2000u);
+    EXPECT_FALSE(validate_config(cfg));
+}
+
+TEST_F(ConfigTest, ParseConfigWithUtf8Comment) {
+    auto path = write_config(
+        "utf8.conf",
+        "# Comment with UTF-8: données réseau — tünnel\n"
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 192.168.1.20\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_TRUE(validate_config(cfg));
+}

@@ -41,6 +41,10 @@ jobs:
           TAG_VERSION=${{ steps.version.outputs.version }}
           echo "Makefile version: $MAKEFILE_VERSION"
           echo "Tag version: $TAG_VERSION"
+          if [[ "$MAKEFILE_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::error::Makefile VERSION ($MAKEFILE_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: |
@@ -132,7 +136,7 @@ jobs:
             > "SHA256SUMS-${VERSION}.txt"
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: release-artifacts
           path: |
