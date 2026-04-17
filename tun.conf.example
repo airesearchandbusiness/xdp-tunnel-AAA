@@ -33,6 +33,17 @@ MimicryType = 1
 # Enable AEAD encryption (default: true)
 EnableEncryption = true
 
+# Traffic analysis resistance flags (bitmask, default: 0x3F = all enabled)
+#   0x01 = TTL jitter (vary outer TTL 63-66, defeats OS fingerprinting)
+#   0x02 = IP ID randomization (prevent cross-packet correlation)
+#   0x04 = DF bit variation (probabilistic clearing, ~1/256 packets)
+#   0x08 = DSCP stripping (zero inner QoS marks in outer header)
+#   0x10 = Constant-size padding (all packets padded to MTU)
+#   0x20 = Decoy chaff traffic (random keepalives during idle)
+#   0x3F = All countermeasures active (maximum obfuscation)
+#   0x00 = Disabled (for debugging / benchmarking)
+ObfuscationFlags = 0x3F
+
 [Peer]
 # Remote node's physical IP address
 EndpointIP = 192.168.1.20
