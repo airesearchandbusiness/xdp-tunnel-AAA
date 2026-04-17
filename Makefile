@@ -92,7 +92,9 @@ LDFLAGS     := $(OPT_FLAGS) \
 LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
                loader/network.cpp loader/tunnel.cpp \
                loader/padding.cpp loader/fingerprint.cpp \
-               loader/obfs.cpp loader/pqc.cpp
+               loader/obfs.cpp loader/pqc.cpp \
+               loader/hybrid_kex.cpp loader/secmem.cpp \
+               loader/ratchet.cpp loader/transcript.cpp loader/replay.cpp
 LOADER_BIN  := loader/tachyon
 
 # ── Build Targets ──

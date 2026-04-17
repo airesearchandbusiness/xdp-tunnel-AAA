@@ -117,6 +117,11 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/fingerprint.cpp
     ${PROJECT_ROOT}/loader/obfs.cpp
     ${PROJECT_ROOT}/loader/pqc.cpp
+    ${PROJECT_ROOT}/loader/hybrid_kex.cpp
+    ${PROJECT_ROOT}/loader/secmem.cpp
+    ${PROJECT_ROOT}/loader/ratchet.cpp
+    ${PROJECT_ROOT}/loader/transcript.cpp
+    ${PROJECT_ROOT}/loader/replay.cpp
 )
 
 target_include_directories(tachyon_core PUBLIC
@@ -162,6 +167,11 @@ add_tachyon_test(test_padding     unit/test_padding.cpp)
 add_tachyon_test(test_fingerprint unit/test_fingerprint.cpp)
 add_tachyon_test(test_obfs        unit/test_obfs.cpp)
 add_tachyon_test(test_pqc         unit/test_pqc.cpp)
+add_tachyon_test(test_secmem      unit/test_secmem.cpp)
+add_tachyon_test(test_replay      unit/test_replay.cpp)
+add_tachyon_test(test_transcript  unit/test_transcript.cpp)
+add_tachyon_test(test_ratchet     unit/test_ratchet.cpp)
+add_tachyon_test(test_hybrid_kex  unit/test_hybrid_kex.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)
