@@ -127,6 +127,8 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/http2_mimic.cpp
     ${PROJECT_ROOT}/loader/doh_mimic.cpp
     ${PROJECT_ROOT}/loader/stun_mimic.cpp
+    ${PROJECT_ROOT}/loader/metrics.cpp
+    ${PROJECT_ROOT}/loader/rate_limiter.cpp
 )
 
 target_include_directories(tachyon_core PUBLIC
@@ -177,7 +179,10 @@ add_tachyon_test(test_replay      unit/test_replay.cpp)
 add_tachyon_test(test_transcript  unit/test_transcript.cpp)
 add_tachyon_test(test_ratchet     unit/test_ratchet.cpp)
 add_tachyon_test(test_hybrid_kex  unit/test_hybrid_kex.cpp)
-add_tachyon_test(test_transport   unit/test_transport.cpp)
+add_tachyon_test(test_transport    unit/test_transport.cpp)
+add_tachyon_test(test_wire_v5     unit/test_wire_v5.cpp)
+add_tachyon_test(test_metrics     unit/test_metrics.cpp)
+add_tachyon_test(test_rate_limiter unit/test_rate_limiter.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)
