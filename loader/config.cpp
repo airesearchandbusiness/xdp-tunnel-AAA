@@ -192,6 +192,48 @@ TunnelConfig parse_config(const std::string &filename) {
         }
     }
 
+    /* v5 Ghost-PQ knobs */
+    std::string pqc_str = get_val(kv, "Pqc");
+    if (!pqc_str.empty())
+        cfg.pqc_mode = pqc_str;
+
+    std::string obfs2_str = get_val(kv, "Obfuscation");
+    if (!obfs2_str.empty())
+        cfg.obfuscation = obfs2_str;
+
+    std::string sni_str = get_val(kv, "ObfuscationSNI");
+    if (!sni_str.empty())
+        cfg.obfuscation_sni = sni_str;
+
+    std::string pad_str = get_val(kv, "Padding");
+    if (!pad_str.empty())
+        cfg.padding = pad_str;
+
+    std::string cr_str = get_val(kv, "CoverRateHz");
+    if (!cr_str.empty()) {
+        try { cfg.cover_rate_hz = static_cast<uint32_t>(std::stoul(cr_str)); }
+        catch (...) {}
+    }
+
+    std::string ph_str = get_val(kv, "PortHopSeconds");
+    if (!ph_str.empty()) {
+        try {
+            unsigned long v = std::stoul(ph_str);
+            if (v <= 65535)
+                cfg.port_hop_seconds = static_cast<uint32_t>(v);
+            else
+                LOG_WARN("PortHopSeconds %lu out of range [0,65535], ignoring", v);
+        } catch (...) {}
+    }
+
+    std::string ttl_str = get_val(kv, "TTLRandom");
+    if (!ttl_str.empty())
+        cfg.ttl_random = (ttl_str == "true" || ttl_str == "1" || ttl_str == "yes");
+
+    std::string mac_str = get_val(kv, "MACRandom");
+    if (!mac_str.empty())
+        cfg.mac_random = (mac_str == "true" || mac_str == "1" || mac_str == "yes");
+
     return cfg;
 }
 
