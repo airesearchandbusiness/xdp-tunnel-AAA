@@ -199,6 +199,9 @@ struct TunnelConfig {
     uint32_t port_hop_seconds = 0;        /* 0 disables port hopping */
     bool ttl_random = false;
     bool mac_random = false;
+
+    /* Resolved at runtime by tunnel.cpp — not parsed from config */
+    uint8_t resolved_transport_id = 0;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
