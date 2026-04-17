@@ -94,8 +94,10 @@ struct userspace_session {
 
 struct userspace_key_init {
     uint32_t session_id;
-    uint8_t tx_key[TACHYON_AEAD_KEY_LEN];
-    uint8_t rx_key[TACHYON_AEAD_KEY_LEN];
+    uint8_t  tx_key[TACHYON_AEAD_KEY_LEN];
+    uint8_t  rx_key[TACHYON_AEAD_KEY_LEN];
+    uint8_t  cipher_type;  /* TACHYON_CIPHER_* */
+    uint8_t  _reserved[3];
 };
 
 struct userspace_stats {
@@ -185,13 +187,13 @@ struct TunnelConfig {
     int listen_port = TACHYON_DEFAULT_PORT;
     int mimicry_type = TACHYON_MIMICRY_QUIC;
     bool encryption = true;
-    uint8_t obfs_flags = TACHYON_OBFS_ALL; /* Traffic obfuscation bitmask    */
+    uint8_t obfs_flags = TACHYON_OBFS_ALL;         /* Traffic obfuscation bitmask    */
+    uint8_t cipher_type = TACHYON_CIPHER_CHACHA20;  /* AEAD cipher for data plane     */
+    bool auto_config = false;                       /* Auto-detect hardware settings  */
+    uint32_t port_rotation_interval = 0;            /* Source port rotation (0=off)   */
 
     /* ── v5 "Ghost-PQ" policy ───────────────────────────────────────────────
-     * These are off by default so v4 configs keep working unchanged. They are
-     * parsed from the INI by config.cpp and consumed by network.cpp. Strings
-     * are stored raw; network.cpp maps them to the typed enums in
-     * padding.h / obfs.h via the *_from_string helpers. */
+     * These are off by default so v4 configs keep working unchanged. */
     std::string pqc_mode   = "classical"; /* classical | hybrid */
     std::string obfuscation = "none";     /* none | reality | quic */
     std::string obfuscation_sni = "www.microsoft.com";
@@ -237,6 +239,55 @@ class NonceCache {
   private:
     std::unordered_map<uint64_t, uint64_t> map_;
     std::list<std::pair<uint64_t, uint64_t>> order_; /* front=oldest */
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Adaptive Obfuscation Controller
+ *
+ * Monitors rate-limit drop counters and reduces heavyweight obfuscation
+ * (constant-size padding, decoy chaff) when congestion is detected.
+ * Restores full obfuscation once the link is clear.
+ *
+ * Designed to be called every ~5 seconds with current aggregate stats.
+ * The caller is responsible for pushing updated obfs_flags to the BPF
+ * config map when update() returns a changed value.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+struct TunnelStats {
+    uint64_t tx_ratelimit_drops = 0;
+    uint64_t rx_ratelimit_data_drops = 0;
+};
+
+class AdaptiveObfsController {
+  public:
+    explicit AdaptiveObfsController(uint8_t initial_flags)
+        : base_flags_(initial_flags), active_flags_(initial_flags), prev_drops_(0) {}
+
+    /* Returns the current recommended obfs_flags.
+     * Call with fresh stats every ~5 seconds.
+     * Returns a new value only when it changes from the previous call. */
+    uint8_t update(const TunnelStats &stats) {
+        uint64_t total = stats.tx_ratelimit_drops + stats.rx_ratelimit_data_drops;
+        uint64_t delta = (total >= prev_drops_) ? (total - prev_drops_) : 0;
+        prev_drops_ = total;
+
+        if (delta > 10) {
+            /* Congestion detected: shed bandwidth-heavy obfuscation overhead */
+            active_flags_ &= static_cast<uint8_t>(~(TACHYON_OBFS_CONST_PAD | TACHYON_OBFS_DECOY));
+        } else if (delta == 0 && active_flags_ != base_flags_) {
+            /* Link clear: restore full obfuscation */
+            active_flags_ = base_flags_;
+        }
+        return active_flags_;
+    }
+
+    uint8_t active_flags() const { return active_flags_; }
+    uint8_t base_flags() const { return base_flags_; }
+
+  private:
+    uint8_t  base_flags_;
+    uint8_t  active_flags_;
+    uint64_t prev_drops_;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════

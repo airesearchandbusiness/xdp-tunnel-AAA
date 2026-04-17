@@ -13,6 +13,7 @@
  */
 
 #include "tachyon.h"
+#include "cipher_suite.h"
 
 #include <openssl/opensslv.h>
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
@@ -297,4 +298,172 @@ bool get_public_key(const uint8_t *priv, uint8_t *pub_out) {
         OPENSSL_cleanse(pub_out, TACHYON_X25519_KEY_LEN);
     }
     return ok;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * CipherSuite Registry
+ *
+ * Three suites registered: ChaCha20-Poly1305, AES-128-GCM, AES-256-GCM.
+ * ChaCha20 delegates to the existing cp_aead_encrypt/decrypt functions.
+ * AES-GCM suites use the same EVP_CIPHER_CTX pattern with different ciphers.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static bool aes_gcm_encrypt(const EVP_CIPHER *cipher,
+                             const uint8_t *key,
+                             const uint8_t *nonce, size_t /* nonce_len */,
+                             const uint8_t *aad,   size_t aad_len,
+                             const uint8_t *pt,    size_t pt_len,
+                             uint8_t *ct, uint8_t *tag) {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+        return false;
+
+    int len;
+    bool ok = false;
+
+    if (EVP_EncryptInit_ex(ctx, cipher, nullptr, key, nonce) <= 0)
+        goto out;
+    if (aad && aad_len > 0) {
+        if (EVP_EncryptUpdate(ctx, nullptr, &len, aad, (int)aad_len) <= 0)
+            goto out;
+    }
+    if (EVP_EncryptUpdate(ctx, ct, &len, pt, (int)pt_len) <= 0)
+        goto out;
+    if (EVP_EncryptFinal_ex(ctx, ct + len, &len) <= 0)
+        goto out;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, TACHYON_AEAD_TAG_LEN, tag) <= 0)
+        goto out;
+    ok = true;
+out:
+    EVP_CIPHER_CTX_free(ctx);
+    return ok;
+}
+
+static bool aes_gcm_decrypt(const EVP_CIPHER *cipher,
+                             const uint8_t *key,
+                             const uint8_t *nonce, size_t /* nonce_len */,
+                             const uint8_t *aad,   size_t aad_len,
+                             const uint8_t *ct,    size_t ct_len,
+                             const uint8_t *tag,
+                             uint8_t *pt) {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+        return false;
+
+    int len;
+    bool ok = false;
+
+    if (EVP_DecryptInit_ex(ctx, cipher, nullptr, key, nonce) <= 0)
+        goto out;
+    if (aad && aad_len > 0) {
+        if (EVP_DecryptUpdate(ctx, nullptr, &len, aad, (int)aad_len) <= 0)
+            goto out;
+    }
+    if (EVP_DecryptUpdate(ctx, pt, &len, ct, (int)ct_len) <= 0)
+        goto out;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TACHYON_AEAD_TAG_LEN,
+                            const_cast<uint8_t *>(tag)) <= 0)
+        goto out;
+    ok = (EVP_DecryptFinal_ex(ctx, pt + len, &len) > 0);
+out:
+    EVP_CIPHER_CTX_free(ctx);
+    return ok;
+}
+
+/* ChaCha20-Poly1305 suite — delegates to cp_aead_encrypt/decrypt */
+static bool chacha20_enc(const uint8_t *key,
+                          const uint8_t *nonce, size_t /*nonce_len*/,
+                          const uint8_t *aad, size_t aad_len,
+                          const uint8_t *pt, size_t pt_len,
+                          uint8_t *ct, uint8_t *tag) {
+    return cp_aead_encrypt(key, pt, pt_len, aad, aad_len, nonce, ct, tag);
+}
+static bool chacha20_dec(const uint8_t *key,
+                          const uint8_t *nonce, size_t /*nonce_len*/,
+                          const uint8_t *aad, size_t aad_len,
+                          const uint8_t *ct, size_t ct_len,
+                          const uint8_t *tag, uint8_t *pt) {
+    return cp_aead_decrypt(key, ct, ct_len, aad, aad_len, nonce, tag, pt);
+}
+
+/* AES-128-GCM suite */
+static bool aes128_enc(const uint8_t *key,
+                        const uint8_t *nonce, size_t nonce_len,
+                        const uint8_t *aad, size_t aad_len,
+                        const uint8_t *pt, size_t pt_len,
+                        uint8_t *ct, uint8_t *tag) {
+    return aes_gcm_encrypt(EVP_aes_128_gcm(), key, nonce, nonce_len,
+                           aad, aad_len, pt, pt_len, ct, tag);
+}
+static bool aes128_dec(const uint8_t *key,
+                        const uint8_t *nonce, size_t nonce_len,
+                        const uint8_t *aad, size_t aad_len,
+                        const uint8_t *ct, size_t ct_len,
+                        const uint8_t *tag, uint8_t *pt) {
+    return aes_gcm_decrypt(EVP_aes_128_gcm(), key, nonce, nonce_len,
+                           aad, aad_len, ct, ct_len, tag, pt);
+}
+
+/* AES-256-GCM suite */
+static bool aes256_enc(const uint8_t *key,
+                        const uint8_t *nonce, size_t nonce_len,
+                        const uint8_t *aad, size_t aad_len,
+                        const uint8_t *pt, size_t pt_len,
+                        uint8_t *ct, uint8_t *tag) {
+    return aes_gcm_encrypt(EVP_aes_256_gcm(), key, nonce, nonce_len,
+                           aad, aad_len, pt, pt_len, ct, tag);
+}
+static bool aes256_dec(const uint8_t *key,
+                        const uint8_t *nonce, size_t nonce_len,
+                        const uint8_t *aad, size_t aad_len,
+                        const uint8_t *ct, size_t ct_len,
+                        const uint8_t *tag, uint8_t *pt) {
+    return aes_gcm_decrypt(EVP_aes_256_gcm(), key, nonce, nonce_len,
+                           aad, aad_len, ct, ct_len, tag, pt);
+}
+
+static const CipherSuite kSuites[] = {
+    {
+        TACHYON_CIPHER_CHACHA20,
+        "ChaCha20-Poly1305",
+        TACHYON_AEAD_KEY_LEN,    /* 32 bytes */
+        TACHYON_AEAD_TAG_LEN,    /* 16 bytes */
+        TACHYON_AEAD_IV_LEN,     /* 12 bytes */
+        chacha20_enc,
+        chacha20_dec,
+    },
+    {
+        TACHYON_CIPHER_AES128GCM,
+        "AES-128-GCM",
+        16,                      /* 16-byte key */
+        TACHYON_AEAD_TAG_LEN,    /* 16 bytes */
+        TACHYON_AEAD_IV_LEN,     /* 12 bytes */
+        aes128_enc,
+        aes128_dec,
+    },
+    {
+        TACHYON_CIPHER_AES256GCM,
+        "AES-256-GCM",
+        TACHYON_AEAD_KEY_LEN,    /* 32 bytes */
+        TACHYON_AEAD_TAG_LEN,    /* 16 bytes */
+        TACHYON_AEAD_IV_LEN,     /* 12 bytes */
+        aes256_enc,
+        aes256_dec,
+    },
+};
+
+static constexpr size_t kNumSuites = sizeof(kSuites) / sizeof(kSuites[0]);
+
+const CipherSuite *get_cipher_suite(uint8_t type_id) {
+    for (size_t i = 0; i < kNumSuites; i++) {
+        if (kSuites[i].type_id == type_id)
+            return &kSuites[i];
+    }
+    return nullptr;
+}
+
+const CipherSuite *select_best_suite(bool has_aesni) {
+    if (has_aesni)
+        return &kSuites[TACHYON_CIPHER_AES256GCM]; /* index 2 */
+    return &kSuites[TACHYON_CIPHER_CHACHA20];       /* index 0 */
 }

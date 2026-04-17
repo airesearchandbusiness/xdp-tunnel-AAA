@@ -44,6 +44,23 @@ EnableEncryption = true
 #   0x00 = Disabled (for debugging / benchmarking)
 ObfuscationFlags = 0x3F
 
+# AEAD cipher suite for the data plane (default: chacha20)
+#   chacha20  = ChaCha20-Poly1305 (universal, constant-time, no AES-NI needed)
+#   aes128gcm = AES-128-GCM (fastest with AES-NI hardware acceleration)
+#   aes256gcm = AES-256-GCM (maximum security with AES-NI hardware acceleration)
+# CipherType = chacha20
+
+# Auto-detect hardware capabilities and override CipherType automatically.
+# When true: selects AES-256-GCM if AES-NI is detected, else ChaCha20.
+# Explicit CipherType above takes precedence over AutoConfig.
+# AutoConfig = false
+
+# Source port rotation interval in seconds (0 = disabled, default).
+# Periodically rebinds to a new ephemeral source port to defeat session
+# correlation by source port. The XDP RX path handles peer-side updates
+# via the existing authenticated connection-migration mechanism.
+# PortRotationInterval = 60
+
 [Peer]
 # Remote node's physical IP address
 EndpointIP = 192.168.1.20

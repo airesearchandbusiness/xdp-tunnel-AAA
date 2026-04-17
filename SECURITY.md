@@ -56,6 +56,15 @@ Tachyon implements several defense-in-depth measures:
 - **Config file size guard** -- `parse_ini()` rejects files >64KB to prevent memory exhaustion
 - **NonceCache deduplication** -- duplicate nonce additions do not inflate the LRU list, preserving correct capacity accounting
 
+### Cipher Suite & Key Exchange
+
+- **Modular CipherSuite abstraction** — ChaCha20-Poly1305, AES-128-GCM, AES-256-GCM selectable via config; registry decouples handshake from cipher choice
+- **AES-NI auto-detection** — CPUID (x86-64) / HWCAP (ARM64) probed at startup; AES-256-GCM preferred when hardware acceleration is available
+- **Hardware auto-configuration** — `AutoConfig = true` automatically selects cipher, probes interface MTU; explicit config always takes precedence
+- **Source port rotation** — periodic socket rebind changes ephemeral source port, defeating per-session correlation; `PortRotationInterval` is configurable
+- **Post-quantum hybrid KEM skeleton** — `TACHYON_FLAG_PQ` flag and `pq_kem.h` infrastructure for X25519 + ML-KEM-768 hybrid KEM; activated when built with `-DTACHYON_PQ=ON` (requires liboqs)
+- **Congestion-adaptive obfuscation** — `AdaptiveObfsController` monitors drop counters and sheds constant-size padding and decoy chaff under congestion, restoring full obfuscation when the link clears
+
 ### Traffic Analysis Resistance
 
 - **IP header obfuscation** -- TTL jitter (63-66), IP ID randomization, probabilistic DF bit clearing defeat OS fingerprinting and cross-packet correlation

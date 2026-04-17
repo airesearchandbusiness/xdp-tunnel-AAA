@@ -113,6 +113,7 @@ endif()
 add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/crypto.cpp
     ${PROJECT_ROOT}/loader/config.cpp
+    ${PROJECT_ROOT}/loader/autoconf.cpp
     ${PROJECT_ROOT}/loader/padding.cpp
     ${PROJECT_ROOT}/loader/fingerprint.cpp
     ${PROJECT_ROOT}/loader/obfs.cpp
@@ -172,6 +173,7 @@ add_tachyon_test(test_replay      unit/test_replay.cpp)
 add_tachyon_test(test_transcript  unit/test_transcript.cpp)
 add_tachyon_test(test_ratchet     unit/test_ratchet.cpp)
 add_tachyon_test(test_hybrid_kex  unit/test_hybrid_kex.cpp)
+add_tachyon_test(test_advanced    unit/test_advanced.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)

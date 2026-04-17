@@ -786,7 +786,7 @@ TEST(WireFormatTest, ControlPlaneMessageSizes) {
 }
 
 TEST(WireFormatTest, MapValueSizes) {
-    EXPECT_EQ(sizeof(struct tachyon_key_init), 68u);
+    EXPECT_EQ(sizeof(struct tachyon_key_init), 72u); /* 4 + 32 + 32 + 1 cipher_type + 3 reserved */
     EXPECT_EQ(sizeof(struct tachyon_stats), 112u);
     EXPECT_EQ(sizeof(struct tachyon_event), 24u);
     EXPECT_EQ(sizeof(struct tachyon_config), 4u);

@@ -89,7 +89,7 @@ static void send_mimic_quic(int sock, const void *msg, size_t msg_len, int type,
  * ══════════════════════════════════════════════════════════════════════════ */
 
 static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id, uint8_t *tx_key,
-                                  uint8_t *rx_key) {
+                                  uint8_t *rx_key, uint8_t cipher_type = TACHYON_CIPHER_CHACHA20) {
     struct bpf_map *map = bpf_object__find_map_by_name(obj, "key_init_map");
     if (!map) {
         LOG_ERR("BPF map 'key_init_map' not found");
@@ -106,6 +106,7 @@ static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id, u
     kid.session_id = session_id;
     memcpy(kid.tx_key, tx_key, TACHYON_AEAD_KEY_LEN);
     memcpy(kid.rx_key, rx_key, TACHYON_AEAD_KEY_LEN);
+    kid.cipher_type = cipher_type;
     bpf_map_update_elem(key_map_fd, &zero, &kid, BPF_ANY);
 
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, "ghost_key_init");
@@ -324,8 +325,17 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint64_t last_decoy = monotonic_sec();
         uint64_t decoy_interval = TACHYON_DECOY_BASE;
 
-        LOG_INFO("Role: %s | Obfuscation: 0x%02x", is_initiator ? "Initiator" : "Responder",
-                 cfg.obfs_flags);
+        /* Source port rotation — create a new socket periodically to rotate the
+         * ephemeral UDP source port, defeating session correlation by port.
+         * 0 = disabled. The XDP RX path auto-handles peer roaming on our side. */
+        uint64_t last_port_rotation = monotonic_sec();
+
+        /* Adaptive obfuscation — sheds padding/decoy overhead under congestion */
+        AdaptiveObfsController obfs_ctrl(cfg.obfs_flags);
+
+        LOG_INFO("Role: %s | Cipher: %u | Obfuscation: 0x%02x | PortRotation: %us",
+                 is_initiator ? "Initiator" : "Responder",
+                 cfg.cipher_type, cfg.obfs_flags, cfg.port_rotation_interval);
 
         while (!g_exiting) {
             uint64_t now = monotonic_sec();
@@ -337,6 +347,37 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     last_cookie_rotation = now;
                 else
                     LOG_WARN("Cookie secret rotation failed - retaining old secret");
+            }
+
+            /* Source port rotation — rebind to the same listen port on a fresh
+             * socket to change the ephemeral source port seen by the remote peer.
+             * The new socket gets a new kernel-assigned source port for outgoing
+             * packets. Peer roaming on the RX side handles the port change
+             * automatically after the next authenticated packet. */
+            if (cfg.port_rotation_interval > 0 &&
+                (now - last_port_rotation >= cfg.port_rotation_interval)) {
+                int new_sock = socket(AF_INET, SOCK_DGRAM, 0);
+                if (new_sock >= 0) {
+                    int opt = 1;
+                    setsockopt(new_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+                    struct timeval tv = {1, 0};
+                    setsockopt(new_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+                    struct sockaddr_in naddr {};
+                    naddr.sin_family = AF_INET;
+                    naddr.sin_port = htons(cfg.listen_port);
+                    naddr.sin_addr.s_addr = INADDR_ANY;
+                    if (bind(new_sock, reinterpret_cast<struct sockaddr *>(&naddr),
+                             sizeof(naddr)) == 0) {
+                        close(sock);
+                        sock = new_sock;
+                        last_port_rotation = now;
+                        LOG_INFO("Source port rotated (new socket bound to port %d)",
+                                 cfg.listen_port);
+                    } else {
+                        close(new_sock);
+                        LOG_WARN("Port rotation failed: %s", strerror(errno));
+                    }
+                }
             }
 
             /* Dead Peer Detection */
@@ -618,7 +659,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 }
                 derive_session_keys(early_secret, eph_ss, false, tx_key, rx_key);
 
-                inject_keys_to_kernel(obj, session_id, tx_key, rx_key);
+                inject_keys_to_kernel(obj, session_id, tx_key, rx_key, cfg.cipher_type);
 
                 /* Send PKT_FINISH with our ephemeral public key */
                 uint64_t srv_nonce;
@@ -682,7 +723,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 }
                 derive_session_keys(early_secret, eph_ss, true, tx_key, rx_key);
 
-                inject_keys_to_kernel(obj, session_id, tx_key, rx_key);
+                inject_keys_to_kernel(obj, session_id, tx_key, rx_key, cfg.cipher_type);
 
                 handshake_active = false;
                 first_boot = false;

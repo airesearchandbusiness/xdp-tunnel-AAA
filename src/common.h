@@ -160,6 +160,17 @@ typedef int32_t __s32;
 #define TACHYON_OBFS_ALL 0x3F
 
 /* ──────────────────────────────────────────────────────────────────────────
+ * Cipher Suite Identifiers
+ *
+ * Used in tachyon_key_init.cipher_type to select the AEAD algorithm for the
+ * kernel crypto module. Kernel module support: kmod/mod.c bpf_ghost_set_cipher().
+ * ────────────────────────────────────────────────────────────────────────── */
+#define TACHYON_CIPHER_CHACHA20  0 /* ChaCha20-Poly1305 (default, universal) */
+#define TACHYON_CIPHER_AES128GCM 1 /* AES-128-GCM (AES-NI accelerated)      */
+#define TACHYON_CIPHER_AES256GCM 2 /* AES-256-GCM (AES-NI accelerated)      */
+#define TACHYON_CIPHER_MAX       2 /* Highest valid cipher type             */
+
+/* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Packet Types
  *
  * Identified by the high nibble 0xC0 in the quic_flags field.
@@ -259,8 +270,10 @@ struct tachyon_session {
 /* Staging structure for key injection via BPF syscall program */
 struct tachyon_key_init {
     __u32 session_id;
-    __u8 tx_key[TACHYON_AEAD_KEY_LEN];
-    __u8 rx_key[TACHYON_AEAD_KEY_LEN];
+    __u8  tx_key[TACHYON_AEAD_KEY_LEN];
+    __u8  rx_key[TACHYON_AEAD_KEY_LEN];
+    __u8  cipher_type;   /* TACHYON_CIPHER_* to activate via bpf_ghost_set_cipher() */
+    __u8  _reserved[3];
 };
 
 /* Per-CPU packet statistics */
@@ -402,8 +415,8 @@ TACHYON_SASSERT(TACHYON_FIELD_OFFSET(struct tachyon_ghost_hdr, nonce_salt) == 16
 
 /* BPF map value types */
 TACHYON_SASSERT(sizeof(struct tachyon_config) == 4, "tachyon_config must be 4 bytes");
-TACHYON_SASSERT(sizeof(struct tachyon_key_init) == 68,
-                "tachyon_key_init must be 68 bytes (4 + 32 + 32)");
+TACHYON_SASSERT(sizeof(struct tachyon_key_init) == 72,
+                "tachyon_key_init must be 72 bytes (4 + 32 + 32 + 1 + 3)");
 TACHYON_SASSERT(sizeof(struct tachyon_lpm_key_v4) == 8,
                 "tachyon_lpm_key_v4 must be 8 bytes (4 + 4)");
 TACHYON_SASSERT(sizeof(struct tachyon_rate_cfg) == 32, "tachyon_rate_cfg must be 32 bytes (4 x 8)");

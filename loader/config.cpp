@@ -4,6 +4,7 @@
  */
 
 #include "tachyon.h"
+#include "autoconf.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Tunnel Name Validation
@@ -147,6 +148,47 @@ TunnelConfig parse_config(const std::string &filename) {
         } catch (const std::exception &) {
             LOG_WARN("Invalid ObfuscationFlags '%s', using default 0x%02x", obfs_str.c_str(),
                      cfg.obfs_flags);
+        }
+    }
+
+    /* CipherType: select AEAD cipher for the data plane.
+     * Accepts symbolic names or numeric values (0/1/2). */
+    std::string cipher_str = get_val(kv, "CipherType");
+    if (!cipher_str.empty()) {
+        if (cipher_str == "chacha20" || cipher_str == "ChaCha20" || cipher_str == "0")
+            cfg.cipher_type = TACHYON_CIPHER_CHACHA20;
+        else if (cipher_str == "aes128gcm" || cipher_str == "AES-128-GCM" || cipher_str == "1")
+            cfg.cipher_type = TACHYON_CIPHER_AES128GCM;
+        else if (cipher_str == "aes256gcm" || cipher_str == "AES-256-GCM" || cipher_str == "2")
+            cfg.cipher_type = TACHYON_CIPHER_AES256GCM;
+        else
+            LOG_WARN("Unknown CipherType '%s', using default ChaCha20-Poly1305", cipher_str.c_str());
+    }
+
+    /* PortRotationInterval: rotate local UDP source port every N seconds.
+     * 0 = disabled (default). Helps defeat session correlation by source port. */
+    std::string prot_str = get_val(kv, "PortRotationInterval");
+    if (!prot_str.empty()) {
+        try {
+            long val = std::stol(prot_str);
+            if (val >= 0)
+                cfg.port_rotation_interval = static_cast<uint32_t>(val);
+            else
+                LOG_WARN("PortRotationInterval must be >= 0, using 0 (disabled)");
+        } catch (const std::exception &) {
+            LOG_WARN("Invalid PortRotationInterval '%s', using 0 (disabled)", prot_str.c_str());
+        }
+    }
+
+    /* AutoConfig: detect hardware capabilities and override cipher_type / MTU.
+     * Set to 'true' to enable. Explicit CipherType in config takes precedence. */
+    std::string auto_str = get_val(kv, "AutoConfig");
+    if (auto_str == "true" || auto_str == "1" || auto_str == "yes") {
+        cfg.auto_config = true;
+        /* Only auto-select cipher if the user did not specify CipherType */
+        if (cipher_str.empty()) {
+            AutoDetectedConfig hw = probe_hardware(cfg.physical_interface);
+            cfg.cipher_type = hw.cipher_type;
         }
     }
 
