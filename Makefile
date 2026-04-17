@@ -94,7 +94,10 @@ LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
                loader/padding.cpp loader/fingerprint.cpp \
                loader/obfs.cpp loader/pqc.cpp \
                loader/hybrid_kex.cpp loader/secmem.cpp \
-               loader/ratchet.cpp loader/transcript.cpp loader/replay.cpp
+               loader/ratchet.cpp loader/transcript.cpp loader/replay.cpp \
+               loader/transport.cpp loader/quic_mimic.cpp loader/http2_mimic.cpp \
+               loader/doh_mimic.cpp loader/stun_mimic.cpp \
+               loader/metrics.cpp loader/rate_limiter.cpp
 LOADER_BIN  := loader/tachyon
 
 # ── Build Targets ──
