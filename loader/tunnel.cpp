@@ -14,6 +14,7 @@
 #include "http2_mimic.h"
 #include "doh_mimic.h"
 #include "stun_mimic.h"
+#include "obfs.h"
 #include "padding.h"
 #include "fingerprint.h"
 #include "metrics.h"
@@ -215,6 +216,7 @@ void command_up(const std::string &conf_file) {
     tachyon::http2_mimic::register_transport();
     tachyon::doh_mimic::register_transport();
     tachyon::stun_mimic::register_transport();
+    tachyon::obfs::register_reality_transport();
 
     {
         using namespace tachyon::transport;
