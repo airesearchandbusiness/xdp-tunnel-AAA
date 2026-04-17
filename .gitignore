@@ -12,6 +12,13 @@ modules.order
 Module.symvers
 loader/tachyon
 
+# Stray test binaries (built executables land here if someone runs ctest
+# from outside build/). Source files .cpp/.h/.sh are kept.
+tests/test_*
+!tests/test_*.cpp
+!tests/test_*.h
+!tests/test_*.sh
+
 # CMake
 build/
 CMakeFiles/

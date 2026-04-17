@@ -53,3 +53,41 @@ EndpointMAC = aa:bb:cc:dd:ee:ff
 
 # Virtual IP assigned to the remote peer (no subnet)
 InnerIP = 10.8.0.2
+
+# ──────────────────────────────────────────────────────────────────────────
+# v5 "Ghost-PQ" — post-quantum + anti-fingerprint knobs (all optional)
+# ──────────────────────────────────────────────────────────────────────────
+
+# Post-quantum key exchange.
+#   classical — X25519 only (v4 behaviour, default)
+#   hybrid    — X25519 ‖ ML-KEM-768, HKDF-SHA384 combined secret (FIPS 203)
+# Hybrid requires OpenSSL ≥ 3.5 or liboqs at build time.
+# Pqc = hybrid
+
+# Outer-packet obfuscation to defeat DPI.
+#   none    — raw UDP with a short tag (default)
+#   quic    — legacy QUIC-Initial mimicry (v4 behaviour)
+#   reality — TLS 1.3 ClientHello mimicry with real SNI + GREASE
+# Obfuscation = reality
+# ObfuscationSNI = www.microsoft.com
+
+# Traffic-analysis resistance.
+#   none          — send payloads as-is (default)
+#   padme         — pad each frame up to a PADME bin (<12% overhead)
+#   constant_rate — emit at a fixed rate, padding with cover when idle
+#   random        — pad to a uniformly random bin
+# Padding = padme
+
+# Cover-traffic rate (Hz). Only meaningful with Padding=padme/random.
+# 0 disables cover. Typical: 2–10 Hz on low-bandwidth links.
+# CoverRateHz = 5
+
+# HMAC-based UDP source-port hopping period (seconds).
+# Both endpoints must share PresharedKey. 0 disables.
+# PortHopSeconds = 60
+
+# Per-packet TTL randomisation in [50,64]. Obscures hop-count inference.
+# TTLRandom = true
+
+# Per-rekey source-MAC randomisation (locally-administered unicast).
+# MACRandom = true

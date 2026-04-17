@@ -662,3 +662,64 @@ TEST_F(ConfigTest, ValidateZeroMAC) {
     TunnelConfig cfg = parse_config(path);
     EXPECT_FALSE(validate_config(cfg));
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * v5 "Ghost-PQ" policy knobs — optional, default-off
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST_F(ConfigTest, V5DefaultsAreBackwardsCompatible) {
+    auto path = write_config("v4_legacy.conf", VALID_CONFIG);
+    TunnelConfig cfg = parse_config(path);
+    /* None of the v5 knobs should flip just because they weren't set. */
+    EXPECT_EQ(cfg.pqc_mode, "classical");
+    EXPECT_EQ(cfg.obfuscation, "none");
+    EXPECT_EQ(cfg.padding, "none");
+    EXPECT_FALSE(cfg.ttl_random);
+    EXPECT_FALSE(cfg.mac_random);
+    EXPECT_EQ(cfg.cover_rate_hz, 0u);
+    EXPECT_EQ(cfg.port_hop_seconds, 0u);
+}
+
+TEST_F(ConfigTest, V5AllKnobsParsed) {
+    const std::string content = std::string(VALID_CONFIG) +
+        "Pqc = hybrid\n"
+        "Obfuscation = reality\n"
+        "ObfuscationSNI = cdn.cloudflare.com\n"
+        "Padding = padme\n"
+        "CoverRateHz = 10\n"
+        "PortHopSeconds = 60\n"
+        "TTLRandom = true\n"
+        "MACRandom = yes\n";
+    auto path = write_config("v5_full.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.pqc_mode, "hybrid");
+    EXPECT_EQ(cfg.obfuscation, "reality");
+    EXPECT_EQ(cfg.obfuscation_sni, "cdn.cloudflare.com");
+    EXPECT_EQ(cfg.padding, "padme");
+    EXPECT_EQ(cfg.cover_rate_hz, 10u);
+    EXPECT_EQ(cfg.port_hop_seconds, 60u);
+    EXPECT_TRUE(cfg.ttl_random);
+    EXPECT_TRUE(cfg.mac_random);
+}
+
+TEST_F(ConfigTest, V5BoolSynonyms) {
+    /* TTLRandom=off and MACRandom=0 should be parsed as false even if a
+     * future default flips to true. */
+    const std::string content = std::string(VALID_CONFIG) +
+        "TTLRandom = off\n"
+        "MACRandom = 0\n";
+    auto path = write_config("v5_bool_synonyms.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(cfg.ttl_random);
+    EXPECT_FALSE(cfg.mac_random);
+}
+
+TEST_F(ConfigTest, V5InvalidIntIsIgnored) {
+    const std::string content = std::string(VALID_CONFIG) +
+        "CoverRateHz = not-a-number\n"
+        "PortHopSeconds = 99999\n"; /* > 65535 → ignored */
+    auto path = write_config("v5_bad_int.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.cover_rate_hz, 0u);
+    EXPECT_EQ(cfg.port_hop_seconds, 0u);
+}
