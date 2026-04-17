@@ -85,26 +85,54 @@ include(GoogleTest)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OPENSSL REQUIRED openssl>=3.0.0)
 
+# ── Optional: post-quantum backend auto-detection ──
+# Prefer native OpenSSL 3.5+ (ML-KEM built-in); else fall back to liboqs; else
+# compile the stub backend so tests that skip-on-unavailable still link.
+set(TACHYON_PQC_BACKEND "unavailable")
+set(TACHYON_PQC_LIBS "")
+set(TACHYON_PQC_INCLUDES "")
+set(TACHYON_PQC_DEFINES "")
+
+# OpenSSL 3.5+ has native ML-KEM via EVP_KEM — check version.
+if(OPENSSL_VERSION VERSION_GREATER_EQUAL "3.5.0")
+    set(TACHYON_PQC_BACKEND "openssl")
+    list(APPEND TACHYON_PQC_DEFINES TACHYON_PQC_OPENSSL)
+else()
+    pkg_check_modules(LIBOQS liboqs)
+    if(LIBOQS_FOUND)
+        set(TACHYON_PQC_BACKEND "liboqs")
+        list(APPEND TACHYON_PQC_DEFINES TACHYON_PQC_OQS)
+        list(APPEND TACHYON_PQC_LIBS ${LIBOQS_LIBRARIES})
+        list(APPEND TACHYON_PQC_INCLUDES ${LIBOQS_INCLUDE_DIRS})
+    endif()
+endif()
+
 # ── tachyon_core static library ──
-# Compiles crypto.cpp and config.cpp with test_common.h (no libbpf needed).
-# The test header re-declares only the interfaces needed for testing.
+# Compiles all control-plane modules that don't pull in libbpf. Tests can link
+# against this library and exercise every helper without needing kernel BPF.
 add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/crypto.cpp
     ${PROJECT_ROOT}/loader/config.cpp
+    ${PROJECT_ROOT}/loader/padding.cpp
+    ${PROJECT_ROOT}/loader/fingerprint.cpp
+    ${PROJECT_ROOT}/loader/obfs.cpp
+    ${PROJECT_ROOT}/loader/pqc.cpp
 )
 
 target_include_directories(tachyon_core PUBLIC
     ${PROJECT_ROOT}/loader
     ${PROJECT_ROOT}/src
     ${OPENSSL_INCLUDE_DIRS}
+    ${TACHYON_PQC_INCLUDES}
 )
 
-target_link_libraries(tachyon_core PUBLIC ${OPENSSL_LIBRARIES})
+target_link_libraries(tachyon_core PUBLIC ${OPENSSL_LIBRARIES} ${TACHYON_PQC_LIBS})
 
 # Skip BPF includes - not needed for unit testing crypto/config
 target_compile_definitions(tachyon_core PRIVATE
     TACHYON_VERSION="test"
     TACHYON_NO_BPF
+    ${TACHYON_PQC_DEFINES}
 )
 target_compile_options(tachyon_core PRIVATE -Wall -Wextra)
 
@@ -130,6 +158,10 @@ add_tachyon_test(test_crypto      unit/test_crypto.cpp)
 add_tachyon_test(test_nonce_cache unit/test_nonce_cache.cpp)
 add_tachyon_test(test_utils       unit/test_utils.cpp)
 add_tachyon_test(test_protocol    unit/test_protocol.cpp)
+add_tachyon_test(test_padding     unit/test_padding.cpp)
+add_tachyon_test(test_fingerprint unit/test_fingerprint.cpp)
+add_tachyon_test(test_obfs        unit/test_obfs.cpp)
+add_tachyon_test(test_pqc         unit/test_pqc.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)
@@ -217,4 +249,5 @@ message(STATUS "  TSan:        ${ENABLE_TSAN}")
 message(STATUS "  XDP tests:   ${BUILD_XDP_TESTS}")
 message(STATUS "  Fuzz tests:  ${BUILD_FUZZ_TESTS}")
 message(STATUS "  Benchmarks:  ${BUILD_BENCHMARKS}")
+message(STATUS "  PQC backend: ${TACHYON_PQC_BACKEND}")
 message(STATUS "")
