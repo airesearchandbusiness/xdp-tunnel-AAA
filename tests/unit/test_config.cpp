@@ -112,6 +112,7 @@ TEST_F(ConfigTest, ParseMinimalConfigDefaults) {
     EXPECT_EQ(cfg.mimicry_type, TACHYON_MIMICRY_QUIC);
     EXPECT_TRUE(cfg.encryption);
     EXPECT_TRUE(cfg.psk.empty());
+    EXPECT_EQ(cfg.obfs_flags, TACHYON_OBFS_ALL);
 }
 
 TEST_F(ConfigTest, ParseEncryptionDisabled) {
@@ -126,6 +127,26 @@ TEST_F(ConfigTest, ParseEncryptionDisabledNumeric) {
     auto path = write_config("noenc0.conf", content);
     TunnelConfig cfg = parse_config(path);
     EXPECT_FALSE(cfg.encryption);
+}
+
+TEST_F(ConfigTest, ParseObfuscationFlagsHex) {
+    std::string content = std::string(VALID_CONFIG) + "ObfuscationFlags = 0x15\n";
+    auto path = write_config("obfs_hex.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.obfs_flags, 0x15);
+}
+
+TEST_F(ConfigTest, ParseObfuscationFlagsDecimal) {
+    std::string content = std::string(VALID_CONFIG) + "ObfuscationFlags = 0\n";
+    auto path = write_config("obfs_off.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.obfs_flags, 0);
+}
+
+TEST_F(ConfigTest, ParseObfuscationFlagsDefault) {
+    auto path = write_config("obfs_default.conf", VALID_CONFIG);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.obfs_flags, TACHYON_OBFS_ALL);
 }
 
 TEST_F(ConfigTest, ParseCustomPort) {

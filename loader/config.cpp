@@ -137,6 +137,19 @@ TunnelConfig parse_config(const std::string &filename) {
     if (enc_str == "false" || enc_str == "0")
         cfg.encryption = false;
 
+    /* ObfuscationFlags: bitmask for traffic analysis countermeasures.
+     * Default is TACHYON_OBFS_ALL (all flags enabled). Set to 0 to disable. */
+    std::string obfs_str = get_val(kv, "ObfuscationFlags");
+    if (!obfs_str.empty()) {
+        try {
+            int val = std::stoi(obfs_str, nullptr, 0); /* supports hex 0x3F */
+            cfg.obfs_flags = static_cast<uint8_t>(val & 0xFF);
+        } catch (const std::exception &) {
+            LOG_WARN("Invalid ObfuscationFlags '%s', using default 0x%02x", obfs_str.c_str(),
+                     cfg.obfs_flags);
+        }
+    }
+
     return cfg;
 }
 

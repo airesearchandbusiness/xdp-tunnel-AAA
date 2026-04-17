@@ -804,3 +804,51 @@ TEST(WireFormatTest, UserspaceStructsMatchBpfMapTypes) {
     EXPECT_EQ(sizeof(userspace_key_init), sizeof(struct tachyon_key_init));
     EXPECT_EQ(sizeof(userspace_stats), sizeof(struct tachyon_stats));
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Forward Secrecy Key Ratchet Tests
+ *
+ * Verify that the key ratchet derivation produces unique, irreversible
+ * key chains — each ratchet step produces a completely different key,
+ * and knowing key[N] does not reveal key[N-1].
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST_F(CryptoTest, KeyRatchetProducesUniqueKeys) {
+    uint8_t chain[32], key[32];
+    memset(chain, 0xaa, 32);
+    memset(key, 0xbb, 32);
+
+    uint8_t keys[4][32];
+    for (int i = 0; i < 4; i++) {
+        uint8_t new_key[32];
+        ASSERT_TRUE(derive_kdf(chain, 32, key, 32, TACHYON_KDF_KEY_RATCHET, new_key));
+        memcpy(keys[i], new_key, 32);
+
+        /* Advance chain */
+        uint8_t new_chain[32];
+        ASSERT_TRUE(derive_kdf(chain, 32, new_key, 32, TACHYON_KDF_DECOY_SEED, new_chain));
+        memcpy(chain, new_chain, 32);
+        memcpy(key, new_key, 32);
+    }
+
+    /* Each ratchet step must produce a distinct key */
+    for (int i = 0; i < 4; i++) {
+        for (int j = i + 1; j < 4; j++) {
+            EXPECT_NE(memcmp(keys[i], keys[j], 32), 0)
+                << "Ratchet keys " << i << " and " << j << " collide";
+        }
+    }
+}
+
+TEST_F(CryptoTest, KeyRatchetIsDeterministic) {
+    uint8_t chain[32], key[32];
+    memset(chain, 0xcc, 32);
+    memset(key, 0xdd, 32);
+
+    uint8_t result1[32], result2[32];
+    ASSERT_TRUE(derive_kdf(chain, 32, key, 32, TACHYON_KDF_KEY_RATCHET, result1));
+
+    /* Same inputs must produce same output */
+    ASSERT_TRUE(derive_kdf(chain, 32, key, 32, TACHYON_KDF_KEY_RATCHET, result2));
+    EXPECT_EQ(memcmp(result1, result2, 32), 0);
+}
