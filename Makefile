@@ -32,31 +32,69 @@ BINDIR      ?= $(PREFIX)/bin
 SYSCONFDIR  ?= /etc/tachyon
 SYSTEMDDIR  ?= /etc/systemd/system
 
-# Compiler flags — production hardening
+# Compiler flags — production hardening + performance
 # -D_FORTIFY_SOURCE=2: glibc buffer-overflow detection (requires -O1+)
 # -fstack-protector-strong: stack canary on functions with local arrays/pointers
 # -fPIE + -pie: position-independent executable (defeats ROP on ASLR kernels)
 # -Wformat-security: warn on non-literal format strings
 # -Wswitch-enum: require exhaustive switch coverage of enum values
+# -O3: aggressive optimisation for the hot path (handshake + AEAD wrappers)
+# -flto: whole-program / link-time optimisation (lets the linker inline across TUs)
+# -fdata-sections + -ffunction-sections + -Wl,--gc-sections: strip unreferenced
+#  symbols at link time, yielding a smaller binary and better I-cache behaviour
+# MARCH ?= native: override to "x86-64-v3" for a portable build
 # Linker:
 # -z relro,-z now: full RELRO — all PLT entries resolved at startup, GOT read-only
 # -z noexecstack: mark stack segment as non-executable
 CXX         ?= g++
-CXXFLAGS    := -O2 -Wall -Wextra -std=c++17 \
+MARCH       ?= native
+OPT_FLAGS   := -O3 -flto -march=$(MARCH) \
+               -fdata-sections -ffunction-sections
+CXXFLAGS    := $(OPT_FLAGS) -Wall -Wextra -std=c++17 \
                -D_FORTIFY_SOURCE=2 \
                -fstack-protector-strong \
                -fPIE \
                -Wformat -Wformat-security \
                -Wswitch-enum \
                -DTACHYON_VERSION=\"$(VERSION)\"
-LDFLAGS     := -Wl,-z,relro,-z,now \
+
+# Post-quantum backend detection
+# 1) OpenSSL ≥ 3.5 ships ML-KEM natively via EVP_KEM — preferred.
+# 2) liboqs provides a pure-C reference implementation — fallback.
+# 3) Neither: compiles as stub (pqc_available() returns false).
+OPENSSL_VER := $(shell pkg-config --modversion openssl 2>/dev/null)
+OPENSSL_HAS_MLKEM := $(shell pkg-config --atleast-version=3.5.0 openssl && echo yes)
+LIBOQS_PRESENT := $(shell pkg-config --exists liboqs && echo yes)
+
+ifeq ($(OPENSSL_HAS_MLKEM),yes)
+  PQC_FLAGS := -DTACHYON_PQC_OPENSSL=1
+  PQC_LIBS  :=
+  PQC_BACKEND := openssl-$(OPENSSL_VER)
+else ifeq ($(LIBOQS_PRESENT),yes)
+  PQC_FLAGS := -DTACHYON_PQC_OQS=1 $(shell pkg-config --cflags liboqs)
+  PQC_LIBS  := $(shell pkg-config --libs liboqs)
+  PQC_BACKEND := liboqs
+else
+  PQC_FLAGS :=
+  PQC_LIBS  :=
+  PQC_BACKEND := stub
+endif
+CXXFLAGS    += $(PQC_FLAGS)
+
+LDFLAGS     := $(OPT_FLAGS) \
+               -Wl,-z,relro,-z,now \
                -Wl,-z,noexecstack \
+               -Wl,--gc-sections \
                -pie \
-               -lbpf -lcrypto -lelf -lz
+               -lbpf -lcrypto -lelf -lz $(PQC_LIBS)
 
 # Loader source files
 LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
-               loader/network.cpp loader/tunnel.cpp
+               loader/network.cpp loader/tunnel.cpp \
+               loader/padding.cpp loader/fingerprint.cpp \
+               loader/obfs.cpp loader/pqc.cpp \
+               loader/hybrid_kex.cpp loader/secmem.cpp \
+               loader/ratchet.cpp loader/transcript.cpp loader/replay.cpp
 LOADER_BIN  := loader/tachyon
 
 # ── Build Targets ──
@@ -78,6 +116,7 @@ xdp:
 
 loader:
 	@echo "\n[3/3] Building Tachyon Control Plane..."
+	@echo "  PQC backend: $(PQC_BACKEND)   (MARCH=$(MARCH))"
 	$(CXX) $(CXXFLAGS) $(LOADER_SRCS) -o $(LOADER_BIN) $(LDFLAGS)
 	@echo "  -> $(LOADER_BIN)"
 

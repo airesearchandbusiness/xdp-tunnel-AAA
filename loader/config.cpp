@@ -137,6 +137,52 @@ TunnelConfig parse_config(const std::string &filename) {
     if (enc_str == "false" || enc_str == "0")
         cfg.encryption = false;
 
+    /* ── v5 "Ghost-PQ" policy knobs ─────────────────────────────────────────
+     * All are optional and default to off so a v4 .conf still loads. Values
+     * are stored verbatim; typed validation (e.g. "padme" vs "padding")
+     * happens later in network.cpp via policy_from_string helpers. */
+    auto set_if = [&](std::string &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (!v.empty())
+            dst = v;
+    };
+    set_if(cfg.pqc_mode, "Pqc");
+    set_if(cfg.obfuscation, "Obfuscation");
+    set_if(cfg.obfuscation_sni, "ObfuscationSNI");
+    set_if(cfg.padding, "Padding");
+
+    auto set_uint_if = [&](uint32_t &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (v.empty())
+            return;
+        try {
+            long n = std::stol(v);
+            if (n < 0 || n > 65535) {
+                LOG_WARN("%s out of range (%ld), ignoring", key, n);
+                return;
+            }
+            dst = static_cast<uint32_t>(n);
+        } catch (const std::exception &) {
+            LOG_WARN("Invalid %s '%s', ignoring", key, v.c_str());
+        }
+    };
+    set_uint_if(cfg.cover_rate_hz, "CoverRateHz");
+    set_uint_if(cfg.port_hop_seconds, "PortHopSeconds");
+
+    auto set_bool_if = [&](bool &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (v.empty())
+            return;
+        if (v == "true" || v == "1" || v == "yes" || v == "on")
+            dst = true;
+        else if (v == "false" || v == "0" || v == "no" || v == "off")
+            dst = false;
+        else
+            LOG_WARN("Invalid %s '%s' (expected true/false)", key, v.c_str());
+    };
+    set_bool_if(cfg.ttl_random, "TTLRandom");
+    set_bool_if(cfg.mac_random, "MACRandom");
+
     return cfg;
 }
 

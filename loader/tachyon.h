@@ -185,6 +185,20 @@ struct TunnelConfig {
     int listen_port = TACHYON_DEFAULT_PORT;
     int mimicry_type = TACHYON_MIMICRY_QUIC;
     bool encryption = true;
+
+    /* ── v5 "Ghost-PQ" policy ───────────────────────────────────────────────
+     * These are off by default so v4 configs keep working unchanged. They are
+     * parsed from the INI by config.cpp and consumed by network.cpp. Strings
+     * are stored raw; network.cpp maps them to the typed enums in
+     * padding.h / obfs.h via the *_from_string helpers. */
+    std::string pqc_mode   = "classical"; /* classical | hybrid */
+    std::string obfuscation = "none";     /* none | reality | quic */
+    std::string obfuscation_sni = "www.microsoft.com";
+    std::string padding    = "none";      /* none | padme | constant_rate | random */
+    uint32_t cover_rate_hz = 0;           /* 0 disables cover traffic */
+    uint32_t port_hop_seconds = 0;        /* 0 disables port hopping */
+    bool ttl_random = false;
+    bool mac_random = false;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
