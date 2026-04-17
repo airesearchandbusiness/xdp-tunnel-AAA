@@ -108,7 +108,10 @@ typedef int32_t __s32;
 #define TACHYON_REKEY_INTERVAL 60          /* Key rotation interval          */
 #define TACHYON_COOKIE_ROTATION 120        /* Cookie secret rotation (secs)  */
 #define TACHYON_NONCE_EXPIRY 180           /* Nonce cache entry TTL (secs)   */
-#define TACHYON_CP_RATELIMIT_NS 1000000ULL /* 1ms between CP packets   */
+#define TACHYON_CP_RATELIMIT_NS 1000000ULL /* 1ms between CP packets        */
+#define TACHYON_DECOY_BASE 3               /* Decoy chaff base interval (s)  */
+#define TACHYON_DECOY_JITTER 5             /* Decoy chaff jitter range (s)   */
+#define TACHYON_KEY_RATCHET_INTERVAL 300   /* Forward secrecy ratchet (5min) */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Sequence Number Encoding
@@ -140,6 +143,23 @@ typedef int32_t __s32;
 #define TACHYON_TARGET_OUTER_LEN 1490 /* Target outer frame length      */
 
 /* ──────────────────────────────────────────────────────────────────────────
+ * Traffic Obfuscation Flags (tachyon_config.obfs_flags bitmask)
+ *
+ * Each bit enables an independent traffic analysis countermeasure in the
+ * XDP datapath. Combining all flags produces a tunnel whose external
+ * traffic is statistically indistinguishable from random UDP/QUIC traffic.
+ * ────────────────────────────────────────────────────────────────────────── */
+#define TACHYON_OBFS_TTL_JITTER 0x01 /* Randomize outer TTL (63-65)    */
+#define TACHYON_OBFS_IPID_RAND 0x02  /* Randomize IP Identification    */
+#define TACHYON_OBFS_DF_VARY 0x04    /* Probabilistic DF bit clearing  */
+#define TACHYON_OBFS_DSCP_STRIP 0x08 /* Zero inner DSCP in outer hdr   */
+#define TACHYON_OBFS_CONST_PAD 0x10  /* Constant-size padding to MTU   */
+#define TACHYON_OBFS_DECOY 0x20      /* Enable decoy chaff traffic     */
+
+/* Combine all obfuscation flags for maximum traffic analysis resistance */
+#define TACHYON_OBFS_ALL 0x3F
+
+/* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Packet Types
  *
  * Identified by the high nibble 0xC0 in the quic_flags field.
@@ -166,6 +186,8 @@ typedef int32_t __s32;
 #define TACHYON_KDF_SERVER_TX "Tachyon-Srv-TX"
 #define TACHYON_KDF_CLIENT_TX "Tachyon-Cli-TX"
 #define TACHYON_KDF_DEFAULT_PSK "Tachyon-Default-PSK"
+#define TACHYON_KDF_KEY_RATCHET "Tachyon-Key-Ratchet" /* Forward secrecy chain */
+#define TACHYON_KDF_DECOY_SEED "Tachyon-Decoy-Seed"   /* Decoy traffic keying  */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Event Types (perf event reporting from eBPF to userspace)
@@ -212,7 +234,7 @@ struct tachyon_ghost_hdr {
 struct tachyon_config {
     __u16 listen_port_net; /* UDP port in network byte order */
     __u8 mimicry_type;     /* TACHYON_MIMICRY_*              */
-    __u8 pad;
+    __u8 obfs_flags;       /* TACHYON_OBFS_* bitmask         */
 };
 
 /* Per-session state including replay protection window */

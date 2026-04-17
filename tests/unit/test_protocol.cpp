@@ -285,3 +285,40 @@ TEST(RoleCompareTest, SymmetricResults) {
     EXPECT_EQ(r1, 0);
     EXPECT_EQ(r2, 1);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Traffic Obfuscation Constants
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+TEST(ObfuscationTest, FlagBitsAreDistinct) {
+    EXPECT_EQ(TACHYON_OBFS_TTL_JITTER & TACHYON_OBFS_IPID_RAND, 0);
+    EXPECT_EQ(TACHYON_OBFS_IPID_RAND & TACHYON_OBFS_DF_VARY, 0);
+    EXPECT_EQ(TACHYON_OBFS_DF_VARY & TACHYON_OBFS_DSCP_STRIP, 0);
+    EXPECT_EQ(TACHYON_OBFS_DSCP_STRIP & TACHYON_OBFS_CONST_PAD, 0);
+    EXPECT_EQ(TACHYON_OBFS_CONST_PAD & TACHYON_OBFS_DECOY, 0);
+}
+
+TEST(ObfuscationTest, AllFlagsCoverFullMask) {
+    uint8_t combined = TACHYON_OBFS_TTL_JITTER | TACHYON_OBFS_IPID_RAND | TACHYON_OBFS_DF_VARY |
+                       TACHYON_OBFS_DSCP_STRIP | TACHYON_OBFS_CONST_PAD | TACHYON_OBFS_DECOY;
+    EXPECT_EQ(combined, TACHYON_OBFS_ALL);
+}
+
+TEST(ObfuscationTest, ConfigStructPreservesObfsField) {
+    EXPECT_EQ(sizeof(struct tachyon_config), 4u);
+    struct tachyon_config cfg = {};
+    cfg.obfs_flags = TACHYON_OBFS_ALL;
+    EXPECT_EQ(cfg.obfs_flags, TACHYON_OBFS_ALL);
+}
+
+TEST(ObfuscationTest, DecoyTimingConstants) {
+    EXPECT_GT(TACHYON_DECOY_BASE, 0);
+    EXPECT_GT(TACHYON_DECOY_JITTER, 0);
+    EXPECT_GT(TACHYON_KEY_RATCHET_INTERVAL, TACHYON_REKEY_INTERVAL);
+}
+
+TEST(ObfuscationTest, KdfRatchetLabelsDistinct) {
+    EXPECT_NE(std::string(TACHYON_KDF_KEY_RATCHET), std::string(TACHYON_KDF_DECOY_SEED));
+    EXPECT_NE(std::string(TACHYON_KDF_KEY_RATCHET), std::string(TACHYON_KDF_SESSION_MASTER));
+    EXPECT_NE(std::string(TACHYON_KDF_DECOY_SEED), std::string(TACHYON_KDF_CP_AEAD));
+}

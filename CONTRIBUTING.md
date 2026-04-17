@@ -45,7 +45,7 @@ Pre-commit hooks will enforce formatting automatically if installed.
 
 All changes must pass:
 
-1. **Unit tests** (`make test-unit`) -- 186+ tests, no root required
+1. **Unit tests** (`make test-unit`) -- 192+ tests, no root required
 2. **Lint checks** (`make lint`) -- clang-format, cppcheck, shellcheck
 3. **CI pipeline** -- GitHub Actions runs 8 parallel checks automatically
 
@@ -53,13 +53,16 @@ All changes must pass:
 
 ```bash
 # Core (required before every PR)
-make test-unit        # Unit tests (gtest, ~186 tests)
+make test-unit        # Unit tests (gtest, ~192 tests)
 make format-check     # Dry-run format verification
 
 # Memory safety (recommended)
 make test-sanitize    # AddressSanitizer + UndefinedBehaviorSanitizer
 make test-tsan        # ThreadSanitizer (data-race detection)
 make test-valgrind    # Valgrind memcheck (requires valgrind)
+
+# Fuzzing (requires clang)
+make test-fuzz        # Quick 30s fuzz run (config parser + crypto)
 
 # Coverage (optional)
 make coverage         # HTML coverage report at build/coverage/html/

@@ -17,7 +17,7 @@
 .PHONY: all kmod xdp loader clean install uninstall \
         install-dkms remove-dkms install-module remove-module \
         test test-unit test-xdp test-integration test-all \
-        test-sanitize test-tsan test-valgrind benchmark \
+        test-sanitize test-tsan test-valgrind test-fuzz benchmark \
         lint format format-check coverage \
         purge help
 
@@ -321,6 +321,24 @@ test-integration:
 	@sudo tests/integration/test_key_rotation.sh
 	@sudo tests/integration/test_dpd.sh
 
+test-fuzz:
+	@echo "\n[FUZZ] Building fuzz harnesses (requires clang)..."
+	@cmake -B build/fuzz -S tests \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_C_COMPILER=clang-18 \
+		-DCMAKE_CXX_COMPILER=clang++-18 \
+		-DBUILD_FUZZ_TESTS=ON \
+		-DBUILD_XDP_TESTS=OFF \
+		-G "Unix Makefiles" > /dev/null 2>&1
+	@cmake --build build/fuzz --target fuzz_config_parser fuzz_crypto -j$$(nproc) > /dev/null 2>&1
+	@echo "[FUZZ] Running config parser fuzzer (30s)..."
+	@build/fuzz/fuzz_config_parser tests/fuzz/corpus/config/ \
+		-max_total_time=30 -print_final_stats=1 2>&1 | tail -5
+	@echo "[FUZZ] Running crypto fuzzer (30s)..."
+	@build/fuzz/fuzz_crypto \
+		-max_total_time=30 -print_final_stats=1 2>&1 | tail -5
+	@echo "[FUZZ] Quick fuzz complete."
+
 test-all: test-unit test-sanitize test-tsan test-valgrind test-xdp test-integration
 	@echo "\n[TEST] All test tiers complete."
 
@@ -363,6 +381,7 @@ help:
 	@echo "  test-tsan        Build and run with ThreadSanitizer"
 	@echo "  test-valgrind    Build and run under valgrind memcheck"
 	@echo "  benchmark        Run Google Benchmark crypto harnesses"
+	@echo "  test-fuzz        Quick 30s fuzz run (config parser + crypto, requires clang)"
 	@echo "  test-xdp         Run XDP/BPF tests (requires root)"
 	@echo "  test-integration Run integration tests (requires root)"
 	@echo "  test-all         Run all test tiers"

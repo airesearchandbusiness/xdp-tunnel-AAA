@@ -72,7 +72,7 @@
 struct userspace_config {
     uint16_t listen_port_net;
     uint8_t mimicry_type;
-    uint8_t pad;
+    uint8_t obfs_flags; /* TACHYON_OBFS_* bitmask */
 };
 
 struct userspace_session {
@@ -185,6 +185,7 @@ struct TunnelConfig {
     int listen_port = TACHYON_DEFAULT_PORT;
     int mimicry_type = TACHYON_MIMICRY_QUIC;
     bool encryption = true;
+    uint8_t obfs_flags = TACHYON_OBFS_ALL; /* Traffic obfuscation bitmask    */
 
     /* ── v5 "Ghost-PQ" policy ───────────────────────────────────────────────
      * These are off by default so v4 configs keep working unchanged. They are
