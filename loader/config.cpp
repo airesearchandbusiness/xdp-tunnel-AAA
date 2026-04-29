@@ -4,7 +4,6 @@
  */
 
 #include "tachyon.h"
-#include "autoconf.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Tunnel Name Validation
@@ -151,110 +150,46 @@ TunnelConfig parse_config(const std::string &filename) {
         }
     }
 
-    /* CipherType: select AEAD cipher for the data plane.
-     * Accepts symbolic names or numeric values (0/1/2). */
-    std::string cipher_str = get_val(kv, "CipherType");
-    if (!cipher_str.empty()) {
-        if (cipher_str == "chacha20" || cipher_str == "ChaCha20" || cipher_str == "0")
-            cfg.cipher_type = TACHYON_CIPHER_CHACHA20;
-        else if (cipher_str == "aes128gcm" || cipher_str == "AES-128-GCM" || cipher_str == "1")
-            cfg.cipher_type = TACHYON_CIPHER_AES128GCM;
-        else if (cipher_str == "aes256gcm" || cipher_str == "AES-256-GCM" || cipher_str == "2")
-            cfg.cipher_type = TACHYON_CIPHER_AES256GCM;
-        else
-            LOG_WARN("Unknown CipherType '%s', using default ChaCha20-Poly1305", cipher_str.c_str());
-    }
+    /* ── v5 "Ghost-PQ" policy knobs ─────────────────────────────────── */
+    auto set_if = [&](std::string &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (!v.empty()) dst = v;
+    };
+    set_if(cfg.pqc_mode, "Pqc");
+    set_if(cfg.obfuscation, "Obfuscation");
+    set_if(cfg.obfuscation_sni, "ObfuscationSNI");
+    set_if(cfg.padding, "Padding");
 
-    /* PortRotationInterval: rotate local UDP source port every N seconds.
-     * 0 = disabled (default). Helps defeat session correlation by source port. */
-    std::string prot_str = get_val(kv, "PortRotationInterval");
-    if (!prot_str.empty()) {
+    auto set_uint_if = [&](uint32_t &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (v.empty()) return;
         try {
-            long val = std::stol(prot_str);
-            if (val >= 0)
-                cfg.port_rotation_interval = static_cast<uint32_t>(val);
-            else
-                LOG_WARN("PortRotationInterval must be >= 0, using 0 (disabled)");
-        } catch (const std::exception &) {
-            LOG_WARN("Invalid PortRotationInterval '%s', using 0 (disabled)", prot_str.c_str());
-        }
-    }
-
-    /* AutoConfig: detect hardware capabilities and override cipher_type / MTU.
-     * Set to 'true' to enable. Explicit CipherType in config takes precedence. */
-    std::string auto_str = get_val(kv, "AutoConfig");
-    if (auto_str == "true" || auto_str == "1" || auto_str == "yes") {
-        cfg.auto_config = true;
-        /* Only auto-select cipher if the user did not specify CipherType */
-        if (cipher_str.empty()) {
-            AutoDetectedConfig hw = probe_hardware(cfg.physical_interface);
-            cfg.cipher_type = hw.cipher_type;
-        }
-    }
-
-    /* v5 Ghost-PQ knobs */
-    std::string pqc_str = get_val(kv, "Pqc");
-    if (!pqc_str.empty())
-        cfg.pqc_mode = pqc_str;
-
-    std::string obfs2_str = get_val(kv, "Obfuscation");
-    if (!obfs2_str.empty())
-        cfg.obfuscation = obfs2_str;
-
-    std::string sni_str = get_val(kv, "ObfuscationSNI");
-    if (!sni_str.empty())
-        cfg.obfuscation_sni = sni_str;
-
-    std::string pad_str = get_val(kv, "Padding");
-    if (!pad_str.empty())
-        cfg.padding = pad_str;
-
-    std::string cr_str = get_val(kv, "CoverRateHz");
-    if (!cr_str.empty()) {
-        try { cfg.cover_rate_hz = static_cast<uint32_t>(std::stoul(cr_str)); }
-        catch (...) {}
-    }
-
-    std::string ph_str = get_val(kv, "PortHopSeconds");
-    if (!ph_str.empty()) {
-        try {
-            unsigned long v = std::stoul(ph_str);
-            if (v <= 65535)
-                cfg.port_hop_seconds = static_cast<uint32_t>(v);
-            else
-                LOG_WARN("PortHopSeconds %lu out of range [0,65535], ignoring", v);
+            long n = std::stol(v);
+            if (n >= 0 && n <= 65535) dst = static_cast<uint32_t>(n);
         } catch (...) {}
-    }
+    };
+    set_uint_if(cfg.cover_rate_hz, "CoverRateHz");
+    set_uint_if(cfg.port_hop_seconds, "PortHopSeconds");
 
-    std::string ttl_str = get_val(kv, "TTLRandom");
-    if (!ttl_str.empty())
-        cfg.ttl_random = (ttl_str == "true" || ttl_str == "1" || ttl_str == "yes");
+    auto set_bool_if = [&](bool &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (v == "true" || v == "1" || v == "yes" || v == "on") dst = true;
+        else if (v == "false" || v == "0" || v == "no" || v == "off") dst = false;
+    };
+    set_bool_if(cfg.ttl_random, "TTLRandom");
+    set_bool_if(cfg.mac_random, "MACRandom");
 
-    std::string mac_str = get_val(kv, "MACRandom");
-    if (!mac_str.empty())
-        cfg.mac_random = (mac_str == "true" || mac_str == "1" || mac_str == "yes");
-
-    /* ── Phase 23 advanced knobs ─────────────────────────────────────────
-     * ReplayWindowSize: sliding window bits for userspace CP replay detector.
-     * Must be a multiple of 64 in [64, 65536]. Default 4096 (512 bytes). */
+    /* ── Phase 23 advanced knobs ───────────────────────────────────────── */
     std::string rws_str = get_val(kv, "ReplayWindowSize");
     if (!rws_str.empty()) {
         try {
             unsigned long v = std::stoul(rws_str);
             if (v >= 64 && v <= 65536 && (v % 64) == 0)
                 cfg.replay_window_size = static_cast<uint32_t>(v);
-            else
-                LOG_WARN("ReplayWindowSize %lu invalid (must be multiple of 64 in [64,65536])", v);
-        } catch (...) {
-            LOG_WARN("Invalid ReplayWindowSize '%s', using default %u",
-                     rws_str.c_str(), cfg.replay_window_size);
-        }
+        } catch (...) {}
     }
 
-    /* MetricsEnabled / MetricsPort: Prometheus text-format HTTP exporter. */
-    std::string me_str = get_val(kv, "MetricsEnabled");
-    if (me_str == "true" || me_str == "1" || me_str == "yes")
-        cfg.metrics_enabled = true;
+    set_bool_if(cfg.metrics_enabled, "MetricsEnabled");
 
     std::string mp_str = get_val(kv, "MetricsPort");
     if (!mp_str.empty()) {
@@ -262,42 +197,26 @@ TunnelConfig parse_config(const std::string &filename) {
             unsigned long v = std::stoul(mp_str);
             if (v >= 1024 && v <= 65535)
                 cfg.metrics_port = static_cast<uint16_t>(v);
-            else
-                LOG_WARN("MetricsPort %lu out of range [1024,65535], using %u",
-                         v, cfg.metrics_port);
         } catch (...) {}
     }
 
-    /* TrafficShapingPPS: constant-rate Traffic Flow Shaping packets/sec (0=off). */
     std::string tpps_str = get_val(kv, "TrafficShapingPPS");
     if (!tpps_str.empty()) {
-        try {
-            unsigned long v = std::stoul(tpps_str);
-            cfg.tfs_pps = static_cast<uint32_t>(v);
-        } catch (...) {
-            LOG_WARN("Invalid TrafficShapingPPS '%s', disabling TFS", tpps_str.c_str());
-        }
+        try { cfg.tfs_pps = static_cast<uint32_t>(std::stoul(tpps_str)); }
+        catch (...) {}
     }
 
-    /* TrafficShapingPktLen: fixed output packet length for TFS (bytes). */
     std::string tlen_str = get_val(kv, "TrafficShapingPktLen");
     if (!tlen_str.empty()) {
         try {
             unsigned long v = std::stoul(tlen_str);
             if (v >= 64 && v <= 1500)
                 cfg.tfs_pkt_len = static_cast<uint16_t>(v);
-            else
-                LOG_WARN("TrafficShapingPktLen %lu out of range [64,1500]", v);
         } catch (...) {}
     }
 
-    /* MultiPath: enable multi-interface failover. */
-    std::string mpe_str = get_val(kv, "MultiPathEnabled");
-    if (mpe_str == "true" || mpe_str == "1" || mpe_str == "yes")
-        cfg.multipath_enabled = true;
+    set_bool_if(cfg.multipath_enabled, "MultiPathEnabled");
 
-    /* MultiPathInterfaces: comma-separated list of additional physical interfaces
-     * (e.g. "eth1,wlan0"). The primary interface is always PhysicalInterface. */
     std::string mpi_str = get_val(kv, "MultiPathInterfaces");
     if (!mpi_str.empty()) {
         std::istringstream ss(mpi_str);

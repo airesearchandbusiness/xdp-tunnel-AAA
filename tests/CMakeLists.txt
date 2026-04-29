@@ -113,7 +113,6 @@ endif()
 add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/crypto.cpp
     ${PROJECT_ROOT}/loader/config.cpp
-    ${PROJECT_ROOT}/loader/autoconf.cpp
     ${PROJECT_ROOT}/loader/padding.cpp
     ${PROJECT_ROOT}/loader/fingerprint.cpp
     ${PROJECT_ROOT}/loader/obfs.cpp
@@ -123,8 +122,14 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/ratchet.cpp
     ${PROJECT_ROOT}/loader/transcript.cpp
     ${PROJECT_ROOT}/loader/replay.cpp
-    ${PROJECT_ROOT}/loader/multipath.cpp
+    ${PROJECT_ROOT}/loader/transport.cpp
+    ${PROJECT_ROOT}/loader/quic_mimic.cpp
+    ${PROJECT_ROOT}/loader/http2_mimic.cpp
+    ${PROJECT_ROOT}/loader/doh_mimic.cpp
+    ${PROJECT_ROOT}/loader/stun_mimic.cpp
     ${PROJECT_ROOT}/loader/metrics.cpp
+    ${PROJECT_ROOT}/loader/rate_limiter.cpp
+    ${PROJECT_ROOT}/loader/multipath.cpp
 )
 
 target_include_directories(tachyon_core PUBLIC
@@ -175,7 +180,11 @@ add_tachyon_test(test_replay      unit/test_replay.cpp)
 add_tachyon_test(test_transcript  unit/test_transcript.cpp)
 add_tachyon_test(test_ratchet     unit/test_ratchet.cpp)
 add_tachyon_test(test_hybrid_kex  unit/test_hybrid_kex.cpp)
-add_tachyon_test(test_advanced    unit/test_advanced.cpp)
+add_tachyon_test(test_transport    unit/test_transport.cpp)
+add_tachyon_test(test_wire_v5     unit/test_wire_v5.cpp)
+add_tachyon_test(test_metrics     unit/test_metrics.cpp)
+add_tachyon_test(test_rate_limiter unit/test_rate_limiter.cpp)
+add_tachyon_test(test_integration_v5 unit/test_integration_v5.cpp)
 add_tachyon_test(test_phase23    unit/test_phase23.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──

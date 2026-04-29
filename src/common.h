@@ -42,7 +42,8 @@ typedef int32_t __s32;
 /* ──────────────────────────────────────────────────────────────────────────
  * Protocol Version & Identity
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_PROTO_VERSION 4 /* AKE v4.0                      */
+#define TACHYON_PROTO_VERSION 5 /* AKE v5.0 "Ghost-PQ"           */
+#define TACHYON_PROTO_VERSION_V4 4 /* Legacy v4 for compat flag   */
 #define TACHYON_MODULE_NAME "tachyon-crypto"
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -413,6 +414,83 @@ struct tachyon_msg_cipher_ack {
 } __attribute__((packed));
 
 /* ──────────────────────────────────────────────────────────────────────────
+ * v5 "Ghost-PQ" Wire-Format Structures
+ *
+ * These extend the v4 control-plane messages with post-quantum hybrid
+ * key exchange (X25519 ‖ ML-KEM-768), transport-ID negotiation, and
+ * forward-secrecy ratchet counter. Wire compatibility with v4 is
+ * maintained through the magic field: v4 peers see an unknown magic and
+ * drop; v5 peers accept both TCH4 and TCH5 magic values.
+ *
+ * Size targets (packed, no padding):
+ *   MsgInitV5   = 1260 bytes   (magic4 + version + flags + x25519_pk32 +
+ *                                mlkem_pk1184 + nonce16 + timestamp8 + cookie16)
+ *   MsgCookieV5 = 1168 bytes   (magic4 + x25519_pk32 + mlkem_ct1088 +
+ *                                transport1 + cookie16 + hmac32)
+ *   MsgDataV5   = 28 bytes hdr (flags1 + transport1 + session_id4 + seq8 +
+ *                                nonce_salt4 + ratchet_ctr8 + pad2)
+ * ────────────────────────────────────────────────────────────────────────── */
+#define TACHYON_V5_MAGIC     0x54434835 /* "TCH5" in big-endian       */
+#define TACHYON_V4_MAGIC     0x54434834 /* "TCH4" for compat detect   */
+
+/* v5 handshake flags (bit field in MsgInitV5.flags) */
+#define TACHYON_V5_FLAG_PQ_HYBRID   0x01 /* ML-KEM-768 present in pk  */
+#define TACHYON_V5_FLAG_CLASSICAL   0x02 /* X25519-only (fallback)    */
+#define TACHYON_V5_FLAG_REKEY       0x04 /* Rekey of existing session */
+#define TACHYON_V5_FLAG_TRANSPORT   0x08 /* Transport ID negotiation  */
+
+/* ML-KEM-768 sizes (FIPS 203) */
+#define TACHYON_MLKEM768_PK_LEN   1184
+#define TACHYON_MLKEM768_SK_LEN   2400
+#define TACHYON_MLKEM768_CT_LEN   1088
+#define TACHYON_MLKEM768_SS_LEN   32
+
+/* HKDF-SHA384 PRK width for the v5 combiner */
+#define TACHYON_V5_PRK_LEN        48
+
+/* v5 KDF labels */
+#define TACHYON_V5_KDF_LABEL_MASTER "tch5 master v5"
+#define TACHYON_V5_KDF_LABEL_TX_KEY "tch5 tx-key"
+#define TACHYON_V5_KDF_LABEL_RX_KEY "tch5 rx-key"
+#define TACHYON_V5_KDF_LABEL_MAC    "tch5 mac-key"
+
+/* PKT_INIT v5: Hybrid handshake initiation (1260 bytes) */
+struct tachyon_msg_init_v5 {
+    __u32 magic;           /* TACHYON_V5_MAGIC               */
+    __u8  version;         /* 5                              */
+    __u8  flags;           /* TACHYON_V5_FLAG_*              */
+    __u8  transport_id;    /* Preferred transport (TransportId) */
+    __u8  _reserved;
+    __u8  client_x25519_pk[32];
+    __u8  client_mlkem768_pk[1184];
+    __u8  nonce[16];
+    __u8  timestamp_be[8]; /* Milliseconds since epoch, BE   */
+    __u8  cookie[16];      /* 0 for initial, echoed on retry */
+} __attribute__((packed));
+
+/* PKT_COOKIE v5: Server's KEM ciphertext + cookie (1168 bytes) */
+struct tachyon_msg_cookie_v5 {
+    __u32 magic;            /* TACHYON_V5_MAGIC              */
+    __u8  server_x25519_pk[32];
+    __u8  mlkem768_ct[1088]; /* Server encaps to client's KEM pk */
+    __u8  transport_id;     /* Server's accepted transport    */
+    __u8  _reserved[3];
+    __u8  cookie[16];       /* HMAC(cookie_secret, ...)       */
+    __u8  hmac[32];         /* HMAC-SHA256 over preceding     */
+} __attribute__((packed));
+
+/* Data-plane header for v5 (28 bytes, replaces ghost_hdr for v5 sessions) */
+struct tachyon_data_hdr_v5 {
+    __u8  flags;           /* High nibble = type; low = transport */
+    __u8  transport_id;    /* Active transport (for outer framing) */
+    __u16 _reserved;
+    __u32 session_id;      /* Network byte order              */
+    __u64 seq;             /* Per-CPU partitioned sequence     */
+    __u32 nonce_salt;      /* Per-packet IV component          */
+    __u64 ratchet_ctr;     /* Forward-secrecy ratchet counter  */
+} __attribute__((packed));
+
+/* ──────────────────────────────────────────────────────────────────────────
  * BPF Map Index Constants
  * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_TXPORT_VETH 0 /* tx_port[0] = virtual interface */
@@ -479,6 +557,18 @@ TACHYON_SASSERT(sizeof(struct tachyon_msg_cipher_neg) == 20,
                 "tachyon_msg_cipher_neg must be 20 bytes on the wire");
 TACHYON_SASSERT(sizeof(struct tachyon_msg_cipher_ack) == 20,
                 "tachyon_msg_cipher_ack must be 20 bytes on the wire");
+
+/* v5 "Ghost-PQ" control-plane messages */
+TACHYON_SASSERT(sizeof(struct tachyon_msg_init_v5) == 1264,
+                "tachyon_msg_init_v5 must be 1264 bytes");
+TACHYON_SASSERT(sizeof(struct tachyon_msg_cookie_v5) == 1176,
+                "tachyon_msg_cookie_v5 must be 1176 bytes (4+32+1088+1+3+16+32)");
+TACHYON_SASSERT(sizeof(struct tachyon_data_hdr_v5) == 28,
+                "tachyon_data_hdr_v5 must be 28 bytes (1+1+2+4+8+4+8)");
+
+/* v5 constant sanity */
+TACHYON_SASSERT(TACHYON_MLKEM768_PK_LEN == 1184, "ML-KEM-768 pk must be 1184 bytes (FIPS 203)");
+TACHYON_SASSERT(TACHYON_MLKEM768_CT_LEN == 1088, "ML-KEM-768 ct must be 1088 bytes (FIPS 203)");
 
 /* Constant relationships */
 TACHYON_SASSERT(TACHYON_OUTER_HDR_LEN == 62, "outer header sum must be 62 bytes (14+20+8+20)");

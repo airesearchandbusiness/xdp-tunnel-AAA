@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "obfs.h"
+#include "transport.h"
 
 #include <cstring>
 #include <openssl/rand.h>
@@ -396,5 +397,116 @@ int parse_client_hello_sni(const uint8_t *p, size_t len, char *out, size_t out_c
     }
     return -2;
 }
+
+/* ── REALITY transport engine ──────────────────────────────────────────
+ * Wraps control-plane payloads in TLS 1.3 record framing:
+ *   seq==0: full ClientHello (DPI sees a legitimate browser handshake)
+ *   seq>0:  TLS Application Data record (ContentType 0x17, 5-byte hdr)
+ * Unwrap: detect ContentType byte and strip the record header.
+ */
+
+static constexpr size_t TLS_RECORD_HDR = 5;
+static constexpr uint8_t TLS_CT_HANDSHAKE = 0x16;
+static constexpr uint8_t TLS_CT_APPLICATION_DATA = 0x17;
+
+static tachyon::transport::FrameResult
+reality_wrap(const uint8_t *payload, size_t payload_len, uint8_t *out, size_t out_cap,
+             const tachyon::transport::FrameContext *ctx) {
+    using tachyon::transport::FrameResult;
+    if (!payload || !out || !ctx)
+        return {0, false};
+
+    if (ctx->seq == 0) {
+        /* First frame: emit a full TLS 1.3 ClientHello followed by payload
+         * embedded in a TLS Application Data record. DPI sees a handshake
+         * initiation followed by encrypted data — exactly what a real
+         * TLS 1.3 connection looks like. */
+        uint8_t cr[32], sid[32];
+        RAND_bytes(cr, 32);
+        RAND_bytes(sid, 32);
+        Options opts{};
+        opts.sni = ctx->sni ? ctx->sni : "www.microsoft.com";
+        opts.client_random = cr;
+        opts.session_id = sid;
+        opts.alpn_list = reinterpret_cast<const uint8_t *>("\x02h2\x08http/1.1");
+        opts.alpn_list_len = 12;
+
+        const size_t ch_len = build_client_hello(out, out_cap, opts);
+        if (ch_len == 0)
+            return {0, false};
+
+        /* Append payload as Application Data record */
+        if (ch_len + TLS_RECORD_HDR + payload_len > out_cap)
+            return {0, false};
+        out[ch_len]     = TLS_CT_APPLICATION_DATA;
+        out[ch_len + 1] = 0x03;
+        out[ch_len + 2] = 0x03;
+        out[ch_len + 3] = static_cast<uint8_t>(payload_len >> 8);
+        out[ch_len + 4] = static_cast<uint8_t>(payload_len & 0xFF);
+        memcpy(out + ch_len + TLS_RECORD_HDR, payload, payload_len);
+        return {ch_len + TLS_RECORD_HDR + payload_len, true};
+    }
+
+    /* Subsequent frames: TLS Application Data record only */
+    if (TLS_RECORD_HDR + payload_len > out_cap || payload_len > 16384)
+        return {0, false};
+    out[0] = TLS_CT_APPLICATION_DATA;
+    out[1] = 0x03;
+    out[2] = 0x03;
+    out[3] = static_cast<uint8_t>(payload_len >> 8);
+    out[4] = static_cast<uint8_t>(payload_len & 0xFF);
+    memcpy(out + TLS_RECORD_HDR, payload, payload_len);
+    return {TLS_RECORD_HDR + payload_len, true};
+}
+
+static tachyon::transport::FrameResult
+reality_unwrap(const uint8_t *frame, size_t frame_len, uint8_t *out, size_t out_cap) {
+    using tachyon::transport::FrameResult;
+    if (frame_len < TLS_RECORD_HDR)
+        return {0, false};
+
+    const uint8_t *p = frame;
+    const uint8_t *end = frame + frame_len;
+
+    /* Skip past any handshake records to find Application Data */
+    while (p + TLS_RECORD_HDR <= end) {
+        const uint8_t ct = p[0];
+        const size_t rec_len = (static_cast<size_t>(p[3]) << 8) | p[4];
+        if (ct == TLS_CT_APPLICATION_DATA) {
+            if (p + TLS_RECORD_HDR + rec_len > end)
+                return {0, false};
+            if (rec_len > out_cap)
+                return {0, false};
+            memcpy(out, p + TLS_RECORD_HDR, rec_len);
+            return {rec_len, true};
+        }
+        if (ct == TLS_CT_HANDSHAKE) {
+            p += TLS_RECORD_HDR + rec_len;
+            continue;
+        }
+        return {0, false}; /* unknown content type */
+    }
+    return {0, false};
+}
+
+static int reality_score(const tachyon::transport::EnvProfile &env) {
+    int s = 55;
+    if (env.port == 443 || env.port == 8443) s += 25;
+    if (env.region == tachyon::transport::RegionHint::RESTRICTIVE) s += 20;
+    if (env.bandwidth == tachyon::transport::BandwidthTier::HIGH) s += 5;
+    return s;
+}
+
+static const tachyon::transport::TransportOps reality_ops = {
+    tachyon::transport::TransportId::REALITY,
+    "reality",
+    TLS_RECORD_HDR,
+    16384,
+    reality_wrap,
+    reality_unwrap,
+    reality_score,
+};
+
+void register_reality_transport() { tachyon::transport::transport_register(&reality_ops); }
 
 } /* namespace tachyon::obfs */

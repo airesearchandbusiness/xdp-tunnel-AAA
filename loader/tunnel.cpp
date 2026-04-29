@@ -9,6 +9,16 @@
 #include "tachyon.h"
 #include <cerrno>
 
+#include "transport.h"
+#include "quic_mimic.h"
+#include "http2_mimic.h"
+#include "doh_mimic.h"
+#include "stun_mimic.h"
+#include "obfs.h"
+#include "padding.h"
+#include "fingerprint.h"
+#include "metrics.h"
+
 static void sig_handler(int) {
     g_exiting = 1;
 }
@@ -201,6 +211,45 @@ void command_up(const std::string &conf_file) {
     /* Install signal handlers and run control plane */
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
+
+    /* ── v5: register transport engines and resolve from config ────── */
+    tachyon::quic_mimic::register_transport();
+    tachyon::http2_mimic::register_transport();
+    tachyon::doh_mimic::register_transport();
+    tachyon::stun_mimic::register_transport();
+    tachyon::obfs::register_reality_transport();
+
+    {
+        using namespace tachyon::transport;
+        TransportId tid = transport_id_from_string(cfg.obfuscation.c_str());
+        if (tid == TransportId::AUTO) {
+            EnvProfile env{};
+            env.port      = static_cast<uint16_t>(cfg.listen_port);
+            env.udp       = true;
+            env.bandwidth = BandwidthTier::MEDIUM;
+            env.region    = RegionHint::OPEN;
+            env.sni_hint  = cfg.obfuscation_sni.c_str();
+            tid = transport_auto_select(env);
+            LOG_INFO("Transport auto-selected: %s", transport_id_to_string(tid));
+        } else if (tid != TransportId::NONE) {
+            LOG_INFO("Transport configured: %s", transport_id_to_string(tid));
+        }
+        cfg.resolved_transport_id = static_cast<uint8_t>(tid);
+    }
+
+    /* ── v5: apply MAC randomization at tunnel startup ─────────────── */
+    if (cfg.mac_random) {
+        uint8_t rand_mac[6];
+        tachyon::fp::random_locally_admin_mac(rand_mac);
+        char mac_str[18];
+        snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+                 rand_mac[0], rand_mac[1], rand_mac[2],
+                 rand_mac[3], rand_mac[4], rand_mac[5]);
+        run_cmd("ip link set " + v_out + " address " + mac_str, /*quiet=*/true);
+        LOG_INFO("MAC randomized to %s", mac_str);
+    }
+
+    tachyon::metrics::reset();
 
     uint32_t peer_ip_net = sess.peer_ip;
     uint32_t local_ip_net = sess.local_ip;

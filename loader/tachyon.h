@@ -24,7 +24,6 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <algorithm>
 
 /* ── System ── */
 #include <unistd.h>
@@ -168,25 +167,23 @@ struct MsgKeepalive {
     uint8_t ciphertext[TACHYON_AEAD_TAG_LEN + TACHYON_AEAD_TAG_LEN];
 };
 
-/* Mid-session cipher renegotiation proposal (24 bytes) */
 struct MsgCipherNeg {
-    uint8_t  flags;           /* TACHYON_PKT_CIPHER_NEG */
-    uint8_t  proposed_cipher; /* TACHYON_CIPHER_*       */
-    uint8_t  epoch;           /* Proposal counter       */
+    uint8_t  flags;
+    uint8_t  proposed_cipher;
+    uint8_t  epoch;
     uint8_t  _pad;
     uint32_t session_id;
     uint64_t nonce;
     uint8_t  mac[4];
 };
 
-/* Cipher renegotiation acknowledgment (24 bytes) */
 struct MsgCipherAck {
-    uint8_t  flags;           /* TACHYON_PKT_CIPHER_ACK */
-    uint8_t  selected_cipher; /* Agreed cipher          */
-    uint8_t  epoch;           /* Echo of proposal epoch */
+    uint8_t  flags;
+    uint8_t  selected_cipher;
+    uint8_t  epoch;
     uint8_t  _pad;
     uint32_t session_id;
-    uint64_t nonce;           /* Echo of proposal nonce */
+    uint64_t nonce;
     uint8_t  mac[4];
 };
 
@@ -210,13 +207,13 @@ struct TunnelConfig {
     int listen_port = TACHYON_DEFAULT_PORT;
     int mimicry_type = TACHYON_MIMICRY_QUIC;
     bool encryption = true;
-    uint8_t obfs_flags = TACHYON_OBFS_ALL;         /* Traffic obfuscation bitmask    */
-    uint8_t cipher_type = TACHYON_CIPHER_CHACHA20;  /* AEAD cipher for data plane     */
-    bool auto_config = false;                       /* Auto-detect hardware settings  */
-    uint32_t port_rotation_interval = 0;            /* Source port rotation (0=off)   */
+    uint8_t obfs_flags = TACHYON_OBFS_ALL; /* Traffic obfuscation bitmask    */
 
     /* ── v5 "Ghost-PQ" policy ───────────────────────────────────────────────
-     * These are off by default so v4 configs keep working unchanged. */
+     * These are off by default so v4 configs keep working unchanged. They are
+     * parsed from the INI by config.cpp and consumed by network.cpp. Strings
+     * are stored raw; network.cpp maps them to the typed enums in
+     * padding.h / obfs.h via the *_from_string helpers. */
     std::string pqc_mode   = "classical"; /* classical | hybrid */
     std::string obfuscation = "none";     /* none | reality | quic */
     std::string obfuscation_sni = "www.microsoft.com";
@@ -226,14 +223,17 @@ struct TunnelConfig {
     bool ttl_random = false;
     bool mac_random = false;
 
+    /* Resolved at runtime by tunnel.cpp — not parsed from config */
+    uint8_t resolved_transport_id = 0;
+
     /* ── Phase 23 advanced extensions ──────────────────────────────────── */
-    uint32_t replay_window_size   = 4096; /* Sliding window bits (must be mult of 64) */
+    uint32_t replay_window_size   = 4096;
     bool     metrics_enabled      = false;
-    uint16_t metrics_port         = 9090; /* Prometheus exporter TCP port */
-    uint32_t tfs_pps              = 0;    /* Traffic Flow Shaping pps (0=off)         */
-    uint16_t tfs_pkt_len          = 1400; /* TFS fixed packet length (bytes)          */
+    uint16_t metrics_port         = 9090;
+    uint32_t tfs_pps              = 0;
+    uint16_t tfs_pkt_len          = 1400;
     bool     multipath_enabled    = false;
-    std::vector<std::string> multipath_interfaces; /* Additional physical interfaces   */
+    std::vector<std::string> multipath_interfaces;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -274,68 +274,7 @@ class NonceCache {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Adaptive Obfuscation Controller
- *
- * Monitors rate-limit drop counters and reduces heavyweight obfuscation
- * (constant-size padding, decoy chaff) when congestion is detected.
- * Restores full obfuscation once the link is clear.
- *
- * Designed to be called every ~5 seconds with current aggregate stats.
- * The caller is responsible for pushing updated obfs_flags to the BPF
- * config map when update() returns a changed value.
- * ══════════════════════════════════════════════════════════════════════════ */
-
-struct TunnelStats {
-    uint64_t tx_ratelimit_drops = 0;
-    uint64_t rx_ratelimit_data_drops = 0;
-};
-
-class AdaptiveObfsController {
-  public:
-    explicit AdaptiveObfsController(uint8_t initial_flags)
-        : base_flags_(initial_flags), active_flags_(initial_flags), prev_drops_(0) {}
-
-    /* Returns the current recommended obfs_flags.
-     * Call with fresh stats every ~5 seconds.
-     * Returns a new value only when it changes from the previous call. */
-    uint8_t update(const TunnelStats &stats) {
-        uint64_t total = stats.tx_ratelimit_drops + stats.rx_ratelimit_data_drops;
-        uint64_t delta = (total >= prev_drops_) ? (total - prev_drops_) : 0;
-        prev_drops_ = total;
-
-        if (delta > 10) {
-            /* Congestion detected: shed bandwidth-heavy obfuscation overhead */
-            active_flags_ &= static_cast<uint8_t>(~(TACHYON_OBFS_CONST_PAD | TACHYON_OBFS_DECOY));
-        } else if (delta == 0 && active_flags_ != base_flags_) {
-            /* Link clear: restore full obfuscation */
-            active_flags_ = base_flags_;
-        }
-        return active_flags_;
-    }
-
-    uint8_t active_flags() const { return active_flags_; }
-    uint8_t base_flags() const { return base_flags_; }
-
-  private:
-    uint8_t  base_flags_;
-    uint8_t  active_flags_;
-    uint64_t prev_drops_;
-};
-
-/* ══════════════════════════════════════════════════════════════════════════
- * Cipher Renegotiator
- *
- * Manages mid-session cipher negotiation without a full rekey.
- * Either peer may propose a cipher switch; the responder selects the
- * best mutually supported cipher and acknowledges.
- *
- * State machine:
- *   IDLE → propose() → PROPOSED → handle_ack() → COMMITTED → IDLE
- *   IDLE → handle_proposal() → send ACK (stateless, no state change)
- *
- * The epoch byte (0–255 wrapping) prevents replay of stale proposals.
- * The 4-byte truncated MAC authenticates proposals and ACKs with the
- * current cp_enc_key — forged messages are silently dropped.
+ * Cipher Renegotiator (Phase 23)
  * ══════════════════════════════════════════════════════════════════════════ */
 
 class CipherRenegotiator {
@@ -345,8 +284,6 @@ public:
     explicit CipherRenegotiator(uint8_t current_cipher = TACHYON_CIPHER_CHACHA20)
         : current_cipher_(current_cipher) {}
 
-    /* Build a proposal message. Sets state to PROPOSED.
-     * Returns the MsgCipherNeg to transmit (caller fills session_id). */
     MsgCipherNeg propose(uint32_t session_id, uint8_t new_cipher,
                          const uint8_t *cp_enc_key, size_t key_len) {
         MsgCipherNeg msg{};
@@ -354,44 +291,27 @@ public:
         msg.proposed_cipher = new_cipher;
         msg.epoch           = ++epoch_;
         msg.session_id      = session_id;
-
-        /* Fill nonce with a counter + session_id mix (good enough for MAC seed) */
         msg.nonce = (static_cast<uint64_t>(session_id) << 32) |
                     static_cast<uint64_t>(epoch_);
-
-        /* 4-byte truncated MAC: HMAC-SHA256 first 4 bytes of
-         * HMAC(cp_enc_key, flags‖proposed_cipher‖epoch‖session_id‖nonce).
-         * Simplified here as XOR-folded key material for header-only use. */
         compute_mac(cp_enc_key, key_len, &msg, msg.mac);
-
         pending_cipher_ = new_cipher;
         pending_nonce_  = msg.nonce;
         state_          = State::PROPOSED;
         return msg;
     }
 
-    /* Handle an incoming proposal from a peer. Selects the best cipher,
-     * validates the MAC, and returns the ACK to send (or a zeroed ACK
-     * with flags==0 on failure). Stateless: does not change our state. */
     MsgCipherAck handle_proposal(const MsgCipherNeg &msg, uint32_t session_id,
                                  uint8_t local_pref, const uint8_t *cp_enc_key,
                                  size_t key_len) {
         MsgCipherAck ack{};
-
-        if (msg.session_id != session_id)
-            return ack; /* session mismatch */
-
-        /* Validate truncated MAC */
+        if (msg.session_id != session_id) return ack;
         uint8_t expected[4];
         compute_mac(cp_enc_key, key_len, &msg, expected);
         if (expected[0] != msg.mac[0] || expected[1] != msg.mac[1] ||
             expected[2] != msg.mac[2] || expected[3] != msg.mac[3])
-            return ack; /* MAC mismatch — drop */
-
-        /* Select cipher: prefer peer's proposal unless out of range */
+            return ack;
         uint8_t sel = (msg.proposed_cipher <= TACHYON_CIPHER_MAX)
                       ? msg.proposed_cipher : local_pref;
-
         ack.flags           = TACHYON_PKT_CIPHER_ACK;
         ack.selected_cipher = sel;
         ack.epoch           = msg.epoch;
@@ -401,57 +321,39 @@ public:
         return ack;
     }
 
-    /* Handle an incoming ACK. Returns true when we should switch ciphers.
-     * out_cipher is set to the agreed cipher on success. */
     bool handle_ack(const MsgCipherAck &ack, uint8_t *out_cipher,
                     const uint8_t *cp_enc_key, size_t key_len) {
-        if (state_ != State::PROPOSED)
-            return false;
-        if (ack.epoch != epoch_ || ack.nonce != pending_nonce_)
-            return false;
-        if (ack.selected_cipher > TACHYON_CIPHER_MAX)
-            return false;
-
+        if (state_ != State::PROPOSED) return false;
+        if (ack.epoch != epoch_ || ack.nonce != pending_nonce_) return false;
+        if (ack.selected_cipher > TACHYON_CIPHER_MAX) return false;
         uint8_t expected[4];
         compute_mac(cp_enc_key, key_len, &ack, expected);
         if (expected[0] != ack.mac[0] || expected[1] != ack.mac[1] ||
             expected[2] != ack.mac[2] || expected[3] != ack.mac[3])
             return false;
-
         *out_cipher      = ack.selected_cipher;
         current_cipher_  = ack.selected_cipher;
-        pending_cipher_  = 0;
         state_           = State::COMMITTED;
         return true;
     }
 
-    /* Transition COMMITTED → IDLE after caller has applied the cipher change. */
     void commit_done() { state_ = State::IDLE; }
-
-    /* Cancel any pending proposal and return to IDLE. */
     void reset() { state_ = State::IDLE; pending_cipher_ = 0; }
-
-    State   state()           const { return state_; }
-    uint8_t current_cipher()  const { return current_cipher_; }
-    uint8_t pending_cipher()  const { return pending_cipher_; }
+    State   state()          const { return state_; }
+    uint8_t current_cipher() const { return current_cipher_; }
+    uint8_t pending_cipher() const { return pending_cipher_; }
 
 private:
-    /* 4-byte truncated HMAC: XOR fold the key over the message bytes.
-     * Not a full HMAC — sufficient for anti-replay; full AEAD protects data. */
     template<typename Msg>
     static void compute_mac(const uint8_t *key, size_t key_len,
-                             const Msg *msg, uint8_t out[4]) {
+                            const Msg *msg, uint8_t out[4]) {
         const uint8_t *b = reinterpret_cast<const uint8_t *>(msg);
-        /* Skip the last 4 bytes (the mac field itself) */
         const size_t msg_len = sizeof(Msg) - 4;
         uint8_t acc[4] = {0, 0, 0, 0};
-        for (size_t i = 0; i < msg_len; ++i)
-            acc[i & 3] ^= b[i];
+        for (size_t i = 0; i < msg_len; ++i) acc[i & 3] ^= b[i];
         if (key_len > 0)
-            for (size_t i = 0; i < 4; ++i)
-                acc[i] ^= key[i % key_len];
-        out[0] = acc[0]; out[1] = acc[1];
-        out[2] = acc[2]; out[3] = acc[3];
+            for (size_t i = 0; i < 4; ++i) acc[i] ^= key[i % key_len];
+        out[0] = acc[0]; out[1] = acc[1]; out[2] = acc[2]; out[3] = acc[3];
     }
 
     State   state_          = State::IDLE;
