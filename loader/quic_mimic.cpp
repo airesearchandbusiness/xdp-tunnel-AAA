@@ -88,12 +88,14 @@ size_t build_initial_header(uint8_t *out, size_t cap,
 
     /* DCID */
     out[off++] = dcid_len;
-    std::memcpy(out + off, dcid, dcid_len);
+    if (dcid && dcid_len > 0)
+        std::memcpy(out + off, dcid, dcid_len);
     off += dcid_len;
 
     /* SCID */
     out[off++] = scid_len;
-    std::memcpy(out + off, scid, scid_len);
+    if (scid && scid_len > 0)
+        std::memcpy(out + off, scid, scid_len);
     off += scid_len;
 
     /* Token Length (0) */
