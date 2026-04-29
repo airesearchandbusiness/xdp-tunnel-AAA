@@ -150,6 +150,35 @@ TunnelConfig parse_config(const std::string &filename) {
         }
     }
 
+    /* ── v5 "Ghost-PQ" policy knobs ─────────────────────────────────── */
+    auto set_if = [&](std::string &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (!v.empty()) dst = v;
+    };
+    set_if(cfg.pqc_mode, "Pqc");
+    set_if(cfg.obfuscation, "Obfuscation");
+    set_if(cfg.obfuscation_sni, "ObfuscationSNI");
+    set_if(cfg.padding, "Padding");
+
+    auto set_uint_if = [&](uint32_t &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (v.empty()) return;
+        try {
+            long n = std::stol(v);
+            if (n >= 0 && n <= 65535) dst = static_cast<uint32_t>(n);
+        } catch (...) {}
+    };
+    set_uint_if(cfg.cover_rate_hz, "CoverRateHz");
+    set_uint_if(cfg.port_hop_seconds, "PortHopSeconds");
+
+    auto set_bool_if = [&](bool &dst, const char *key) {
+        std::string v = get_val(kv, key);
+        if (v == "true" || v == "1" || v == "yes" || v == "on") dst = true;
+        else if (v == "false" || v == "0" || v == "no" || v == "off") dst = false;
+    };
+    set_bool_if(cfg.ttl_random, "TTLRandom");
+    set_bool_if(cfg.mac_random, "MACRandom");
+
     return cfg;
 }
 

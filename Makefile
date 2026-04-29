@@ -219,7 +219,11 @@ test-valgrind:
 		-G "Unix Makefiles" > /dev/null 2>&1
 	@cmake --build build/valgrind -j$$(nproc) > /dev/null 2>&1
 	@echo "\n[TEST] Running under valgrind memcheck..."
-	@for t in test_config test_crypto test_nonce_cache test_utils test_protocol; do \
+	@for t in test_config test_crypto test_nonce_cache test_utils test_protocol \
+		test_padding test_fingerprint test_obfs test_pqc test_secmem \
+		test_replay test_transcript test_ratchet test_hybrid_kex \
+		test_transport test_wire_v5 test_metrics test_rate_limiter \
+		test_integration_v5; do \
 		echo "  -> $$t"; \
 		valgrind --tool=memcheck --error-exitcode=1 \
 			--leak-check=full --show-leak-kinds=definite,indirect \

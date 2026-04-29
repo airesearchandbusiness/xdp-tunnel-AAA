@@ -15,6 +15,16 @@
 #include "tachyon.h"
 #include <cerrno>
 
+#include "transport.h"
+#include "padding.h"
+#include "fingerprint.h"
+#include "metrics.h"
+#include "rate_limiter.h"
+#include "replay.h"
+#include "ratchet.h"
+#include "transcript.h"
+#include "hybrid_kex.h"
+
 /* Monotonic clock for all internal timers (DPD, keepalive, rekey, cookie
  * rotation). Wall-clock time(nullptr) can jump backwards during NTP
  * adjustments, which would cause DPD false triggers, keepalive bursts,
@@ -33,55 +43,85 @@ static uint64_t monotonic_sec() {
  * Buffer overflow is prevented by clamping total_len to sizeof(buffer).
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static void send_mimic_quic(int sock, const void *msg, size_t msg_len, int type,
-                            const struct sockaddr_in *dest) {
-    uint8_t buffer[1500];
+/* ── v5: Unified framed send path ──────────────────────────────────────
+ * Routes every control-plane message through:
+ *   1. PADME size quantisation (if cfg.padding != "none")
+ *   2. Transport wrapping (QUIC/HTTP2/DoH/STUN or raw)
+ *   3. Rate limiting (token bucket)
+ *   4. Metrics accounting
+ * Falls back to raw sendto when transport=NONE (v4 compat).
+ */
+static tachyon::rl::TokenBucket g_cp_bucket;
+static bool g_cp_bucket_inited = false;
+static uint32_t g_frame_seq = 0;
 
-    if (msg_len > sizeof(buffer)) {
-        LOG_ERR("Message too large for QUIC mimicry buffer (%zu)", msg_len);
+static uint64_t monotonic_ns() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000ULL + static_cast<uint64_t>(ts.tv_nsec);
+}
+
+static void send_framed(int sock, const void *msg, size_t msg_len,
+                        int /* type — reserved for future per-type logic */,
+                        const struct sockaddr_in *dest, const TunnelConfig &cfg) {
+    using namespace tachyon::transport;
+    using namespace tachyon::padding;
+    auto &met = tachyon::metrics::global();
+
+    /* Rate limiter — 50 KB/s default for control plane, unlimited if 0 */
+    if (!g_cp_bucket_inited) {
+        tachyon::rl::bucket_init(g_cp_bucket, 50000, 100000, monotonic_ns());
+        g_cp_bucket_inited = true;
+    }
+    if (!tachyon::rl::bucket_allow(g_cp_bucket, msg_len, monotonic_ns())) {
+        met.rl_tx_drops.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    memcpy(buffer, msg, msg_len);
 
-    /* Fake Connection ID in header padding bytes */
-    uint32_t cid_fake;
-    if (RAND_bytes(reinterpret_cast<uint8_t *>(&cid_fake), 4) != 1) {
-        LOG_ERR("RAND_bytes failed for CID entropy");
+    uint8_t payload[4096];
+    if (msg_len > sizeof(payload))
         return;
-    }
-    buffer[1] = cid_fake & 0xFF;
-    buffer[2] = (cid_fake >> 8) & 0xFF;
-    buffer[3] = (cid_fake >> 16) & 0xFF;
+    memcpy(payload, msg, msg_len);
+    size_t payload_len = msg_len;
 
-    /* Determine padded size based on packet type */
-    uint32_t rnd;
-    if (RAND_bytes(reinterpret_cast<uint8_t *>(&rnd), 4) != 1) {
-        LOG_ERR("RAND_bytes failed for padding size");
-        return;
-    }
-
-    size_t total_len;
-    if (type == TACHYON_PKT_INIT) {
-        total_len = TACHYON_QUIC_INIT_MIN_LEN + (rnd % 150);
-    } else {
-        total_len = msg_len + 60 + (rnd % 300);
-    }
-
-    /* Clamp to buffer size to prevent overflow */
-    if (total_len > sizeof(buffer))
-        total_len = sizeof(buffer);
-
-    /* Fill padding with cryptographic random bytes */
-    if (total_len > msg_len) {
-        if (RAND_bytes(buffer + msg_len, total_len - msg_len) != 1) {
-            LOG_ERR("RAND_bytes failed for mimicry padding fill");
-            return;
+    /* PADME size quantisation */
+    if (policy_from_string(cfg.padding.c_str()) != Policy::NONE) {
+        uint32_t padded = padme_round(static_cast<uint32_t>(payload_len));
+        if (padded > payload_len && padded <= sizeof(payload)) {
+            RAND_bytes(payload + payload_len, padded - static_cast<uint32_t>(payload_len));
+            met.padme_bytes_overhead.fetch_add(padded - payload_len, std::memory_order_relaxed);
+            payload_len = padded;
         }
     }
 
-    if (sendto(sock, buffer, total_len, 0, reinterpret_cast<const struct sockaddr *>(dest),
-               sizeof(*dest)) < 0)
-        LOG_WARN("sendto failed: %s", strerror(errno));
+    /* Transport wrapping */
+    auto tid = static_cast<TransportId>(cfg.resolved_transport_id);
+    if (tid != TransportId::NONE && transport_get(tid)) {
+        uint8_t framed[4096];
+        FrameContext ctx{};
+        ctx.seq         = g_frame_seq++;
+        ctx.sni         = cfg.obfuscation_sni.c_str();
+        ctx.conn_id_len = 8;
+        RAND_bytes(ctx.conn_id, 8);
+
+        auto r = transport_wrap(tid, payload, payload_len, framed, sizeof(framed), &ctx);
+        if (r.ok) {
+            met.transport_wrap_ok.fetch_add(1, std::memory_order_relaxed);
+            met.tx_packets.fetch_add(1, std::memory_order_relaxed);
+            met.tx_bytes.fetch_add(r.bytes, std::memory_order_relaxed);
+            sendto(sock, framed, r.bytes, 0,
+                   reinterpret_cast<const struct sockaddr *>(dest), sizeof(*dest));
+            return;
+        }
+        met.transport_wrap_fail.fetch_add(1, std::memory_order_relaxed);
+        /* Fall through to raw send */
+    }
+
+    /* Raw send (v4 compat or transport wrap failure fallback) */
+    met.tx_packets.fetch_add(1, std::memory_order_relaxed);
+    met.tx_bytes.fetch_add(payload_len, std::memory_order_relaxed);
+    sendto(sock, payload, payload_len, 0,
+           reinterpret_cast<const struct sockaddr *>(dest), sizeof(*dest));
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -295,7 +335,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &p_addr.sin_addr);
 
         /* Control plane state */
-        NonceCache seen_nonces;
+        tachyon::replay::Window replay_window(1024);
         bool handshake_active = true;
         bool first_boot = true;
 
@@ -310,22 +350,35 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint64_t keepalive_interval = TACHYON_KEEPALIVE_BASE;
         uint64_t retry_interval = TACHYON_RETRY_BASE;
 
-        /* Forward secrecy: key ratchet state.
-         * Every TACHYON_KEY_RATCHET_INTERVAL seconds, derive a new session
-         * key from the current key + fresh entropy, then erase the old key.
-         * This limits the window of compromise: even if a key is leaked,
-         * only traffic within the ratchet interval can be decrypted. */
+        /* v5: cover traffic shaper */
+        tachyon::padding::ShaperState shaper;
+        tachyon::padding::shaper_init(shaper, cfg.cover_rate_hz);
+
+        /* v5: port hopping state */
+        uint8_t psk_bytes[32] = {};
+        uint16_t current_hop_port = static_cast<uint16_t>(cfg.listen_port);
+        if (cfg.port_hop_seconds > 0 && !cfg.psk.empty()) {
+            memset(psk_bytes, 0, 32);
+            size_t copy_len = cfg.psk.size() < 32 ? cfg.psk.size() : 32;
+            memcpy(psk_bytes, cfg.psk.data(), copy_len);
+        }
+
+        /* Forward secrecy: key ratchet state */
         uint64_t last_ratchet = monotonic_sec();
         uint8_t ratchet_chain[32];
         RAND_bytes(ratchet_chain, 32);
 
-        /* Decoy traffic state — chaff packets at random intervals to
-         * mask real traffic patterns and fill silence periods. */
+        /* Decoy traffic state */
         uint64_t last_decoy = monotonic_sec();
         uint64_t decoy_interval = TACHYON_DECOY_BASE;
 
-        LOG_INFO("Role: %s | Obfuscation: 0x%02x", is_initiator ? "Initiator" : "Responder",
-                 cfg.obfs_flags);
+        auto &met = tachyon::metrics::global();
+
+        LOG_INFO("Role: %s | Transport: %s | Padding: %s | Cover: %uHz | Obfs: 0x%02x",
+                 is_initiator ? "Initiator" : "Responder",
+                 tachyon::transport::transport_id_to_string(
+                     static_cast<tachyon::transport::TransportId>(cfg.resolved_transport_id)),
+                 cfg.padding.c_str(), cfg.cover_rate_hz, cfg.obfs_flags);
 
         while (!g_exiting) {
             uint64_t now = monotonic_sec();
@@ -374,7 +427,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
                 }
 
-                send_mimic_quic(sock, &kmsg, sizeof(kmsg), TACHYON_PKT_KEEPALIVE, &p_addr);
+                send_framed(sock, &kmsg, sizeof(kmsg), TACHYON_PKT_KEEPALIVE, &p_addr, cfg);
                 last_tx_time = now;
                 {
                     uint32_t _j;
@@ -450,6 +503,33 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 LOG_INFO("Hitless key rotation initiated");
             }
 
+            /* v5: port hopping — rotate source port per HMAC(psk, epoch) */
+            if (cfg.port_hop_seconds > 0) {
+                uint64_t hop_now = static_cast<uint64_t>(time(nullptr));
+                uint16_t new_port = tachyon::fp::port_hop_current(
+                    psk_bytes, cfg.port_hop_seconds, hop_now);
+                if (new_port != current_hop_port) {
+                    p_addr.sin_port = htons(new_port);
+                    current_hop_port = new_port;
+                    LOG_INFO("Port hopped to %u", new_port);
+                }
+            }
+
+            /* v5: cover traffic emission during idle */
+            if (cfg.cover_rate_hz > 0 && !handshake_active) {
+                uint64_t now_ns = monotonic_ns();
+                tachyon::padding::shaper_on_real_frame(shaper, now_ns);
+                uint32_t cover_sz = tachyon::padding::shaper_poll_cover(
+                    shaper, now_ns, 64, 1400);
+                if (cover_sz > 0) {
+                    uint8_t cover[1500];
+                    RAND_bytes(cover, cover_sz);
+                    cover[0] = TACHYON_PKT_KEEPALIVE;
+                    send_framed(sock, cover, cover_sz, TACHYON_PKT_KEEPALIVE, &p_addr, cfg);
+                    met.cover_frames_sent.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+
             /* Send PKT_INIT (initiator only, during handshake) */
             if (is_initiator && handshake_active && (now - last_init_send >= retry_interval)) {
                 if (my_nonce == 0) {
@@ -457,6 +537,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                         LOG_ERR("Failed to generate handshake nonce");
                         continue;
                     }
+                    met.hs_initiated.fetch_add(1, std::memory_order_relaxed);
                 }
 
                 MsgInit msg = {};
@@ -465,7 +546,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 msg.client_nonce = my_nonce;
                 msg.is_rekey = first_boot ? 0 : 1;
 
-                send_mimic_quic(sock, &msg, sizeof(msg), TACHYON_PKT_INIT, &p_addr);
+                send_framed(sock, &msg, sizeof(msg), TACHYON_PKT_INIT, &p_addr, cfg);
                 last_init_send = now;
                 last_tx_time = now;
                 {
@@ -485,9 +566,33 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
             if (n <= 0)
                 continue;
 
-            /* Only accept from configured peer (IP and source port) */
-            if (src.sin_addr.s_addr != p_addr.sin_addr.s_addr || src.sin_port != p_addr.sin_port)
+            /* Only accept from configured peer IP — port may have hopped */
+            if (src.sin_addr.s_addr != p_addr.sin_addr.s_addr)
                 continue;
+            if (cfg.port_hop_seconds == 0 && src.sin_port != p_addr.sin_port)
+                continue;
+
+            met.rx_packets.fetch_add(1, std::memory_order_relaxed);
+            met.rx_bytes.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
+
+            /* v5: transport unwrap — strip outer framing to get inner CP message */
+            {
+                using namespace tachyon::transport;
+                auto tid = static_cast<TransportId>(cfg.resolved_transport_id);
+                if (tid != TransportId::NONE && transport_get(tid)) {
+                    uint8_t unwrapped[4096];
+                    auto r = transport_unwrap(tid, buf, static_cast<size_t>(n),
+                                             unwrapped, sizeof(unwrapped));
+                    if (r.ok) {
+                        memcpy(buf, unwrapped, r.bytes);
+                        n = static_cast<int>(r.bytes);
+                        met.transport_unwrap_ok.fetch_add(1, std::memory_order_relaxed);
+                    } else {
+                        met.transport_unwrap_fail.fetch_add(1, std::memory_order_relaxed);
+                        /* Fall through: try raw parse (v4 peer or non-framed probe) */
+                    }
+                }
+            }
 
             uint8_t flag = buf[0];
             /* Cookie windows must use wall-clock so both peers agree on the
@@ -532,7 +637,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 cmsg.client_nonce = msg->client_nonce;
                 generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
                                 current_window, cmsg.cookie);
-                send_mimic_quic(sock, &cmsg, sizeof(cmsg), TACHYON_PKT_COOKIE, &src);
+                send_framed(sock, &cmsg, sizeof(cmsg), TACHYON_PKT_COOKIE, &src, cfg);
                 last_tx_time = now;
             }
             /* ── Handle PKT_COOKIE (initiator only) ── */
@@ -565,7 +670,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
                 }
 
-                send_mimic_quic(sock, &amsg, sizeof(amsg), TACHYON_PKT_AUTH, &p_addr);
+                send_framed(sock, &amsg, sizeof(amsg), TACHYON_PKT_AUTH, &p_addr, cfg);
                 last_tx_time = now;
             }
             /* ── Handle PKT_AUTH (responder only) ── */
@@ -575,8 +680,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 auto *msg = reinterpret_cast<MsgAuth *>(buf);
                 if (ntohl(msg->session_id) != session_id)
                     continue;
-                if (seen_nonces.exists(msg->client_nonce))
+                if (replay_window.check_and_commit(msg->client_nonce) !=
+                    tachyon::replay::Result::ACCEPTED) {
+                    met.replay_dropped.fetch_add(1, std::memory_order_relaxed);
                     continue;
+                }
 
                 /* Validate cookie (current + previous window for clock skew) */
                 uint8_t c1[32], c2[32];
@@ -602,7 +710,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
 
                 last_rx_time = now; /* Authenticated PKT_AUTH - peer is alive */
-                seen_nonces.add(msg->client_nonce, now);
+                met.replay_accepted.fetch_add(1, std::memory_order_relaxed);
                 if (msg->is_rekey == 0)
                     reset_bpf_replay_state(obj, session_id, peer_ip_net, local_ip_net, peer_mac);
 
@@ -645,11 +753,17 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     OPENSSL_cleanse(my_eph_priv, 32);
                     continue;
                 }
-                send_mimic_quic(sock, &fmsg, sizeof(fmsg), TACHYON_PKT_FINISH, &src);
+                send_framed(sock, &fmsg, sizeof(fmsg), TACHYON_PKT_FINISH, &src, cfg);
                 last_tx_time = now;
+
+                /* v5: init forward-secrecy ratchets from session keys */
+                tachyon::ratchet::ratchet_init(send_ratchet, tx_key);
+                tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
+                replay_window.reset();
 
                 OPENSSL_cleanse(eph_ss, 32);
                 OPENSSL_cleanse(my_eph_priv, 32);
+                met.hs_completed.fetch_add(1, std::memory_order_relaxed);
                 LOG_INFO("Handshake complete (responder). Datapath armed.");
             }
             /* ── Handle PKT_FINISH (initiator only) ── */
@@ -688,9 +802,16 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 first_boot = false;
                 last_rekey_success = now;
 
+                /* v5: init forward-secrecy ratchets from session keys */
+                tachyon::ratchet::ratchet_init(send_ratchet, tx_key);
+                tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
+                replay_window.reset();
+
                 OPENSSL_cleanse(eph_ss, 32);
                 OPENSSL_cleanse(my_eph_priv, 32);
-                /* session_master is already cleansed inside derive_session_keys() */
+                met.hs_completed.fetch_add(1, std::memory_order_relaxed);
+                if (!first_boot)
+                    met.hs_rekeys.fetch_add(1, std::memory_order_relaxed);
                 LOG_INFO("Handshake complete (initiator). Datapath armed.");
             }
         } /* while (!g_exiting) */

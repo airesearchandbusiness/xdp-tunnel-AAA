@@ -183,6 +183,7 @@ add_tachyon_test(test_transport    unit/test_transport.cpp)
 add_tachyon_test(test_wire_v5     unit/test_wire_v5.cpp)
 add_tachyon_test(test_metrics     unit/test_metrics.cpp)
 add_tachyon_test(test_rate_limiter unit/test_rate_limiter.cpp)
+add_tachyon_test(test_integration_v5 unit/test_integration_v5.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)

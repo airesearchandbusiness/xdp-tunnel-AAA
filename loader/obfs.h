@@ -91,6 +91,9 @@ bool is_grease_codepoint(uint16_t v);
  */
 uint16_t pick_grease();
 
+/* Register REALITY as a pluggable transport engine (wraps in TLS records). */
+void register_reality_transport();
+
 } /* namespace tachyon::obfs */
 
 #endif /* TACHYON_OBFS_H */
