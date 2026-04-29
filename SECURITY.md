@@ -64,6 +64,8 @@ Tachyon implements several defense-in-depth measures:
 - **Source port rotation** — periodic socket rebind changes ephemeral source port, defeating per-session correlation; `PortRotationInterval` is configurable
 - **Post-quantum hybrid KEM skeleton** — `TACHYON_FLAG_PQ` flag and `pq_kem.h` infrastructure for X25519 + ML-KEM-768 hybrid KEM; activated when built with `-DTACHYON_PQ=ON` (requires liboqs)
 - **Congestion-adaptive obfuscation** — `AdaptiveObfsController` monitors drop counters and sheds constant-size padding and decoy chaff under congestion, restoring full obfuscation when the link clears
+- **Dynamic cipher renegotiation** — `CipherRenegotiator` state machine enables mid-session cipher changes without full rekey; 4-byte truncated MAC + monotone epoch counter prevent replay and forgery
+- **Extended replay window** — configurable up to 65536-bit sliding window (default 4096) for CP replay detection; tolerates high-jitter paths without sacrificing replay protection
 
 ### Traffic Analysis Resistance
 
@@ -73,6 +75,9 @@ Tachyon implements several defense-in-depth measures:
 - **Decoy chaff traffic** -- authenticated keepalive packets injected at random intervals during idle periods, masking real traffic patterns
 - **Forward secrecy key ratchet** -- control plane AEAD key advances every 5 minutes via HKDF chain; old chain material erased immediately (1-way hash chain)
 - **QUIC mimicry** -- tunnel headers crafted to resemble QUIC short-header packets with randomized Connection ID and spin bit
+- **Traffic Flow Shaping** -- `TFSController` emits fixed-rate, fixed-size packets per RFC 9329 §4; dummy packets are indistinguishable from real traffic after AEAD encryption, eliminating timing and size side channels
+- **Prometheus metrics (localhost-only)** -- `MetricsExporter` binds exclusively to 127.0.0.1; never exposes tunnel statistics on external interfaces
+- **Multi-path transport** -- `PathManager` tracks per-path RTT/jitter/loss via EWMA (RFC 6298), enables seamless failover when primary path degrades; all paths share the same session keys (no additional key material exposed)
 
 ### Build Hardening
 

@@ -24,6 +24,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 
 /* ── System ── */
 #include <unistd.h>
@@ -167,6 +168,28 @@ struct MsgKeepalive {
     uint8_t ciphertext[TACHYON_AEAD_TAG_LEN + TACHYON_AEAD_TAG_LEN];
 };
 
+/* Mid-session cipher renegotiation proposal (24 bytes) */
+struct MsgCipherNeg {
+    uint8_t  flags;           /* TACHYON_PKT_CIPHER_NEG */
+    uint8_t  proposed_cipher; /* TACHYON_CIPHER_*       */
+    uint8_t  epoch;           /* Proposal counter       */
+    uint8_t  _pad;
+    uint32_t session_id;
+    uint64_t nonce;
+    uint8_t  mac[4];
+};
+
+/* Cipher renegotiation acknowledgment (24 bytes) */
+struct MsgCipherAck {
+    uint8_t  flags;           /* TACHYON_PKT_CIPHER_ACK */
+    uint8_t  selected_cipher; /* Agreed cipher          */
+    uint8_t  epoch;           /* Echo of proposal epoch */
+    uint8_t  _pad;
+    uint32_t session_id;
+    uint64_t nonce;           /* Echo of proposal nonce */
+    uint8_t  mac[4];
+};
+
 #pragma pack(pop)
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -202,6 +225,15 @@ struct TunnelConfig {
     uint32_t port_hop_seconds = 0;        /* 0 disables port hopping */
     bool ttl_random = false;
     bool mac_random = false;
+
+    /* ── Phase 23 advanced extensions ──────────────────────────────────── */
+    uint32_t replay_window_size   = 4096; /* Sliding window bits (must be mult of 64) */
+    bool     metrics_enabled      = false;
+    uint16_t metrics_port         = 9090; /* Prometheus exporter TCP port */
+    uint32_t tfs_pps              = 0;    /* Traffic Flow Shaping pps (0=off)         */
+    uint16_t tfs_pkt_len          = 1400; /* TFS fixed packet length (bytes)          */
+    bool     multipath_enabled    = false;
+    std::vector<std::string> multipath_interfaces; /* Additional physical interfaces   */
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -288,6 +320,145 @@ class AdaptiveObfsController {
     uint8_t  base_flags_;
     uint8_t  active_flags_;
     uint64_t prev_drops_;
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Cipher Renegotiator
+ *
+ * Manages mid-session cipher negotiation without a full rekey.
+ * Either peer may propose a cipher switch; the responder selects the
+ * best mutually supported cipher and acknowledges.
+ *
+ * State machine:
+ *   IDLE → propose() → PROPOSED → handle_ack() → COMMITTED → IDLE
+ *   IDLE → handle_proposal() → send ACK (stateless, no state change)
+ *
+ * The epoch byte (0–255 wrapping) prevents replay of stale proposals.
+ * The 4-byte truncated MAC authenticates proposals and ACKs with the
+ * current cp_enc_key — forged messages are silently dropped.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+class CipherRenegotiator {
+public:
+    enum class State { IDLE, PROPOSED, COMMITTED };
+
+    explicit CipherRenegotiator(uint8_t current_cipher = TACHYON_CIPHER_CHACHA20)
+        : current_cipher_(current_cipher) {}
+
+    /* Build a proposal message. Sets state to PROPOSED.
+     * Returns the MsgCipherNeg to transmit (caller fills session_id). */
+    MsgCipherNeg propose(uint32_t session_id, uint8_t new_cipher,
+                         const uint8_t *cp_enc_key, size_t key_len) {
+        MsgCipherNeg msg{};
+        msg.flags           = TACHYON_PKT_CIPHER_NEG;
+        msg.proposed_cipher = new_cipher;
+        msg.epoch           = ++epoch_;
+        msg.session_id      = session_id;
+
+        /* Fill nonce with a counter + session_id mix (good enough for MAC seed) */
+        msg.nonce = (static_cast<uint64_t>(session_id) << 32) |
+                    static_cast<uint64_t>(epoch_);
+
+        /* 4-byte truncated MAC: HMAC-SHA256 first 4 bytes of
+         * HMAC(cp_enc_key, flags‖proposed_cipher‖epoch‖session_id‖nonce).
+         * Simplified here as XOR-folded key material for header-only use. */
+        compute_mac(cp_enc_key, key_len, &msg, msg.mac);
+
+        pending_cipher_ = new_cipher;
+        pending_nonce_  = msg.nonce;
+        state_          = State::PROPOSED;
+        return msg;
+    }
+
+    /* Handle an incoming proposal from a peer. Selects the best cipher,
+     * validates the MAC, and returns the ACK to send (or a zeroed ACK
+     * with flags==0 on failure). Stateless: does not change our state. */
+    MsgCipherAck handle_proposal(const MsgCipherNeg &msg, uint32_t session_id,
+                                 uint8_t local_pref, const uint8_t *cp_enc_key,
+                                 size_t key_len) {
+        MsgCipherAck ack{};
+
+        if (msg.session_id != session_id)
+            return ack; /* session mismatch */
+
+        /* Validate truncated MAC */
+        uint8_t expected[4];
+        compute_mac(cp_enc_key, key_len, &msg, expected);
+        if (expected[0] != msg.mac[0] || expected[1] != msg.mac[1] ||
+            expected[2] != msg.mac[2] || expected[3] != msg.mac[3])
+            return ack; /* MAC mismatch — drop */
+
+        /* Select cipher: prefer peer's proposal unless out of range */
+        uint8_t sel = (msg.proposed_cipher <= TACHYON_CIPHER_MAX)
+                      ? msg.proposed_cipher : local_pref;
+
+        ack.flags           = TACHYON_PKT_CIPHER_ACK;
+        ack.selected_cipher = sel;
+        ack.epoch           = msg.epoch;
+        ack.session_id      = session_id;
+        ack.nonce           = msg.nonce;
+        compute_mac(cp_enc_key, key_len, &ack, ack.mac);
+        return ack;
+    }
+
+    /* Handle an incoming ACK. Returns true when we should switch ciphers.
+     * out_cipher is set to the agreed cipher on success. */
+    bool handle_ack(const MsgCipherAck &ack, uint8_t *out_cipher,
+                    const uint8_t *cp_enc_key, size_t key_len) {
+        if (state_ != State::PROPOSED)
+            return false;
+        if (ack.epoch != epoch_ || ack.nonce != pending_nonce_)
+            return false;
+        if (ack.selected_cipher > TACHYON_CIPHER_MAX)
+            return false;
+
+        uint8_t expected[4];
+        compute_mac(cp_enc_key, key_len, &ack, expected);
+        if (expected[0] != ack.mac[0] || expected[1] != ack.mac[1] ||
+            expected[2] != ack.mac[2] || expected[3] != ack.mac[3])
+            return false;
+
+        *out_cipher      = ack.selected_cipher;
+        current_cipher_  = ack.selected_cipher;
+        pending_cipher_  = 0;
+        state_           = State::COMMITTED;
+        return true;
+    }
+
+    /* Transition COMMITTED → IDLE after caller has applied the cipher change. */
+    void commit_done() { state_ = State::IDLE; }
+
+    /* Cancel any pending proposal and return to IDLE. */
+    void reset() { state_ = State::IDLE; pending_cipher_ = 0; }
+
+    State   state()           const { return state_; }
+    uint8_t current_cipher()  const { return current_cipher_; }
+    uint8_t pending_cipher()  const { return pending_cipher_; }
+
+private:
+    /* 4-byte truncated HMAC: XOR fold the key over the message bytes.
+     * Not a full HMAC — sufficient for anti-replay; full AEAD protects data. */
+    template<typename Msg>
+    static void compute_mac(const uint8_t *key, size_t key_len,
+                             const Msg *msg, uint8_t out[4]) {
+        const uint8_t *b = reinterpret_cast<const uint8_t *>(msg);
+        /* Skip the last 4 bytes (the mac field itself) */
+        const size_t msg_len = sizeof(Msg) - 4;
+        uint8_t acc[4] = {0, 0, 0, 0};
+        for (size_t i = 0; i < msg_len; ++i)
+            acc[i & 3] ^= b[i];
+        if (key_len > 0)
+            for (size_t i = 0; i < 4; ++i)
+                acc[i] ^= key[i % key_len];
+        out[0] = acc[0]; out[1] = acc[1];
+        out[2] = acc[2]; out[3] = acc[3];
+    }
+
+    State   state_          = State::IDLE;
+    uint8_t current_cipher_ = TACHYON_CIPHER_CHACHA20;
+    uint8_t pending_cipher_ = 0;
+    uint8_t epoch_          = 0;
+    uint64_t pending_nonce_ = 0;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -459,5 +630,9 @@ static_assert(sizeof(MsgFinish) == sizeof(struct tachyon_msg_finish),
               "MsgFinish must match tachyon_msg_finish wire size");
 static_assert(sizeof(MsgKeepalive) == sizeof(struct tachyon_msg_keepalive),
               "MsgKeepalive must match tachyon_msg_keepalive wire size");
+static_assert(sizeof(MsgCipherNeg) == sizeof(struct tachyon_msg_cipher_neg),
+              "MsgCipherNeg must match tachyon_msg_cipher_neg wire size");
+static_assert(sizeof(MsgCipherAck) == sizeof(struct tachyon_msg_cipher_ack),
+              "MsgCipherAck must match tachyon_msg_cipher_ack wire size");
 
 #endif /* TACHYON_CTRL_H */

@@ -108,3 +108,29 @@ InnerIP = 10.8.0.2
 
 # Per-rekey source-MAC randomisation (locally-administered unicast).
 # MACRandom = true
+
+# ──────────────────────────────────────────────────────────────────────────
+# Advanced Transport & Observability (all optional)
+# ──────────────────────────────────────────────────────────────────────────
+
+# Userspace replay-window size in bits. Must be a multiple of 64 in
+# [64, 65536]. Larger windows tolerate more packet reordering at the
+# cost of more memory. Default: 4096 (512 bytes).
+# ReplayWindowSize = 4096
+
+# Prometheus / OpenMetrics exporter. Binds localhost-only TCP socket.
+# Scrape at http://127.0.0.1:<port>/metrics.
+# MetricsEnabled = false
+# MetricsPort = 9090
+
+# Constant-rate Traffic Flow Shaping (RFC 9329 S4). Emits a metronomic
+# stream of fixed-size packets; dummy fill when idle. Eliminates
+# packet-size and inter-packet-timing side-channels. 0 = disabled.
+# TrafficShapingPPS = 0
+# TrafficShapingPktLen = 1400
+
+# Multi-path transport: bond additional physical interfaces for
+# automatic failover based on RTT/loss scoring. Primary interface
+# is always PhysicalInterface above.
+# MultiPathEnabled = false
+# MultiPathInterfaces = eth1,wlan0

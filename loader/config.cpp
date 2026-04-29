@@ -234,6 +234,81 @@ TunnelConfig parse_config(const std::string &filename) {
     if (!mac_str.empty())
         cfg.mac_random = (mac_str == "true" || mac_str == "1" || mac_str == "yes");
 
+    /* ── Phase 23 advanced knobs ─────────────────────────────────────────
+     * ReplayWindowSize: sliding window bits for userspace CP replay detector.
+     * Must be a multiple of 64 in [64, 65536]. Default 4096 (512 bytes). */
+    std::string rws_str = get_val(kv, "ReplayWindowSize");
+    if (!rws_str.empty()) {
+        try {
+            unsigned long v = std::stoul(rws_str);
+            if (v >= 64 && v <= 65536 && (v % 64) == 0)
+                cfg.replay_window_size = static_cast<uint32_t>(v);
+            else
+                LOG_WARN("ReplayWindowSize %lu invalid (must be multiple of 64 in [64,65536])", v);
+        } catch (...) {
+            LOG_WARN("Invalid ReplayWindowSize '%s', using default %u",
+                     rws_str.c_str(), cfg.replay_window_size);
+        }
+    }
+
+    /* MetricsEnabled / MetricsPort: Prometheus text-format HTTP exporter. */
+    std::string me_str = get_val(kv, "MetricsEnabled");
+    if (me_str == "true" || me_str == "1" || me_str == "yes")
+        cfg.metrics_enabled = true;
+
+    std::string mp_str = get_val(kv, "MetricsPort");
+    if (!mp_str.empty()) {
+        try {
+            unsigned long v = std::stoul(mp_str);
+            if (v >= 1024 && v <= 65535)
+                cfg.metrics_port = static_cast<uint16_t>(v);
+            else
+                LOG_WARN("MetricsPort %lu out of range [1024,65535], using %u",
+                         v, cfg.metrics_port);
+        } catch (...) {}
+    }
+
+    /* TrafficShapingPPS: constant-rate Traffic Flow Shaping packets/sec (0=off). */
+    std::string tpps_str = get_val(kv, "TrafficShapingPPS");
+    if (!tpps_str.empty()) {
+        try {
+            unsigned long v = std::stoul(tpps_str);
+            cfg.tfs_pps = static_cast<uint32_t>(v);
+        } catch (...) {
+            LOG_WARN("Invalid TrafficShapingPPS '%s', disabling TFS", tpps_str.c_str());
+        }
+    }
+
+    /* TrafficShapingPktLen: fixed output packet length for TFS (bytes). */
+    std::string tlen_str = get_val(kv, "TrafficShapingPktLen");
+    if (!tlen_str.empty()) {
+        try {
+            unsigned long v = std::stoul(tlen_str);
+            if (v >= 64 && v <= 1500)
+                cfg.tfs_pkt_len = static_cast<uint16_t>(v);
+            else
+                LOG_WARN("TrafficShapingPktLen %lu out of range [64,1500]", v);
+        } catch (...) {}
+    }
+
+    /* MultiPath: enable multi-interface failover. */
+    std::string mpe_str = get_val(kv, "MultiPathEnabled");
+    if (mpe_str == "true" || mpe_str == "1" || mpe_str == "yes")
+        cfg.multipath_enabled = true;
+
+    /* MultiPathInterfaces: comma-separated list of additional physical interfaces
+     * (e.g. "eth1,wlan0"). The primary interface is always PhysicalInterface. */
+    std::string mpi_str = get_val(kv, "MultiPathInterfaces");
+    if (!mpi_str.empty()) {
+        std::istringstream ss(mpi_str);
+        std::string tok;
+        while (std::getline(ss, tok, ',')) {
+            tok = trim(tok);
+            if (!tok.empty())
+                cfg.multipath_interfaces.push_back(tok);
+        }
+    }
+
     return cfg;
 }
 

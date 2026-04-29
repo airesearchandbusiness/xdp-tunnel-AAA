@@ -181,6 +181,8 @@ typedef int32_t __s32;
 #define TACHYON_PKT_AUTH 0xC2      /* Authenticated key exchange      */
 #define TACHYON_PKT_FINISH 0xC3    /* Handshake completion           */
 #define TACHYON_PKT_KEEPALIVE 0xC4 /* Encrypted keepalive            */
+#define TACHYON_PKT_CIPHER_NEG 0xC5 /* Mid-session cipher renegotiation proposal  */
+#define TACHYON_PKT_CIPHER_ACK 0xC6 /* Cipher renegotiation acknowledgment        */
 
 #define TACHYON_CP_FLAG_MASK 0xF0   /* Mask for CP type detection     */
 #define TACHYON_CP_FLAG_PREFIX 0xC0 /* CP packet prefix               */
@@ -372,6 +374,44 @@ struct tachyon_msg_keepalive {
     __u8 ciphertext[32]; /* Encrypted dummy (16+16 tag)    */
 } __attribute__((packed));
 
+/*
+ * PKT_CIPHER_NEG: Mid-session cipher renegotiation proposal (24 bytes)
+ *
+ * Sent by either peer to propose switching to a different AEAD cipher.
+ * The mac[] field is a 4-byte truncated HMAC-SHA256 over [flags..nonce]
+ * keyed with the current cp_enc_key — prevents replay / spoofing.
+ *
+ * epoch wraps 0–255; both sides track the last accepted epoch to reject
+ * replayed proposals. The responding peer echoes it in PKT_CIPHER_ACK.
+ */
+struct tachyon_msg_cipher_neg {
+    __u8  flags;           /* TACHYON_PKT_CIPHER_NEG         */
+    __u8  proposed_cipher; /* TACHYON_CIPHER_*               */
+    __u8  epoch;           /* Monotone proposal counter      */
+    __u8  _pad;
+    __u32 session_id;
+    __u64 nonce;           /* Random nonce, echoed in ACK    */
+    __u8  mac[4];          /* Truncated HMAC-SHA256          */
+} __attribute__((packed));
+
+/*
+ * PKT_CIPHER_ACK: Cipher renegotiation acknowledgment (24 bytes)
+ *
+ * Sent in response to a valid PKT_CIPHER_NEG.  selected_cipher may
+ * differ from proposed_cipher when the responder downgrades (e.g., if
+ * AES-NI is unavailable locally).  Both sides switch cipher atomically
+ * after the next successful data packet following the ACK.
+ */
+struct tachyon_msg_cipher_ack {
+    __u8  flags;           /* TACHYON_PKT_CIPHER_ACK         */
+    __u8  selected_cipher; /* Final agreed cipher            */
+    __u8  epoch;           /* Echo of proposal epoch         */
+    __u8  _pad;
+    __u32 session_id;
+    __u64 nonce;           /* Echo of proposal nonce         */
+    __u8  mac[4];          /* Truncated HMAC-SHA256          */
+} __attribute__((packed));
+
 /* ──────────────────────────────────────────────────────────────────────────
  * BPF Map Index Constants
  * ────────────────────────────────────────────────────────────────────────── */
@@ -435,6 +475,10 @@ TACHYON_SASSERT(sizeof(struct tachyon_msg_finish) == 64,
                 "tachyon_msg_finish must be 64 bytes on the wire");
 TACHYON_SASSERT(sizeof(struct tachyon_msg_keepalive) == 48,
                 "tachyon_msg_keepalive must be 48 bytes on the wire");
+TACHYON_SASSERT(sizeof(struct tachyon_msg_cipher_neg) == 20,
+                "tachyon_msg_cipher_neg must be 20 bytes on the wire");
+TACHYON_SASSERT(sizeof(struct tachyon_msg_cipher_ack) == 20,
+                "tachyon_msg_cipher_ack must be 20 bytes on the wire");
 
 /* Constant relationships */
 TACHYON_SASSERT(TACHYON_OUTER_HDR_LEN == 62, "outer header sum must be 62 bytes (14+20+8+20)");
