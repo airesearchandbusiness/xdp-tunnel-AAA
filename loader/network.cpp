@@ -428,6 +428,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 }
 
                 send_framed(sock, &kmsg, sizeof(kmsg), TACHYON_PKT_KEEPALIVE, &p_addr, cfg);
+                tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
                 last_tx_time = now;
                 {
                     uint32_t _j;
@@ -503,22 +504,44 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 LOG_INFO("Hitless key rotation initiated");
             }
 
-            /* v5: port hopping — rotate source port per HMAC(psk, epoch) */
+            /* v5: port hopping — both peers derive the same port from
+             * HMAC(psk, epoch) so they hop in lockstep. We rebind our
+             * local socket AND update the peer destination port. */
             if (cfg.port_hop_seconds > 0) {
                 uint64_t hop_now = static_cast<uint64_t>(time(nullptr));
                 uint16_t new_port = tachyon::fp::port_hop_current(
                     psk_bytes, cfg.port_hop_seconds, hop_now);
                 if (new_port != current_hop_port) {
-                    p_addr.sin_port = htons(new_port);
-                    current_hop_port = new_port;
-                    LOG_INFO("Port hopped to %u", new_port);
+                    struct sockaddr_in rebind{};
+                    rebind.sin_family = AF_INET;
+                    rebind.sin_port = htons(new_port);
+                    rebind.sin_addr.s_addr = INADDR_ANY;
+                    int new_sock = socket(AF_INET, SOCK_DGRAM, 0);
+                    if (new_sock >= 0) {
+                        int opt = 1;
+                        setsockopt(new_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+                        struct timeval tv = {1, 0};
+                        setsockopt(new_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+                        if (bind(new_sock, reinterpret_cast<struct sockaddr *>(&rebind),
+                                 sizeof(rebind)) == 0) {
+                            close(sock);
+                            sock = new_sock;
+                            p_addr.sin_port = htons(new_port);
+                            current_hop_port = new_port;
+                            LOG_INFO("Port hopped to %u (socket rebound)", new_port);
+                        } else {
+                            close(new_sock);
+                            LOG_WARN("Port hop bind to %u failed: %s", new_port, strerror(errno));
+                        }
+                    }
                 }
             }
 
-            /* v5: cover traffic emission during idle */
+            /* v5: cover traffic emission during idle — only poll, don't
+             * mark as real traffic (shaper_on_real_frame is called from
+             * the send path when actual data is transmitted). */
             if (cfg.cover_rate_hz > 0 && !handshake_active) {
                 uint64_t now_ns = monotonic_ns();
-                tachyon::padding::shaper_on_real_frame(shaper, now_ns);
                 uint32_t cover_sz = tachyon::padding::shaper_poll_cover(
                     shaper, now_ns, 64, 1400);
                 if (cover_sz > 0) {
@@ -547,6 +570,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 msg.is_rekey = first_boot ? 0 : 1;
 
                 send_framed(sock, &msg, sizeof(msg), TACHYON_PKT_INIT, &p_addr, cfg);
+                tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
                 last_init_send = now;
                 last_tx_time = now;
                 {
@@ -680,7 +704,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 auto *msg = reinterpret_cast<MsgAuth *>(buf);
                 if (ntohl(msg->session_id) != session_id)
                     continue;
-                if (replay_window.check_and_commit(msg->client_nonce) !=
+                /* Peek replay window first — don't commit until authenticated */
+                if (replay_window.peek(msg->client_nonce) !=
                     tachyon::replay::Result::ACCEPTED) {
                     met.replay_dropped.fetch_add(1, std::memory_order_relaxed);
                     continue;
@@ -709,7 +734,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
-                last_rx_time = now; /* Authenticated PKT_AUTH - peer is alive */
+                /* Authenticated — now commit to the replay window */
+                replay_window.check_and_commit(msg->client_nonce);
+                last_rx_time = now;
                 met.replay_accepted.fetch_add(1, std::memory_order_relaxed);
                 if (msg->is_rekey == 0)
                     reset_bpf_replay_state(obj, session_id, peer_ip_net, local_ip_net, peer_mac);
