@@ -112,6 +112,7 @@ TEST_F(ConfigTest, ParseMinimalConfigDefaults) {
     EXPECT_EQ(cfg.mimicry_type, TACHYON_MIMICRY_QUIC);
     EXPECT_TRUE(cfg.encryption);
     EXPECT_TRUE(cfg.psk.empty());
+    EXPECT_EQ(cfg.obfs_flags, TACHYON_OBFS_ALL);
 }
 
 TEST_F(ConfigTest, ParseEncryptionDisabled) {
@@ -126,6 +127,26 @@ TEST_F(ConfigTest, ParseEncryptionDisabledNumeric) {
     auto path = write_config("noenc0.conf", content);
     TunnelConfig cfg = parse_config(path);
     EXPECT_FALSE(cfg.encryption);
+}
+
+TEST_F(ConfigTest, ParseObfuscationFlagsHex) {
+    std::string content = std::string(VALID_CONFIG) + "ObfuscationFlags = 0x15\n";
+    auto path = write_config("obfs_hex.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.obfs_flags, 0x15);
+}
+
+TEST_F(ConfigTest, ParseObfuscationFlagsDecimal) {
+    std::string content = std::string(VALID_CONFIG) + "ObfuscationFlags = 0\n";
+    auto path = write_config("obfs_off.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.obfs_flags, 0);
+}
+
+TEST_F(ConfigTest, ParseObfuscationFlagsDefault) {
+    auto path = write_config("obfs_default.conf", VALID_CONFIG);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_EQ(cfg.obfs_flags, TACHYON_OBFS_ALL);
 }
 
 TEST_F(ConfigTest, ParseCustomPort) {
@@ -462,6 +483,58 @@ TEST_F(ConfigTest, ParseConfigRejectsOversizedFile) {
     TunnelConfig cfg = parse_config(path);
     /* All fields should be empty since parse_ini returned early */
     EXPECT_TRUE(cfg.private_key.empty());
+}
+
+TEST_F(ConfigTest, ParseConfigAcceptsMaxSizeFile) {
+    /* Exactly 65536 bytes should be accepted (guard rejects >65536) */
+    std::string content =
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 192.168.1.20\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n";
+    /* Pad with comments to reach exactly 65536 bytes */
+    while (content.size() < 65536)
+        content += "# padding comment line to fill config file to boundary size\n";
+    content.resize(65536);
+    auto path = write_config("maxsize.conf", content);
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(cfg.private_key.empty());
+}
+
+TEST_F(ConfigTest, ValidateConfigCatchesInvalidTunnelName) {
+    /* Even if tunnel_name_from_conf is bypassed, validate_config catches it */
+    TunnelConfig cfg;
+    cfg.name = "evil;name";
+    cfg.private_key = std::string(64, 'a');
+    cfg.peer_public_key = std::string(64, 'b');
+    cfg.virtual_ip = "10.8.0.1/24";
+    cfg.local_physical_ip = "192.168.1.10";
+    cfg.physical_interface = "eth0";
+    cfg.peer_endpoint_ip = "192.168.1.20";
+    cfg.peer_endpoint_mac = "aa:bb:cc:dd:ee:ff";
+    cfg.peer_inner_ip = "10.8.0.2";
+    EXPECT_FALSE(validate_config(cfg));
+}
+
+TEST_F(ConfigTest, ValidateZeroEndpointIP) {
+    auto path = write_config(
+        "zero_ip.conf",
+        "PrivateKey = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "PeerPublicKey = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        "VirtualIP = 10.8.0.1/24\n"
+        "LocalPhysicalIP = 192.168.1.10\n"
+        "PhysicalInterface = eth0\n"
+        "[Peer]\n"
+        "EndpointIP = 0.0.0.0\n"
+        "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
+        "InnerIP = 10.8.0.2\n");
+    TunnelConfig cfg = parse_config(path);
+    EXPECT_FALSE(validate_config(cfg));
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

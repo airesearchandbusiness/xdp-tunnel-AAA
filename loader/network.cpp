@@ -363,17 +363,22 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
             memcpy(psk_bytes, cfg.psk.data(), copy_len);
         }
 
-        /* v5: forward-secrecy ratchet (initialized after first handshake) */
-        tachyon::ratchet::SendState send_ratchet{};
-        tachyon::ratchet::SendState recv_ratchet{};
+        /* Forward secrecy: key ratchet state */
+        uint64_t last_ratchet = monotonic_sec();
+        uint8_t ratchet_chain[32];
+        RAND_bytes(ratchet_chain, 32);
+
+        /* Decoy traffic state */
+        uint64_t last_decoy = monotonic_sec();
+        uint64_t decoy_interval = TACHYON_DECOY_BASE;
 
         auto &met = tachyon::metrics::global();
 
-        LOG_INFO("Role: %s | Transport: %s | Padding: %s | Cover: %uHz",
+        LOG_INFO("Role: %s | Transport: %s | Padding: %s | Cover: %uHz | Obfs: 0x%02x",
                  is_initiator ? "Initiator" : "Responder",
                  tachyon::transport::transport_id_to_string(
                      static_cast<tachyon::transport::TransportId>(cfg.resolved_transport_id)),
-                 cfg.padding.c_str(), cfg.cover_rate_hz);
+                 cfg.padding.c_str(), cfg.cover_rate_hz, cfg.obfs_flags);
 
         while (!g_exiting) {
             uint64_t now = monotonic_sec();
@@ -429,6 +434,64 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     if (RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j)) != 1)
                         _j = 0; /* jitter not security-critical; fall back to base */
                     keepalive_interval = TACHYON_KEEPALIVE_BASE + (_j % TACHYON_KEEPALIVE_JITTER);
+                }
+            }
+
+            /* Decoy chaff traffic — inject random-payload keepalives during
+             * idle periods to mask real traffic patterns. An observer sees a
+             * constant stream of packets rather than bursts correlated with
+             * user activity. Only active when TACHYON_OBFS_DECOY is set. */
+            if (!handshake_active && (cfg.obfs_flags & TACHYON_OBFS_DECOY) &&
+                (now - last_decoy >= decoy_interval)) {
+                MsgKeepalive decoy_msg = {};
+                decoy_msg.flags = TACHYON_PKT_KEEPALIVE;
+                decoy_msg.session_id = htonl(session_id);
+                decoy_msg.timestamp = monotonic_sec();
+
+                uint8_t d_ad[12], d_nonce[12] = {0}, d_pt[16];
+                memcpy(d_ad, &decoy_msg.session_id, 4);
+                memcpy(d_ad + 4, &decoy_msg.timestamp, 8);
+                memcpy(d_nonce, &decoy_msg.timestamp, 8);
+
+                if (RAND_bytes(d_pt, 16) == 1 &&
+                    cp_aead_encrypt(cp_enc_key, d_pt, 16, d_ad, 12, d_nonce, decoy_msg.ciphertext,
+                                    decoy_msg.ciphertext + 16)) {
+                    send_mimic_quic(sock, &decoy_msg, sizeof(decoy_msg), TACHYON_PKT_KEEPALIVE,
+                                    &p_addr);
+                }
+                last_decoy = now;
+                {
+                    uint32_t _j;
+                    if (RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j)) != 1)
+                        _j = 0;
+                    decoy_interval = TACHYON_DECOY_BASE + (_j % TACHYON_DECOY_JITTER);
+                }
+            }
+
+            /* Forward secrecy key ratchet — derive new session keys from the
+             * current key + fresh chain material every 5 minutes. The old chain
+             * value is erased immediately, so a compromised key reveals only
+             * the traffic within one ratchet window. This is independent of
+             * the full ECDH rekey (which runs every 60s for the data plane). */
+            if (!handshake_active && (now - last_ratchet > TACHYON_KEY_RATCHET_INTERVAL)) {
+                uint8_t new_cp_key[32];
+                if (derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_KEY_RATCHET,
+                               new_cp_key)) {
+                    OPENSSL_cleanse(cp_enc_key, 32);
+                    memcpy(cp_enc_key, new_cp_key, 32);
+                    OPENSSL_cleanse(new_cp_key, 32);
+
+                    /* Advance the ratchet chain so the old chain state is
+                     * irrecoverable even if new_cp_key is later leaked. */
+                    uint8_t new_chain[32];
+                    derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_DECOY_SEED,
+                               new_chain);
+                    OPENSSL_cleanse(ratchet_chain, 32);
+                    memcpy(ratchet_chain, new_chain, 32);
+                    OPENSSL_cleanse(new_chain, 32);
+
+                    last_ratchet = now;
+                    LOG_CRYPTO("Control plane key ratcheted (forward secrecy)");
                 }
             }
 
@@ -754,6 +817,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         } /* while (!g_exiting) */
 
         OPENSSL_cleanse(my_eph_priv, 32);
+        OPENSSL_cleanse(ratchet_chain, 32);
     }
     close(sock);
 

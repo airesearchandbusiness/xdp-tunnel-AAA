@@ -46,14 +46,10 @@ jobs:
             exit 1
           fi
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            build-essential clang-18 llvm-18 \
-            libbpf-dev libelf-dev libssl-dev \
-            linux-headers-$(uname -r) \
-            cmake ninja-build pkg-config \
-            libgtest-dev libgmock-dev
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'build-essential clang-18 llvm-18 libbpf-dev libelf-dev libssl-dev linux-headers-generic cmake ninja-build pkg-config libgtest-dev libgmock-dev'
+          cache-key-file: '.github/workflows/release.yml'
 
       - name: Build and test
         run: |
@@ -86,12 +82,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            build-essential clang-18 llvm-18 \
-            libbpf-dev libelf-dev libssl-dev \
-            linux-headers-$(uname -r)
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'build-essential clang-18 llvm-18 libbpf-dev libelf-dev libssl-dev linux-headers-generic'
+          cache-key-file: '.github/workflows/release.yml'
 
       - name: Build release binaries
         run: |

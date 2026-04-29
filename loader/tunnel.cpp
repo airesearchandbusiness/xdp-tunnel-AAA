@@ -120,6 +120,7 @@ void command_up(const std::string &conf_file) {
         userspace_config g{};
         g.listen_port_net = htons(cfg.listen_port);
         g.mimicry_type = cfg.mimicry_type;
+        g.obfs_flags = cfg.obfs_flags;
         bpf_map_update_elem(fd, &zero, &g, BPF_ANY);
     }
 

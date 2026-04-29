@@ -56,6 +56,15 @@ Tachyon implements several defense-in-depth measures:
 - **Config file size guard** -- `parse_ini()` rejects files >64KB to prevent memory exhaustion
 - **NonceCache deduplication** -- duplicate nonce additions do not inflate the LRU list, preserving correct capacity accounting
 
+### Traffic Analysis Resistance
+
+- **IP header obfuscation** -- TTL jitter (63-66), IP ID randomization, probabilistic DF bit clearing defeat OS fingerprinting and cross-packet correlation
+- **DSCP/ECN stripping** -- inner QoS markings zeroed in outer header to prevent application-type inference
+- **Constant-size padding** -- optional mode where every packet is padded to MTU, making all tunnel traffic identical size on the wire
+- **Decoy chaff traffic** -- authenticated keepalive packets injected at random intervals during idle periods, masking real traffic patterns
+- **Forward secrecy key ratchet** -- control plane AEAD key advances every 5 minutes via HKDF chain; old chain material erased immediately (1-way hash chain)
+- **QUIC mimicry** -- tunnel headers crafted to resemble QUIC short-header packets with randomized Connection ID and spin bit
+
 ### Build Hardening
 
 - **`-D_FORTIFY_SOURCE=2`** -- glibc buffer-overflow detection
