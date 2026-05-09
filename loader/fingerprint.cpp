@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "fingerprint.h"
+#include "wire_utils.h"
 
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
@@ -8,11 +9,7 @@
 
 namespace tachyon::fp {
 
-static uint32_t rand_u32() {
-    uint32_t r = 0;
-    RAND_bytes(reinterpret_cast<unsigned char *>(&r), sizeof(r));
-    return r;
-}
+static uint32_t rand_u32() { return tachyon::wire::rand_u32(); }
 
 uint8_t random_ttl() {
     const uint32_t range = static_cast<uint32_t>(TTL_MAX - TTL_MIN + 1);

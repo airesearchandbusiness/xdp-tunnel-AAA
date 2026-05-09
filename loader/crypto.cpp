@@ -182,77 +182,74 @@ bool derive_kdf(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * ChaCha20-Poly1305 AEAD (Control Plane Encryption)
+ * Generic AEAD encrypt/decrypt (unified for all cipher suites)
+ *
+ * Replaces the four near-identical functions (cp_aead_encrypt, cp_aead_decrypt,
+ * aes_gcm_encrypt, aes_gcm_decrypt) with a single pair parametrised by
+ * EVP_CIPHER. ChaCha20-Poly1305 and AES-GCM share identical EVP lifecycle.
  * ══════════════════════════════════════════════════════════════════════════ */
+
+static bool aead_encrypt(const EVP_CIPHER *cipher, const uint8_t *key,
+                         const uint8_t *nonce, const uint8_t *ad, size_t ad_len,
+                         const uint8_t *pt, size_t pt_len,
+                         uint8_t *ct, uint8_t *tag) {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+        return false;
+    int len;
+    bool ok = false;
+    if (EVP_EncryptInit_ex(ctx, cipher, nullptr, key, nonce) <= 0)
+        goto out;
+    if (ad && ad_len > 0)
+        if (EVP_EncryptUpdate(ctx, nullptr, &len, ad, static_cast<int>(ad_len)) <= 0)
+            goto out;
+    if (EVP_EncryptUpdate(ctx, ct, &len, pt, static_cast<int>(pt_len)) <= 0)
+        goto out;
+    if (EVP_EncryptFinal_ex(ctx, ct + len, &len) <= 0)
+        goto out;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, TACHYON_AEAD_TAG_LEN, tag) <= 0)
+        goto out;
+    ok = true;
+out:
+    EVP_CIPHER_CTX_free(ctx);
+    return ok;
+}
+
+static bool aead_decrypt(const EVP_CIPHER *cipher, const uint8_t *key,
+                         const uint8_t *nonce, const uint8_t *ad, size_t ad_len,
+                         const uint8_t *ct, size_t ct_len,
+                         const uint8_t *tag, uint8_t *pt) {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+        return false;
+    int len;
+    bool ok = false;
+    if (EVP_DecryptInit_ex(ctx, cipher, nullptr, key, nonce) <= 0)
+        goto out;
+    if (ad && ad_len > 0)
+        if (EVP_DecryptUpdate(ctx, nullptr, &len, ad, static_cast<int>(ad_len)) <= 0)
+            goto out;
+    if (EVP_DecryptUpdate(ctx, pt, &len, ct, static_cast<int>(ct_len)) <= 0)
+        goto out;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TACHYON_AEAD_TAG_LEN,
+                            const_cast<uint8_t *>(tag)) <= 0)
+        goto out;
+    ok = (EVP_DecryptFinal_ex(ctx, pt + len, &len) > 0);
+out:
+    EVP_CIPHER_CTX_free(ctx);
+    return ok;
+}
 
 bool cp_aead_encrypt(const uint8_t *key, const uint8_t *pt, size_t pt_len, const uint8_t *ad,
                      size_t ad_len, const uint8_t *nonce, uint8_t *ct, uint8_t *tag) {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) {
-        LOG_ERR("AEAD encrypt: context allocation failed");
-        return false;
-    }
-
-    int len;
-    bool ok = false;
-
-    if (EVP_EncryptInit_ex(ctx, EVP_chacha20_poly1305(), nullptr, key, nonce) <= 0)
-        goto out;
-
-    if (ad && ad_len > 0) {
-        if (EVP_EncryptUpdate(ctx, nullptr, &len, ad, ad_len) <= 0)
-            goto out;
-    }
-
-    if (EVP_EncryptUpdate(ctx, ct, &len, pt, pt_len) <= 0)
-        goto out;
-
-    if (EVP_EncryptFinal_ex(ctx, ct + len, &len) <= 0)
-        goto out;
-
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, TACHYON_AEAD_TAG_LEN, tag) <= 0)
-        goto out;
-
-    ok = true;
-
-out:
-    EVP_CIPHER_CTX_free(ctx);
-    if (!ok)
-        LOG_ERR("AEAD encrypt failed");
+    bool ok = aead_encrypt(EVP_chacha20_poly1305(), key, nonce, ad, ad_len, pt, pt_len, ct, tag);
+    if (!ok) LOG_ERR("AEAD encrypt failed");
     return ok;
 }
 
 bool cp_aead_decrypt(const uint8_t *key, const uint8_t *ct, size_t ct_len, const uint8_t *ad,
                      size_t ad_len, const uint8_t *nonce, const uint8_t *tag, uint8_t *pt) {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) {
-        LOG_ERR("AEAD decrypt: context allocation failed");
-        return false;
-    }
-
-    int len;
-    bool ok = false;
-
-    if (EVP_DecryptInit_ex(ctx, EVP_chacha20_poly1305(), nullptr, key, nonce) <= 0)
-        goto out;
-
-    if (ad && ad_len > 0) {
-        if (EVP_DecryptUpdate(ctx, nullptr, &len, ad, ad_len) <= 0)
-            goto out;
-    }
-
-    if (EVP_DecryptUpdate(ctx, pt, &len, ct, ct_len) <= 0)
-        goto out;
-
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TACHYON_AEAD_TAG_LEN,
-                            const_cast<uint8_t *>(tag)) <= 0)
-        goto out;
-
-    ok = (EVP_DecryptFinal_ex(ctx, pt + len, &len) > 0);
-
-out:
-    EVP_CIPHER_CTX_free(ctx);
-    return ok;
+    return aead_decrypt(EVP_chacha20_poly1305(), key, nonce, ad, ad_len, ct, ct_len, tag, pt);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -303,124 +300,38 @@ bool get_public_key(const uint8_t *priv, uint8_t *pub_out) {
 /* ══════════════════════════════════════════════════════════════════════════
  * CipherSuite Registry
  *
- * Three suites registered: ChaCha20-Poly1305, AES-128-GCM, AES-256-GCM.
- * ChaCha20 delegates to the existing cp_aead_encrypt/decrypt functions.
- * AES-GCM suites use the same EVP_CIPHER_CTX pattern with different ciphers.
+ * All suites delegate to the unified aead_encrypt/aead_decrypt above.
+ * The thin wrappers below exist only to match the CipherSuite function-
+ * pointer signature (which includes the unused nonce_len parameter).
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static bool aes_gcm_encrypt(const EVP_CIPHER *cipher,
-                             const uint8_t *key,
-                             const uint8_t *nonce, size_t /* nonce_len */,
-                             const uint8_t *aad,   size_t aad_len,
-                             const uint8_t *pt,    size_t pt_len,
-                             uint8_t *ct, uint8_t *tag) {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx)
-        return false;
-
-    int len;
-    bool ok = false;
-
-    if (EVP_EncryptInit_ex(ctx, cipher, nullptr, key, nonce) <= 0)
-        goto out;
-    if (aad && aad_len > 0) {
-        if (EVP_EncryptUpdate(ctx, nullptr, &len, aad, (int)aad_len) <= 0)
-            goto out;
+#define MAKE_SUITE_ENC(name, cipher_fn)                                         \
+    static bool name(const uint8_t *key, const uint8_t *nonce, size_t,          \
+                     const uint8_t *aad, size_t aad_len,                        \
+                     const uint8_t *pt, size_t pt_len,                          \
+                     uint8_t *ct, uint8_t *tag) {                               \
+        return aead_encrypt(cipher_fn(), key, nonce, aad, aad_len,              \
+                            pt, pt_len, ct, tag);                               \
     }
-    if (EVP_EncryptUpdate(ctx, ct, &len, pt, (int)pt_len) <= 0)
-        goto out;
-    if (EVP_EncryptFinal_ex(ctx, ct + len, &len) <= 0)
-        goto out;
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, TACHYON_AEAD_TAG_LEN, tag) <= 0)
-        goto out;
-    ok = true;
-out:
-    EVP_CIPHER_CTX_free(ctx);
-    return ok;
-}
 
-static bool aes_gcm_decrypt(const EVP_CIPHER *cipher,
-                             const uint8_t *key,
-                             const uint8_t *nonce, size_t /* nonce_len */,
-                             const uint8_t *aad,   size_t aad_len,
-                             const uint8_t *ct,    size_t ct_len,
-                             const uint8_t *tag,
-                             uint8_t *pt) {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx)
-        return false;
-
-    int len;
-    bool ok = false;
-
-    if (EVP_DecryptInit_ex(ctx, cipher, nullptr, key, nonce) <= 0)
-        goto out;
-    if (aad && aad_len > 0) {
-        if (EVP_DecryptUpdate(ctx, nullptr, &len, aad, (int)aad_len) <= 0)
-            goto out;
+#define MAKE_SUITE_DEC(name, cipher_fn)                                         \
+    static bool name(const uint8_t *key, const uint8_t *nonce, size_t,          \
+                     const uint8_t *aad, size_t aad_len,                        \
+                     const uint8_t *ct, size_t ct_len,                          \
+                     const uint8_t *tag, uint8_t *pt) {                         \
+        return aead_decrypt(cipher_fn(), key, nonce, aad, aad_len,              \
+                            ct, ct_len, tag, pt);                               \
     }
-    if (EVP_DecryptUpdate(ctx, pt, &len, ct, (int)ct_len) <= 0)
-        goto out;
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TACHYON_AEAD_TAG_LEN,
-                            const_cast<uint8_t *>(tag)) <= 0)
-        goto out;
-    ok = (EVP_DecryptFinal_ex(ctx, pt + len, &len) > 0);
-out:
-    EVP_CIPHER_CTX_free(ctx);
-    return ok;
-}
 
-/* ChaCha20-Poly1305 suite — delegates to cp_aead_encrypt/decrypt */
-static bool chacha20_enc(const uint8_t *key,
-                          const uint8_t *nonce, size_t /*nonce_len*/,
-                          const uint8_t *aad, size_t aad_len,
-                          const uint8_t *pt, size_t pt_len,
-                          uint8_t *ct, uint8_t *tag) {
-    return cp_aead_encrypt(key, pt, pt_len, aad, aad_len, nonce, ct, tag);
-}
-static bool chacha20_dec(const uint8_t *key,
-                          const uint8_t *nonce, size_t /*nonce_len*/,
-                          const uint8_t *aad, size_t aad_len,
-                          const uint8_t *ct, size_t ct_len,
-                          const uint8_t *tag, uint8_t *pt) {
-    return cp_aead_decrypt(key, ct, ct_len, aad, aad_len, nonce, tag, pt);
-}
+MAKE_SUITE_ENC(chacha20_enc, EVP_chacha20_poly1305)
+MAKE_SUITE_DEC(chacha20_dec, EVP_chacha20_poly1305)
+MAKE_SUITE_ENC(aes128_enc,   EVP_aes_128_gcm)
+MAKE_SUITE_DEC(aes128_dec,   EVP_aes_128_gcm)
+MAKE_SUITE_ENC(aes256_enc,   EVP_aes_256_gcm)
+MAKE_SUITE_DEC(aes256_dec,   EVP_aes_256_gcm)
 
-/* AES-128-GCM suite */
-static bool aes128_enc(const uint8_t *key,
-                        const uint8_t *nonce, size_t nonce_len,
-                        const uint8_t *aad, size_t aad_len,
-                        const uint8_t *pt, size_t pt_len,
-                        uint8_t *ct, uint8_t *tag) {
-    return aes_gcm_encrypt(EVP_aes_128_gcm(), key, nonce, nonce_len,
-                           aad, aad_len, pt, pt_len, ct, tag);
-}
-static bool aes128_dec(const uint8_t *key,
-                        const uint8_t *nonce, size_t nonce_len,
-                        const uint8_t *aad, size_t aad_len,
-                        const uint8_t *ct, size_t ct_len,
-                        const uint8_t *tag, uint8_t *pt) {
-    return aes_gcm_decrypt(EVP_aes_128_gcm(), key, nonce, nonce_len,
-                           aad, aad_len, ct, ct_len, tag, pt);
-}
-
-/* AES-256-GCM suite */
-static bool aes256_enc(const uint8_t *key,
-                        const uint8_t *nonce, size_t nonce_len,
-                        const uint8_t *aad, size_t aad_len,
-                        const uint8_t *pt, size_t pt_len,
-                        uint8_t *ct, uint8_t *tag) {
-    return aes_gcm_encrypt(EVP_aes_256_gcm(), key, nonce, nonce_len,
-                           aad, aad_len, pt, pt_len, ct, tag);
-}
-static bool aes256_dec(const uint8_t *key,
-                        const uint8_t *nonce, size_t nonce_len,
-                        const uint8_t *aad, size_t aad_len,
-                        const uint8_t *ct, size_t ct_len,
-                        const uint8_t *tag, uint8_t *pt) {
-    return aes_gcm_decrypt(EVP_aes_256_gcm(), key, nonce, nonce_len,
-                           aad, aad_len, ct, ct_len, tag, pt);
-}
+#undef MAKE_SUITE_ENC
+#undef MAKE_SUITE_DEC
 
 static const CipherSuite kSuites[] = {
     {

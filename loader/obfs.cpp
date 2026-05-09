@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "obfs.h"
 #include "transport.h"
+#include "wire_utils.h"
 
 #include <cstring>
 #include <openssl/rand.h>
@@ -35,50 +36,7 @@ const char *mode_to_string(Mode m) {
 
 namespace {
 
-struct Writer {
-    uint8_t *buf;
-    size_t cap;
-    size_t pos;
-
-    bool put_u8(uint8_t v) {
-        if (pos + 1 > cap)
-            return false;
-        buf[pos++] = v;
-        return true;
-    }
-    bool put_u16(uint16_t v) {
-        if (pos + 2 > cap)
-            return false;
-        buf[pos++] = static_cast<uint8_t>(v >> 8);
-        buf[pos++] = static_cast<uint8_t>(v);
-        return true;
-    }
-    bool put_u24(uint32_t v) {
-        if (pos + 3 > cap)
-            return false;
-        buf[pos++] = static_cast<uint8_t>(v >> 16);
-        buf[pos++] = static_cast<uint8_t>(v >> 8);
-        buf[pos++] = static_cast<uint8_t>(v);
-        return true;
-    }
-    bool put_bytes(const uint8_t *src, size_t len) {
-        if (pos + len > cap)
-            return false;
-        memcpy(buf + pos, src, len);
-        pos += len;
-        return true;
-    }
-    /* Fix up a previously-written big-endian u16 length field */
-    void patch_u16(size_t at, uint16_t v) {
-        buf[at] = static_cast<uint8_t>(v >> 8);
-        buf[at + 1] = static_cast<uint8_t>(v);
-    }
-    void patch_u24(size_t at, uint32_t v) {
-        buf[at] = static_cast<uint8_t>(v >> 16);
-        buf[at + 1] = static_cast<uint8_t>(v >> 8);
-        buf[at + 2] = static_cast<uint8_t>(v);
-    }
-};
+using Writer = tachyon::wire::Writer;
 
 /* Modern Chrome-like cipher suite list (5 real + 1 GREASE) */
 constexpr uint16_t CIPHER_SUITES[] = {
