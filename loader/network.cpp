@@ -62,7 +62,6 @@ static uint64_t monotonic_ns() {
 }
 
 static void send_framed(int sock, const void *msg, size_t msg_len,
-                        int /* type — reserved for future per-type logic */,
                         const struct sockaddr_in *dest, const TunnelConfig &cfg) {
     using namespace tachyon::transport;
     using namespace tachyon::padding;
@@ -427,7 +426,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
                 }
 
-                send_framed(sock, &kmsg, sizeof(kmsg), TACHYON_PKT_KEEPALIVE, &p_addr, cfg);
+                send_framed(sock, &kmsg, sizeof(kmsg), &p_addr, cfg);
                 tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
                 last_tx_time = now;
                 {
@@ -548,7 +547,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     uint8_t cover[1500];
                     RAND_bytes(cover, cover_sz);
                     cover[0] = TACHYON_PKT_KEEPALIVE;
-                    send_framed(sock, cover, cover_sz, TACHYON_PKT_KEEPALIVE, &p_addr, cfg);
+                    send_framed(sock, cover, cover_sz, &p_addr, cfg);
                     met.cover_frames_sent.fetch_add(1, std::memory_order_relaxed);
                 }
             }
@@ -569,7 +568,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 msg.client_nonce = my_nonce;
                 msg.is_rekey = first_boot ? 0 : 1;
 
-                send_framed(sock, &msg, sizeof(msg), TACHYON_PKT_INIT, &p_addr, cfg);
+                send_framed(sock, &msg, sizeof(msg), &p_addr, cfg);
                 tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
                 last_init_send = now;
                 last_tx_time = now;
@@ -661,7 +660,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 cmsg.client_nonce = msg->client_nonce;
                 generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
                                 current_window, cmsg.cookie);
-                send_framed(sock, &cmsg, sizeof(cmsg), TACHYON_PKT_COOKIE, &src, cfg);
+                send_framed(sock, &cmsg, sizeof(cmsg), &src, cfg);
                 last_tx_time = now;
             }
             /* ── Handle PKT_COOKIE (initiator only) ── */
@@ -694,7 +693,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
                 }
 
-                send_framed(sock, &amsg, sizeof(amsg), TACHYON_PKT_AUTH, &p_addr, cfg);
+                send_framed(sock, &amsg, sizeof(amsg), &p_addr, cfg);
                 last_tx_time = now;
             }
             /* ── Handle PKT_AUTH (responder only) ── */
@@ -780,7 +779,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     OPENSSL_cleanse(my_eph_priv, 32);
                     continue;
                 }
-                send_framed(sock, &fmsg, sizeof(fmsg), TACHYON_PKT_FINISH, &src, cfg);
+                send_framed(sock, &fmsg, sizeof(fmsg), &src, cfg);
                 last_tx_time = now;
 
                 /* v5: init forward-secrecy ratchets from session keys */
