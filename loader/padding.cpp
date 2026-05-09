@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "padding.h"
+#include "wire_utils.h"
 
 #include <cstring>
 #include <cmath>
@@ -72,11 +73,7 @@ uint32_t padme_round(uint32_t n) {
 
 /* ── Cover-traffic shaper ───────────────────────────────────────────────── */
 
-static uint64_t rand_u64() {
-    uint64_t r = 0;
-    RAND_bytes(reinterpret_cast<unsigned char *>(&r), sizeof(r));
-    return r;
-}
+static uint64_t rand_u64() { return tachyon::wire::rand_u64(); }
 
 /*
  * Sample from exponential distribution with mean mean_ns using inverse CDF

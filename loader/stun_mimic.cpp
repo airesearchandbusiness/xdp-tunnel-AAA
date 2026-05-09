@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "stun_mimic.h"
+#include "wire_utils.h"
 
 #include <cstring>
 
@@ -33,31 +34,18 @@ uint32_t stun_fingerprint(const uint8_t *msg, size_t len) {
     return crc32_compute(msg, len) ^ 0x5354554Eu;
 }
 
-/* ── Helpers ──────────────────────────────────────────────────────── */
+/* ── Helpers (delegated to shared wire_utils.h) ───────────────────── */
 
-static inline void put_u16(uint8_t *p, uint16_t v) {
-    p[0] = static_cast<uint8_t>(v >> 8);
-    p[1] = static_cast<uint8_t>(v & 0xFF);
-}
+using tachyon::wire::write_u16;
+using tachyon::wire::write_u32;
+using tachyon::wire::read_u16;
+using tachyon::wire::read_u32;
+using tachyon::wire::pad4;
 
-static inline void put_u32(uint8_t *p, uint32_t v) {
-    p[0] = static_cast<uint8_t>(v >> 24);
-    p[1] = static_cast<uint8_t>((v >> 16) & 0xFF);
-    p[2] = static_cast<uint8_t>((v >> 8) & 0xFF);
-    p[3] = static_cast<uint8_t>(v & 0xFF);
-}
-
-static inline uint16_t get_u16(const uint8_t *p) {
-    return static_cast<uint16_t>((p[0] << 8) | p[1]);
-}
-
-static inline uint32_t get_u32(const uint8_t *p) {
-    return (static_cast<uint32_t>(p[0]) << 24) | (static_cast<uint32_t>(p[1]) << 16) |
-           (static_cast<uint32_t>(p[2]) << 8) | p[3];
-}
-
-/* Attribute padding to 4-byte boundary */
-static inline size_t pad4(size_t n) { return (n + 3) & ~static_cast<size_t>(3); }
+static inline void put_u16(uint8_t *p, uint16_t v) { write_u16(p, v); }
+static inline void put_u32(uint8_t *p, uint32_t v) { write_u32(p, v); }
+static inline uint16_t get_u16(const uint8_t *p) { return read_u16(p); }
+static inline uint32_t get_u32(const uint8_t *p) { return read_u32(p); }
 
 /* ── Builder ──────────────────────────────────────────────────────── */
 
