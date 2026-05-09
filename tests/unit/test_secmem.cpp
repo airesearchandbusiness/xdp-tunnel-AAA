@@ -145,3 +145,61 @@ TEST(Secmem, SecureBytesResizeShrink) {
     for (size_t i = 0; i < 4; ++i)
         EXPECT_EQ(b.data()[i], i + 1);
 }
+
+/* ── KeyBuf<N> ──────────────────────────────────────────────────────── */
+
+TEST(Secmem, KeyBufIsZeroInitialised) {
+    KeyBuf<32> k;
+    EXPECT_EQ(k.size(), 32u);
+    for (size_t i = 0; i < 32; ++i)
+        EXPECT_EQ(k.data()[i], 0u);
+}
+
+TEST(Secmem, KeyBufAllowsMutation) {
+    KeyBuf<16> k;
+    for (size_t i = 0; i < 16; ++i)
+        k.data()[i] = static_cast<uint8_t>(i + 1);
+    EXPECT_EQ(k.data()[0], 1u);
+    EXPECT_EQ(k.data()[15], 16u);
+}
+
+TEST(Secmem, KeyBufImplicitlyConvertsToPointer) {
+    KeyBuf<32> k;
+    /* This test verifies that KeyBuf can be passed to functions taking
+     * uint8_t* — the same way raw uint8_t arrays are passed to OpenSSL. */
+    auto fill = [](uint8_t *buf, size_t n) {
+        for (size_t i = 0; i < n; ++i)
+            buf[i] = 0xCC;
+    };
+    fill(k, 32);
+    EXPECT_EQ(k.data()[0], 0xCCu);
+    EXPECT_EQ(k.data()[31], 0xCCu);
+}
+
+TEST(Secmem, KeyBufDestructorCleansesContents) {
+    /* Verify destructor runs secure_zero. We can't observe the cleansed
+     * memory after destruction (UB), so we verify by placement-new into
+     * a heap buffer, observe contents, destroy explicitly, then check
+     * the underlying storage was zeroed. */
+    alignas(KeyBuf<16>) uint8_t storage[sizeof(KeyBuf<16>)];
+    auto *k = new (storage) KeyBuf<16>();
+    for (size_t i = 0; i < 16; ++i)
+        k->data()[i] = 0xAB;
+    EXPECT_EQ(k->data()[0], 0xABu);
+    k->~KeyBuf<16>();
+    /* Read raw storage — must be zero after destructor cleanse */
+    for (size_t i = 0; i < 16; ++i)
+        EXPECT_EQ(storage[i], 0u) << "byte " << i << " not cleansed";
+}
+
+TEST(Secmem, KeyBufVariousSizes) {
+    KeyBuf<1> k1; KeyBuf<8> k8; KeyBuf<48> k48; KeyBuf<256> k256;
+    EXPECT_EQ(k1.size(), 1u);
+    EXPECT_EQ(k8.size(), 8u);
+    EXPECT_EQ(k48.size(), 48u);
+    EXPECT_EQ(k256.size(), 256u);
+    /* All zero-initialised */
+    EXPECT_EQ(k1.data()[0], 0u);
+    EXPECT_EQ(k48.data()[47], 0u);
+    EXPECT_EQ(k256.data()[255], 0u);
+}
