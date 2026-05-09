@@ -54,6 +54,48 @@ void const_time_copy(uint8_t cond, void *dst, const void *src, size_t n);
 bool lock_region(void *p, size_t n);
 void unlock_region(void *p, size_t n);
 
+/* ── KeyBuf<N> ────────────────────────────────────────────────────────
+ *
+ * Stack-allocated, fixed-size key buffer that auto-cleanses on destruction.
+ * Replaces patterns like:
+ *
+ *     uint8_t key[32];
+ *     ...
+ *     OPENSSL_cleanse(key, 32);  // easy to forget on early-return paths
+ *
+ * with:
+ *
+ *     KeyBuf<32> key;
+ *     // ... use key.data() ...
+ *     // destructor cleanses automatically on every exit path
+ *
+ * Non-copyable to prevent accidental key duplication; non-movable because
+ * the buffer is inline (move would require copying then cleansing the source).
+ * Use SecureBytes if you need heap allocation, mlock, or move semantics.
+ */
+template <size_t N>
+class KeyBuf {
+  public:
+    KeyBuf() noexcept { std::memset(buf_, 0, N); }
+    ~KeyBuf() noexcept { secure_zero(buf_, N); }
+
+    KeyBuf(const KeyBuf &)            = delete;
+    KeyBuf &operator=(const KeyBuf &) = delete;
+    KeyBuf(KeyBuf &&)                 = delete;
+    KeyBuf &operator=(KeyBuf &&)      = delete;
+
+    uint8_t       *data() noexcept       { return buf_; }
+    const uint8_t *data() const noexcept { return buf_; }
+    constexpr size_t size() const noexcept { return N; }
+
+    /* Implicit conversion to uint8_t* for direct use with C APIs */
+    operator uint8_t *() noexcept             { return buf_; }
+    operator const uint8_t *() const noexcept { return buf_; }
+
+  private:
+    uint8_t buf_[N];
+};
+
 /* ── SecureBytes ────────────────────────────────────────────────────── */
 
 /*
