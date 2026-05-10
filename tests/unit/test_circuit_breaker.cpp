@@ -121,14 +121,14 @@ static void test_next_retry_sec_exponential_backoff() {
     assert(cb.next_retry_sec(now) == 32);
 
     cb.record_failure(now);
-    // 5 failures: 2 * 2^5 = 64 → capped at 60
+    // 5 failures: 2 * 2^5 = 64 -> capped at 60
     assert(cb.next_retry_sec(now) == 60);
 
     cb.record_failure(now);
     // 6 failures: still capped at 60
     assert(cb.next_retry_sec(now) == 60);
 
-    // Test jitter: now_sec=301 → jitter = 301 % 3 = 1
+    // Test jitter: now_sec=301 -> jitter = 301 % 3 = 1
     cb.reset();
     assert(cb.next_retry_sec(301) == 3); // 2 + 1
 
@@ -145,7 +145,7 @@ static void test_reset_returns_to_initial_state() {
     assert(cb.state() == State::CLOSED);
     assert(cb.allow_request(200));
     // next_retry_sec should reflect zero failures (base backoff only).
-    // now=300 → jitter=0, backoff=2
+    // now=300 -> jitter=0, backoff=2
     assert(cb.next_retry_sec(300) == 2);
     std::printf("PASS: test_reset_returns_to_initial_state\n");
 }

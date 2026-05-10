@@ -74,9 +74,9 @@ TEST_F(MetricsTest, AllFieldsExercised) {
     EXPECT_EQ(s.rl_rx_drops, 1u);
 }
 
-/* ══════════════════════════════════════════════════════════════
+/* ===================================================================
  * MetricsExporter Health / Readiness Endpoint Tests
- * ══════════════════════════════════════════════════════════════ */
+ * =================================================================== */
 
 static std::string http_exchange(tachyon::MetricsExporter &ex, const char *path) {
     uint16_t port = ex.port();

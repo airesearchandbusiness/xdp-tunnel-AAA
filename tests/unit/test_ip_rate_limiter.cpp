@@ -25,7 +25,7 @@ TEST_F(IpRateLimiterTest, FreshIpReturnsAllow) {
 TEST_F(IpRateLimiterTest, UnderThresholdFailuresReturnAllow) {
     limiter.record_failure(kIP1, 100);
     limiter.record_failure(kIP1, 101);
-    // 2 failures, threshold is 3 — should still ALLOW
+    // 2 failures, threshold is 3 -- should still ALLOW
     EXPECT_EQ(limiter.check(kIP1, 102), Verdict::ALLOW);
 }
 
@@ -43,7 +43,7 @@ TEST_F(IpRateLimiterTest, BackoffExpiresReturnsAllow) {
     limiter.record_failure(kIP1, 100);
     limiter.record_failure(kIP1, 101);
     limiter.record_failure(kIP1, 102);
-    // backoff_until = 104 (base=2, exponent=0 → 2s backoff from t=102)
+    // backoff_until = 104 (base=2, exponent=0 -> 2s backoff from t=102)
     EXPECT_EQ(limiter.check(kIP1, 103), Verdict::BACKOFF);
     // At t=104, backoff has expired (now >= backoff_until)
     EXPECT_EQ(limiter.check(kIP1, 104), Verdict::ALLOW);
@@ -62,7 +62,7 @@ TEST_F(IpRateLimiterTest, BlockExpiresAfterWindow) {
     for (uint32_t i = 0; i < 10; ++i)
         limiter.record_failure(kIP1, 100 + i);
     EXPECT_EQ(limiter.check(kIP1, 150), Verdict::BLOCK);
-    // After window (60s from first_failure_ts=100 → 161)
+    // After window (60s from first_failure_ts=100 -> 161)
     EXPECT_EQ(limiter.check(kIP1, 161), Verdict::ALLOW);
     // Entry should be cleaned up
     EXPECT_EQ(limiter.size(), 0u);
