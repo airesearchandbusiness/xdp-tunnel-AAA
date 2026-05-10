@@ -240,20 +240,24 @@ if(BUILD_BENCHMARKS)
     set(BENCHMARK_INSTALL_DOCS      OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(benchmark)
 
-    add_executable(bench_crypto benchmarks/bench_crypto.cpp)
-    target_link_libraries(bench_crypto PRIVATE
-        tachyon_core
-        benchmark::benchmark_main
-    )
-    target_include_directories(bench_crypto PRIVATE
-        ${PROJECT_ROOT}/loader
-        ${PROJECT_ROOT}/src
-    )
-    target_compile_definitions(bench_crypto PRIVATE
-        TACHYON_VERSION="bench"
-        TACHYON_NO_BPF
-    )
-    target_compile_options(bench_crypto PRIVATE -O3 -Wall)
+    function(add_tachyon_bench BENCH_NAME BENCH_SOURCE)
+        add_executable(${BENCH_NAME} ${BENCH_SOURCE})
+        target_link_libraries(${BENCH_NAME} PRIVATE tachyon_core benchmark::benchmark_main)
+        target_include_directories(${BENCH_NAME} PRIVATE
+            ${PROJECT_ROOT}/loader
+            ${PROJECT_ROOT}/src
+        )
+        target_compile_definitions(${BENCH_NAME} PRIVATE
+            TACHYON_VERSION="bench"
+            TACHYON_NO_BPF
+        )
+        target_compile_options(${BENCH_NAME} PRIVATE -O3 -Wall)
+    endfunction()
+
+    add_tachyon_bench(bench_crypto             benchmarks/bench_crypto.cpp)
+    add_tachyon_bench(bench_log                benchmarks/bench_log.cpp)
+    add_tachyon_bench(bench_ip_rate_limiter    benchmarks/bench_ip_rate_limiter.cpp)
+    add_tachyon_bench(bench_circuit_breaker    benchmarks/bench_circuit_breaker.cpp)
 endif()
 
 # ── Fuzz Tests (requires clang + libFuzzer) ──
