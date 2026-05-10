@@ -24,6 +24,11 @@
 #include "ratchet.h"
 #include "transcript.h"
 #include "hybrid_kex.h"
+#include "secmem.h"
+
+/* Stack-allocated key buffer with auto-cleanse on destruction. */
+template <size_t N>
+using KeyBuf = tachyon::secmem::KeyBuf<N>;
 
 /* Monotonic clock for all internal timers (DPD, keepalive, rekey, cookie
  * rotation). Wall-clock time(nullptr) can jump backwards during NTP
@@ -200,7 +205,7 @@ static void build_transcript_ad(uint8_t *out, uint32_t session_id_net, uint64_t 
 /* Derive session TX/RX keys from session master secret */
 static void derive_session_keys(const uint8_t *early_secret, const uint8_t *eph_ss,
                                 bool is_initiator, uint8_t *tx_key, uint8_t *rx_key) {
-    uint8_t session_master[32];
+    KeyBuf<32> session_master;
     derive_kdf(early_secret, 32, eph_ss, 32, TACHYON_KDF_SESSION_MASTER, session_master);
 
     /* Initiator's TX = Client-TX, Responder's TX = Server-TX */
@@ -209,7 +214,7 @@ static void derive_session_keys(const uint8_t *early_secret, const uint8_t *eph_
 
     derive_kdf(session_master, 32, ZERO_IKM, 32, my_tx_label, tx_key);
     derive_kdf(session_master, 32, ZERO_IKM, 32, my_rx_label, rx_key);
-    OPENSSL_cleanse(session_master, 32);
+    /* session_master auto-cleansed by KeyBuf destructor on return */
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -295,16 +300,21 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     if (!cfg.psk.empty())
         OPENSSL_cleanse(cfg.psk.data(), cfg.psk.size());
 
-    /* Cookie secret for DoS protection */
+    /* Cookie secret for DoS protection.
+     * NOTE: All variables that may be live across `goto cleanup_keys`
+     * MUST be declared before any such goto, since C++ forbids jumping
+     * over initialisation. `sock` is hoisted up here for the same reason. */
     uint8_t cookie_secret[32];
     uint64_t last_cookie_rotation = monotonic_sec();
+    int sock = -1;
+
     if (RAND_bytes(cookie_secret, 32) != 1) {
         LOG_ERR("Failed to generate initial cookie secret");
         goto cleanup_keys;
     }
 
     /* UDP socket setup */
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
         LOG_ERR("Socket creation failed: %s", strerror(errno));
         goto cleanup_keys;
@@ -366,6 +376,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint64_t last_ratchet = monotonic_sec();
         uint8_t ratchet_chain[32];
         RAND_bytes(ratchet_chain, 32);
+
+        /* v5: per-message forward-secrecy ratchets, initialised after each
+         * successful handshake from the freshly derived TX/RX keys. */
+        tachyon::ratchet::SendState send_ratchet{};
+        tachyon::ratchet::SendState recv_ratchet{};
 
         /* Decoy traffic state */
         uint64_t last_decoy = monotonic_sec();
@@ -456,8 +471,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (RAND_bytes(d_pt, 16) == 1 &&
                     cp_aead_encrypt(cp_enc_key, d_pt, 16, d_ad, 12, d_nonce, decoy_msg.ciphertext,
                                     decoy_msg.ciphertext + 16)) {
-                    send_mimic_quic(sock, &decoy_msg, sizeof(decoy_msg), TACHYON_PKT_KEEPALIVE,
-                                    &p_addr);
+                    send_framed(sock, &decoy_msg, sizeof(decoy_msg), &p_addr, cfg);
                 }
                 last_decoy = now;
                 {
@@ -744,8 +758,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (!generate_x25519_keypair(my_eph_priv, my_eph_pub))
                     continue;
 
-                /* Derive session keys (responder: is_initiator=false) */
-                uint8_t eph_ss[32], tx_key[32], rx_key[32];
+                /* Derive session keys (responder: is_initiator=false).
+                 * KeyBufs auto-cleanse on block exit / continue. */
+                KeyBuf<32> eph_ss, tx_key, rx_key;
                 if (!do_ecdh(my_eph_priv, peer_eph_pub, eph_ss)) {
                     LOG_ERR("Ephemeral ECDH failed in PKT_AUTH");
                     continue;
@@ -775,7 +790,6 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
                                      fmsg.ciphertext + 32)) {
                     LOG_ERR("PKT_FINISH encrypt failed");
-                    OPENSSL_cleanse(eph_ss, 32);
                     OPENSSL_cleanse(my_eph_priv, 32);
                     continue;
                 }
@@ -787,7 +801,6 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
                 replay_window.reset();
 
-                OPENSSL_cleanse(eph_ss, 32);
                 OPENSSL_cleanse(my_eph_priv, 32);
                 met.hs_completed.fetch_add(1, std::memory_order_relaxed);
                 LOG_INFO("Handshake complete (responder). Datapath armed.");
@@ -814,8 +827,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 last_rx_time = now; /* Authenticated PKT_FINISH - peer is alive */
 
-                /* Derive session keys (initiator: is_initiator=true) */
-                uint8_t eph_ss[32], tx_key[32], rx_key[32];
+                /* Derive session keys (initiator: is_initiator=true).
+                 * KeyBufs auto-cleanse on block exit. */
+                KeyBuf<32> eph_ss, tx_key, rx_key;
                 if (!do_ecdh(my_eph_priv, peer_eph_pub, eph_ss)) {
                     LOG_ERR("Ephemeral ECDH failed in PKT_FINISH");
                     continue;
@@ -833,7 +847,6 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
                 replay_window.reset();
 
-                OPENSSL_cleanse(eph_ss, 32);
                 OPENSSL_cleanse(my_eph_priv, 32);
                 met.hs_completed.fetch_add(1, std::memory_order_relaxed);
                 if (!first_boot)
