@@ -38,7 +38,7 @@ struct StderrSink {
 static void BM_LogTextSimple(benchmark::State &state) {
     StderrSink sink;
     tachyon::log::init(
-        {.json = false, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+        tachyon::log::Config{false, false, tachyon::log::Level::INFO});
     for (auto _ : state)
         LOG_INFO("hello world from benchmark iteration %d", 42);
 }
@@ -46,7 +46,7 @@ BENCHMARK(BM_LogTextSimple);
 
 static void BM_LogJsonSimple(benchmark::State &state) {
     StderrSink sink;
-    tachyon::log::init({.json = true, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{true, false, tachyon::log::Level::INFO});
     for (auto _ : state)
         LOG_INFO("hello world from benchmark iteration %d", 42);
 }
@@ -54,7 +54,7 @@ BENCHMARK(BM_LogJsonSimple);
 
 static void BM_LogJsonWithContext(benchmark::State &state) {
     StderrSink sink;
-    tachyon::log::init({.json = true, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{true, false, tachyon::log::Level::INFO});
     tachyon::log::set_context("session_id", "42");
     tachyon::log::set_context("peer_ip", "10.0.0.1");
     for (auto _ : state)
@@ -66,7 +66,7 @@ BENCHMARK(BM_LogJsonWithContext);
 static void BM_LogFiltered(benchmark::State &state) {
     /* Min level WARN, emitting INFO → fast-path no-op. */
     tachyon::log::init(
-        {.json = false, .use_syslog = false, .min_level = tachyon::log::Level::WARN});
+        tachyon::log::Config{false, false, tachyon::log::Level::WARN});
     for (auto _ : state)
         LOG_INFO("filtered out, should be near-zero cost");
 }
