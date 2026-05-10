@@ -146,6 +146,16 @@ TEST(MetricsExporterTest, MetricsEndpointStillWorks) {
     ex.stop();
 }
 
+TEST(MetricsExporterTest, VersionReturns200) {
+    tachyon::MetricsExporter ex;
+    ASSERT_TRUE(ex.start(0));
+    std::string resp = http_exchange(ex, "/version");
+    EXPECT_NE(resp.find("200 OK"), std::string::npos);
+    EXPECT_NE(resp.find("\"version\":"), std::string::npos);
+    EXPECT_NE(resp.find("\"protocol\":\"v5\""), std::string::npos);
+    ex.stop();
+}
+
 TEST(MetricsExporterTest, SetReadyToggle) {
     tachyon::MetricsExporter ex;
     ASSERT_TRUE(ex.start(0));
