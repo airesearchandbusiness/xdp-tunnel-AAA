@@ -2,6 +2,7 @@
 #ifndef TACHYON_WIRE_UTILS_H
 #define TACHYON_WIRE_UTILS_H
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -48,10 +49,12 @@ struct Writer {
         return true;
     }
     void patch_u16(size_t at, uint16_t v) {
+        assert(at + 2 <= cap);  /* CWE-787: catch out-of-bounds patch in debug builds */
         buf[at]     = static_cast<uint8_t>(v >> 8);
         buf[at + 1] = static_cast<uint8_t>(v);
     }
     void patch_u24(size_t at, uint32_t v) {
+        assert(at + 3 <= cap);  /* CWE-787: catch out-of-bounds patch in debug builds */
         buf[at]     = static_cast<uint8_t>(v >> 16);
         buf[at + 1] = static_cast<uint8_t>(v >> 8);
         buf[at + 2] = static_cast<uint8_t>(v);
