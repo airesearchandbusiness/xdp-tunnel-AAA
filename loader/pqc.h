@@ -34,10 +34,10 @@
 namespace tachyon::pqc {
 
 /* FIPS 203 parameter set 3 (ML-KEM-768) — classical ~192-bit / PQ ~cat 3 */
-constexpr size_t MLKEM768_PUBLIC_KEY_LEN  = 1184;
-constexpr size_t MLKEM768_SECRET_KEY_LEN  = 2400;
-constexpr size_t MLKEM768_CIPHERTEXT_LEN  = 1088;
-constexpr size_t MLKEM768_SHARED_SECRET   = 32;
+constexpr size_t MLKEM768_PUBLIC_KEY_LEN = 1184;
+constexpr size_t MLKEM768_SECRET_KEY_LEN = 2400;
+constexpr size_t MLKEM768_CIPHERTEXT_LEN = 1088;
+constexpr size_t MLKEM768_SHARED_SECRET = 32;
 
 /*
  * pqc_available - Returns true when a real PQC backend is linked in and
@@ -84,8 +84,8 @@ bool mlkem768_decapsulate(const uint8_t *sk, const uint8_t *ct, uint8_t *ss_out)
  *
  * Returns true on success. Safe to call regardless of pqc_available().
  */
-bool hkdf_sha384_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ikm,
-                         size_t ikm_len, uint8_t out[48]);
+bool hkdf_sha384_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
+                         uint8_t out[48]);
 
 /*
  * hybrid_combine - Concatenate classical || pq secrets and derive a 48-byte
@@ -93,9 +93,8 @@ bool hkdf_sha384_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ik
  * string (may be nullptr). Output is suitable as input_keying_material for a
  * subsequent HKDF-Expand that produces tunnel session keys.
  */
-bool hybrid_combine(const uint8_t *ss_classical, size_t ss_classical_len,
-                    const uint8_t *ss_pq, size_t ss_pq_len, const char *context,
-                    uint8_t out[48]);
+bool hybrid_combine(const uint8_t *ss_classical, size_t ss_classical_len, const uint8_t *ss_pq,
+                    size_t ss_pq_len, const char *context, uint8_t out[48]);
 
 } /* namespace tachyon::pqc */
 

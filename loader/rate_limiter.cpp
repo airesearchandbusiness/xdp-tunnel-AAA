@@ -7,9 +7,9 @@ namespace tachyon::rl {
 
 void bucket_init(TokenBucket &b, uint64_t rate_bps, uint64_t burst, uint64_t now_ns) {
     b.rate_bps = rate_bps;
-    b.burst    = (burst > 0) ? burst : rate_bps; /* default burst = 1s worth */
-    b.tokens   = b.burst;
-    b.last_ns  = now_ns;
+    b.burst = (burst > 0) ? burst : rate_bps; /* default burst = 1s worth */
+    b.tokens = b.burst;
+    b.last_ns = now_ns;
 }
 
 static void refill(TokenBucket &b, uint64_t now_ns) {
@@ -49,12 +49,12 @@ uint64_t bucket_tokens(const TokenBucket &b, uint64_t now_ns) {
 void bucket_set_rate(TokenBucket &b, uint64_t rate_bps, uint64_t burst, uint64_t now_ns) {
     refill(b, now_ns);
     b.rate_bps = rate_bps;
-    b.burst    = (burst > 0) ? burst : rate_bps;
-    b.tokens   = std::min(b.tokens, b.burst);
+    b.burst = (burst > 0) ? burst : rate_bps;
+    b.tokens = std::min(b.tokens, b.burst);
 }
 
 void bucket_reset(TokenBucket &b, uint64_t now_ns) {
-    b.tokens  = b.burst;
+    b.tokens = b.burst;
     b.last_ns = now_ns;
 }
 

@@ -23,7 +23,7 @@ Window::Window(size_t width_bits) {
 
 void Window::reset() {
     std::fill(bits_.begin(), bits_.end(), 0);
-    highest_  = 0;
+    highest_ = 0;
     any_seen_ = false;
     /* Counters persist across rekeys — they're lifetime stats for the
      * session, not per-window. */
@@ -59,7 +59,7 @@ void Window::shift_window(uint64_t delta) {
         return;
     }
     const size_t word_shift = static_cast<size_t>(delta >> 6);
-    const size_t bit_shift  = static_cast<size_t>(delta & 63);
+    const size_t bit_shift = static_cast<size_t>(delta & 63);
 
     if (word_shift) {
         for (size_t i = bits_.size(); i-- > 0;) {
@@ -70,8 +70,8 @@ void Window::shift_window(uint64_t delta) {
         uint64_t carry = 0;
         for (size_t i = 0; i < bits_.size(); ++i) {
             const uint64_t new_carry = bits_[i] >> (64 - bit_shift);
-            bits_[i]                 = (bits_[i] << bit_shift) | carry;
-            carry                    = new_carry;
+            bits_[i] = (bits_[i] << bit_shift) | carry;
+            carry = new_carry;
         }
     }
 }
@@ -89,9 +89,9 @@ Result Window::peek(uint64_t seq) const {
 Result Window::check_and_commit(uint64_t seq) {
     if (!any_seen_) {
         any_seen_ = true;
-        highest_  = seq;
+        highest_ = seq;
         /* bit at offset 0 = the highest seen seq */
-        bits_[0]  = 1ULL;
+        bits_[0] = 1ULL;
         ++accepted_;
         return Result::ACCEPTED;
     }

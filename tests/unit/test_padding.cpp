@@ -143,8 +143,7 @@ TEST(Padding, ShaperEmitsCoverInPadmeBins) {
         const uint32_t sz = shaper_poll_cover(s, 1'000'000'000ull * (i + 1), 64, 1400);
         if (sz == 0)
             continue;
-        EXPECT_EQ(padme_round(sz), sz)
-            << "Cover frame size " << sz << " is not a PADME bin";
+        EXPECT_EQ(padme_round(sz), sz) << "Cover frame size " << sz << " is not a PADME bin";
     }
 }
 

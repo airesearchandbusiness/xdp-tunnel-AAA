@@ -23,27 +23,21 @@
  * ══════════════════════════════════════════════════════════════════════════ */
 
 struct CipherSuite {
-    uint8_t     type_id;   /* TACHYON_CIPHER_* constant              */
-    const char *name;      /* Human-readable identifier              */
-    size_t      key_len;   /* Key size in bytes                      */
-    size_t      tag_len;   /* Authentication tag size in bytes       */
-    size_t      nonce_len; /* Nonce (IV) size in bytes               */
+    uint8_t type_id;  /* TACHYON_CIPHER_* constant              */
+    const char *name; /* Human-readable identifier              */
+    size_t key_len;   /* Key size in bytes                      */
+    size_t tag_len;   /* Authentication tag size in bytes       */
+    size_t nonce_len; /* Nonce (IV) size in bytes               */
 
     /* Encrypt plaintext pt[pt_len] into ct[], append tag[] (tag_len bytes).
      * Returns true on success. ct must have room for pt_len bytes. */
-    bool (*encrypt)(const uint8_t *key,
-                    const uint8_t *nonce, size_t nonce_len,
-                    const uint8_t *aad,   size_t aad_len,
-                    const uint8_t *pt,    size_t pt_len,
-                    uint8_t *ct, uint8_t *tag);
+    bool (*encrypt)(const uint8_t *key, const uint8_t *nonce, size_t nonce_len, const uint8_t *aad,
+                    size_t aad_len, const uint8_t *pt, size_t pt_len, uint8_t *ct, uint8_t *tag);
 
     /* Decrypt ct[ct_len] using tag[] into pt[].
      * Returns true on success (tag verified). */
-    bool (*decrypt)(const uint8_t *key,
-                    const uint8_t *nonce, size_t nonce_len,
-                    const uint8_t *aad,   size_t aad_len,
-                    const uint8_t *ct,    size_t ct_len,
-                    const uint8_t *tag,
+    bool (*decrypt)(const uint8_t *key, const uint8_t *nonce, size_t nonce_len, const uint8_t *aad,
+                    size_t aad_len, const uint8_t *ct, size_t ct_len, const uint8_t *tag,
                     uint8_t *pt);
 };
 

@@ -21,7 +21,9 @@ using namespace tachyon::obfs;
 
 namespace {
 
-void make_rand(uint8_t *buf, size_t n) { RAND_bytes(buf, n); }
+void make_rand(uint8_t *buf, size_t n) {
+    RAND_bytes(buf, n);
+}
 
 Options make_opts(const char *sni, uint8_t *cr, uint8_t *sid) {
     Options o{};
@@ -52,7 +54,7 @@ TEST(Obfs, GreaseCodepointsAreRecognized) {
     EXPECT_TRUE(is_grease_codepoint(0x0A0A));
     EXPECT_TRUE(is_grease_codepoint(0x1A1A));
     EXPECT_TRUE(is_grease_codepoint(0xFAFA));
-    EXPECT_FALSE(is_grease_codepoint(0x1301));   /* TLS_AES_128_GCM_SHA256 */
+    EXPECT_FALSE(is_grease_codepoint(0x1301)); /* TLS_AES_128_GCM_SHA256 */
     EXPECT_FALSE(is_grease_codepoint(0x0000));
     EXPECT_FALSE(is_grease_codepoint(0x0A0B));
 }
@@ -73,9 +75,9 @@ TEST(Obfs, BuildClientHelloProducesValidRecord) {
     ASSERT_GE(n, 5u);
 
     /* Record header sanity */
-    EXPECT_EQ(buf[0], 0x16);                             /* handshake */
+    EXPECT_EQ(buf[0], 0x16); /* handshake */
     EXPECT_EQ(buf[1], 0x03);
-    EXPECT_EQ(buf[2], 0x03);                             /* TLS 1.2 legacy */
+    EXPECT_EQ(buf[2], 0x03); /* TLS 1.2 legacy */
     const size_t rec_len = (static_cast<size_t>(buf[3]) << 8) | buf[4];
     EXPECT_EQ(rec_len, n - 5);
 

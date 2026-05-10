@@ -34,22 +34,22 @@ TransportId transport_auto_select(const EnvProfile &env) {
         const int s = g_engines[i]->score(env);
         if (s > best_score) {
             best_score = s;
-            best       = g_engines[i]->id;
+            best = g_engines[i]->id;
         }
     }
     return best;
 }
 
-FrameResult transport_wrap(TransportId id, const uint8_t *payload, size_t len,
-                           uint8_t *out, size_t cap, const FrameContext *ctx) {
+FrameResult transport_wrap(TransportId id, const uint8_t *payload, size_t len, uint8_t *out,
+                           size_t cap, const FrameContext *ctx) {
     const TransportOps *ops = transport_get(id);
     if (!ops || !ops->wrap)
         return {0, false};
     return ops->wrap(payload, len, out, cap, ctx);
 }
 
-FrameResult transport_unwrap(TransportId id, const uint8_t *frame, size_t len,
-                             uint8_t *out, size_t cap) {
+FrameResult transport_unwrap(TransportId id, const uint8_t *frame, size_t len, uint8_t *out,
+                             size_t cap) {
     const TransportOps *ops = transport_get(id);
     if (!ops || !ops->unwrap)
         return {0, false};
@@ -67,13 +67,20 @@ int transport_list(const TransportOps **out, int max) {
 
 const char *transport_id_to_string(TransportId id) {
     switch (id) {
-    case TransportId::NONE:    return "none";
-    case TransportId::REALITY: return "reality";
-    case TransportId::QUIC:    return "quic";
-    case TransportId::HTTP2:   return "http2";
-    case TransportId::DOH:     return "doh";
-    case TransportId::STUN:    return "stun";
-    case TransportId::AUTO:    return "auto";
+    case TransportId::NONE:
+        return "none";
+    case TransportId::REALITY:
+        return "reality";
+    case TransportId::QUIC:
+        return "quic";
+    case TransportId::HTTP2:
+        return "http2";
+    case TransportId::DOH:
+        return "doh";
+    case TransportId::STUN:
+        return "stun";
+    case TransportId::AUTO:
+        return "auto";
     }
     return "none";
 }

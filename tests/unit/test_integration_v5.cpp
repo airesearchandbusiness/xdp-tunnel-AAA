@@ -51,11 +51,8 @@ struct IntegrationV5 : public ::testing::Test {
 
 TEST_F(IntegrationV5, AllEnginesRoundTrip) {
     const transport::TransportId engines[] = {
-        transport::TransportId::QUIC,
-        transport::TransportId::HTTP2,
-        transport::TransportId::DOH,
-        transport::TransportId::STUN,
-        transport::TransportId::REALITY,
+        transport::TransportId::QUIC, transport::TransportId::HTTP2,   transport::TransportId::DOH,
+        transport::TransportId::STUN, transport::TransportId::REALITY,
     };
 
     uint8_t payload[200];
@@ -71,14 +68,13 @@ TEST_F(IntegrationV5, AllEnginesRoundTrip) {
         ctx.conn_id_len = 8;
         RAND_bytes(ctx.conn_id, 8);
 
-        auto wr = transport::transport_wrap(tid, payload, sizeof(payload),
-                                            frame, sizeof(frame), &ctx);
+        auto wr =
+            transport::transport_wrap(tid, payload, sizeof(payload), frame, sizeof(frame), &ctx);
         ASSERT_TRUE(wr.ok) << "wrap failed for " << transport::transport_id_to_string(tid);
         EXPECT_GT(wr.bytes, sizeof(payload));
 
         uint8_t recovered[8192] = {};
-        auto ur = transport::transport_unwrap(tid, frame, wr.bytes,
-                                              recovered, sizeof(recovered));
+        auto ur = transport::transport_unwrap(tid, frame, wr.bytes, recovered, sizeof(recovered));
         ASSERT_TRUE(ur.ok) << "unwrap failed for " << transport::transport_id_to_string(tid);
         EXPECT_EQ(ur.bytes, sizeof(payload));
         EXPECT_EQ(memcmp(recovered, payload, sizeof(payload)), 0);
@@ -93,16 +89,16 @@ TEST_F(IntegrationV5, AutoSelectEveryProfile) {
         bool udp;
         transport::RegionHint region;
     } cases[] = {
-        {443, true,  transport::RegionHint::OPEN},
+        {443, true, transport::RegionHint::OPEN},
         {443, false, transport::RegionHint::RESTRICTIVE},
         {3478, true, transport::RegionHint::MODERATE},
-        {853, true,  transport::RegionHint::RESTRICTIVE},
+        {853, true, transport::RegionHint::RESTRICTIVE},
     };
 
     for (auto &c : cases) {
         transport::EnvProfile env{};
-        env.port   = c.port;
-        env.udp    = c.udp;
+        env.port = c.port;
+        env.udp = c.udp;
         env.region = c.region;
         auto tid = transport::transport_auto_select(env);
         EXPECT_NE(tid, transport::TransportId::NONE)
@@ -118,8 +114,7 @@ TEST_F(IntegrationV5, PadmeOverheadBounded) {
         uint32_t padded = padding::padme_round(n);
         ASSERT_GE(padded, n);
         uint32_t overhead = padded - n;
-        EXPECT_LE(overhead * 100, n * 14)
-            << "PADME overhead too high at n=" << n;
+        EXPECT_LE(overhead * 100, n * 14) << "PADME overhead too high at n=" << n;
     }
 }
 
@@ -135,7 +130,8 @@ TEST_F(IntegrationV5, CoverTrafficEmission) {
         shaper.next_cover_ns = 0; /* force emit */
         uint32_t sz = padding::shaper_poll_cover(
             shaper, static_cast<uint64_t>(i + 1) * 1'000'000'000ULL, 64, 1400);
-        if (sz > 0) ++emitted;
+        if (sz > 0)
+            ++emitted;
     }
     EXPECT_GE(emitted, 15); /* at least half should fire */
 }
@@ -164,7 +160,7 @@ TEST_F(IntegrationV5, RatchetForwardSecrecy) {
         uint64_t ctr;
         ASSERT_TRUE(ratchet::ratchet_next(s, k, n, &ctr));
         EXPECT_EQ(ctr, static_cast<uint64_t>(i));
-        keys.insert(std::string(reinterpret_cast<char*>(k), 32));
+        keys.insert(std::string(reinterpret_cast<char *>(k), 32));
     }
     EXPECT_EQ(keys.size(), 100u);
 }
@@ -238,8 +234,7 @@ TEST_F(IntegrationV5, RealityFirstFrameIsTlsHandshake) {
     ctx.seq = 0;
     ctx.sni = "cdn.cloudflare.com";
 
-    auto wr = transport::transport_wrap(transport::TransportId::REALITY,
-                                        payload, sizeof(payload),
+    auto wr = transport::transport_wrap(transport::TransportId::REALITY, payload, sizeof(payload),
                                         frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
     /* First record should be handshake (0x16) */
@@ -262,8 +257,7 @@ TEST_F(IntegrationV5, RealitySubsequentFrameIsAppData) {
     ctx.seq = 5; /* not first */
     ctx.sni = "x.y";
 
-    auto wr = transport::transport_wrap(transport::TransportId::REALITY,
-                                        payload, sizeof(payload),
+    auto wr = transport::transport_wrap(transport::TransportId::REALITY, payload, sizeof(payload),
                                         frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
     /* Application Data content type */
@@ -314,16 +308,14 @@ TEST_F(IntegrationV5, FullPipelinePadWrapUnwrap) {
     ctx.conn_id_len = 4;
     RAND_bytes(ctx.conn_id, 4);
 
-    auto wr = transport::transport_wrap(transport::TransportId::QUIC,
-                                        padded, padded_len,
-                                        framed, sizeof(framed), &ctx);
+    auto wr = transport::transport_wrap(transport::TransportId::QUIC, padded, padded_len, framed,
+                                        sizeof(framed), &ctx);
     ASSERT_TRUE(wr.ok);
 
     /* Transport unwrap */
     uint8_t recovered[8192] = {};
-    auto ur = transport::transport_unwrap(transport::TransportId::QUIC,
-                                          framed, wr.bytes,
-                                          recovered, sizeof(recovered));
+    auto ur = transport::transport_unwrap(transport::TransportId::QUIC, framed, wr.bytes, recovered,
+                                          sizeof(recovered));
     ASSERT_TRUE(ur.ok);
     EXPECT_EQ(ur.bytes, padded_len);
 

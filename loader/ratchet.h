@@ -33,16 +33,16 @@
 
 namespace tachyon::ratchet {
 
-constexpr size_t ROOT_KEY_LEN  = 32;
-constexpr size_t MSG_KEY_LEN   = 32;
+constexpr size_t ROOT_KEY_LEN = 32;
+constexpr size_t MSG_KEY_LEN = 32;
 constexpr size_t NONCE_PREFIX_LEN = 12;
-constexpr size_t DERIVED_LEN   = MSG_KEY_LEN + NONCE_PREFIX_LEN; /* 44 */
+constexpr size_t DERIVED_LEN = MSG_KEY_LEN + NONCE_PREFIX_LEN; /* 44 */
 
 /*
  * Send-side ratchet: mutates state on every advance.
  */
 struct SendState {
-    uint8_t  chain_key[ROOT_KEY_LEN];
+    uint8_t chain_key[ROOT_KEY_LEN];
     uint64_t counter; /* next message index to emit */
 };
 
@@ -62,8 +62,8 @@ void ratchet_init(SendState &s, const uint8_t root[ROOT_KEY_LEN]);
  * in-place. Overflow at counter==UINT64_MAX is signalled by returning
  * false — callers must rekey the session.
  */
-bool ratchet_next(SendState &s, uint8_t out_key[MSG_KEY_LEN],
-                  uint8_t out_nonce[NONCE_PREFIX_LEN], uint64_t *out_counter);
+bool ratchet_next(SendState &s, uint8_t out_key[MSG_KEY_LEN], uint8_t out_nonce[NONCE_PREFIX_LEN],
+                  uint64_t *out_counter);
 
 /* Destroy all key material in `s`. Idempotent. */
 void ratchet_wipe(SendState &s);
@@ -76,8 +76,7 @@ void ratchet_wipe(SendState &s);
  * Returns false on any crypto backend failure; never on counter values.
  */
 bool ratchet_derive_at(const uint8_t root[ROOT_KEY_LEN], uint64_t counter,
-                       uint8_t out_key[MSG_KEY_LEN],
-                       uint8_t out_nonce[NONCE_PREFIX_LEN]);
+                       uint8_t out_key[MSG_KEY_LEN], uint8_t out_nonce[NONCE_PREFIX_LEN]);
 
 } /* namespace tachyon::ratchet */
 

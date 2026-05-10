@@ -38,7 +38,7 @@ size_t encode_qname(uint8_t *out, size_t cap, const char *domain) {
  * preceded by a 1-byte length. */
 static size_t txt_rdata_len(size_t payload_len) {
     const size_t full_chunks = payload_len / 255;
-    const size_t remainder   = payload_len % 255;
+    const size_t remainder = payload_len % 255;
     return full_chunks * 256 + (remainder ? 1 + remainder : 0);
 }
 
@@ -59,8 +59,8 @@ static size_t encode_txt_rdata(uint8_t *out, size_t cap, const uint8_t *data, si
 
 /* ── DNS message builder ──────────────────────────────────────────── */
 
-size_t build_dns_message(uint8_t *out, size_t cap, uint16_t txn_id,
-                         const char *qname, const uint8_t *payload, size_t payload_len) {
+size_t build_dns_message(uint8_t *out, size_t cap, uint16_t txn_id, const char *qname,
+                         const uint8_t *payload, size_t payload_len) {
     if (payload_len > DOH_MAX_PAYLOAD)
         return 0;
     if (!qname)
@@ -89,24 +89,34 @@ size_t build_dns_message(uint8_t *out, size_t cap, uint16_t txn_id,
     out[off++] = static_cast<uint8_t>(txn_id & 0xFF);
     out[off++] = 0x81; /* QR=1 (response), Opcode=0, AA=0, TC=0, RD=1 */
     out[off++] = 0x80; /* RA=1, Z=0, RCODE=0 (no error) */
-    out[off++] = 0x00; out[off++] = 0x01; /* QDCOUNT=1 */
-    out[off++] = 0x00; out[off++] = 0x01; /* ANCOUNT=1 */
-    out[off++] = 0x00; out[off++] = 0x00; /* NSCOUNT=0 */
-    out[off++] = 0x00; out[off++] = 0x00; /* ARCOUNT=0 */
+    out[off++] = 0x00;
+    out[off++] = 0x01; /* QDCOUNT=1 */
+    out[off++] = 0x00;
+    out[off++] = 0x01; /* ANCOUNT=1 */
+    out[off++] = 0x00;
+    out[off++] = 0x00; /* NSCOUNT=0 */
+    out[off++] = 0x00;
+    out[off++] = 0x00; /* ARCOUNT=0 */
 
     /* Question section */
     std::memcpy(out + off, qname_buf, qname_len);
     off += qname_len;
-    out[off++] = 0x00; out[off++] = 0x10; /* QTYPE=TXT */
-    out[off++] = 0x00; out[off++] = 0x01; /* QCLASS=IN */
+    out[off++] = 0x00;
+    out[off++] = 0x10; /* QTYPE=TXT */
+    out[off++] = 0x00;
+    out[off++] = 0x01; /* QCLASS=IN */
 
     /* Answer section: name pointer + TYPE/CLASS/TTL/RDLENGTH + RDATA */
     out[off++] = 0xC0; /* pointer to offset 12 (start of QNAME) */
     out[off++] = 0x0C;
-    out[off++] = 0x00; out[off++] = 0x10; /* TYPE=TXT */
-    out[off++] = 0x00; out[off++] = 0x01; /* CLASS=IN */
-    out[off++] = 0x00; out[off++] = 0x00; /* TTL=300 */
-    out[off++] = 0x01; out[off++] = 0x2C;
+    out[off++] = 0x00;
+    out[off++] = 0x10; /* TYPE=TXT */
+    out[off++] = 0x00;
+    out[off++] = 0x01; /* CLASS=IN */
+    out[off++] = 0x00;
+    out[off++] = 0x00; /* TTL=300 */
+    out[off++] = 0x01;
+    out[off++] = 0x2C;
     out[off++] = static_cast<uint8_t>(rdata_len >> 8);
     out[off++] = static_cast<uint8_t>(rdata_len & 0xFF);
 
@@ -124,8 +134,12 @@ size_t build_dns_message(uint8_t *out, size_t cap, uint16_t txn_id,
 static size_t skip_name(const uint8_t *buf, size_t len, size_t off) {
     while (off < len) {
         const uint8_t label = buf[off];
-        if (label == 0) { return off + 1; }
-        if ((label & 0xC0) == 0xC0) { return off + 2; } /* pointer */
+        if (label == 0) {
+            return off + 1;
+        }
+        if ((label & 0xC0) == 0xC0) {
+            return off + 2;
+        } /* pointer */
         off += 1 + label;
     }
     return 0; /* truncated */
@@ -145,29 +159,33 @@ DnsParseResult parse_dns_message(const uint8_t *buf, size_t len) {
     size_t off = DNS_HEADER_LEN;
     for (uint16_t i = 0; i < qdcount; ++i) {
         off = skip_name(buf, len, off);
-        if (off == 0 || off + 4 > len) return r;
+        if (off == 0 || off + 4 > len)
+            return r;
         off += 4; /* QTYPE + QCLASS */
     }
 
     /* Scan answers for TXT record */
     for (uint16_t i = 0; i < ancount; ++i) {
         off = skip_name(buf, len, off);
-        if (off == 0 || off + 10 > len) return r;
+        if (off == 0 || off + 10 > len)
+            return r;
         const uint16_t rtype = (static_cast<uint16_t>(buf[off]) << 8) | buf[off + 1];
         off += 8; /* TYPE(2) + CLASS(2) + TTL(4) */
         const uint16_t rdlength = (static_cast<uint16_t>(buf[off]) << 8) | buf[off + 1];
         off += 2;
-        if (off + rdlength > len) return r;
+        if (off + rdlength > len)
+            return r;
 
         if (rtype == 0x0010) { /* TXT */
             /* Decode character strings into payload */
             r.payload_offset = off;
-            r.payload_len    = 0;
-            size_t roff      = off;
+            r.payload_len = 0;
+            size_t roff = off;
             const size_t rend = off + rdlength;
             while (roff < rend) {
                 const uint8_t slen = buf[roff++];
-                if (roff + slen > rend) return r;
+                if (roff + slen > rend)
+                    return r;
                 r.payload_len += slen;
                 roff += slen;
             }
@@ -181,9 +199,9 @@ DnsParseResult parse_dns_message(const uint8_t *buf, size_t len) {
 
 /* ── Transport engine ─────────────────────────────────────────────── */
 
-static tachyon::transport::FrameResult
-doh_wrap(const uint8_t *payload, size_t payload_len, uint8_t *out, size_t out_cap,
-         const tachyon::transport::FrameContext *ctx) {
+static tachyon::transport::FrameResult doh_wrap(const uint8_t *payload, size_t payload_len,
+                                                uint8_t *out, size_t out_cap,
+                                                const tachyon::transport::FrameContext *ctx) {
     using tachyon::transport::FrameResult;
     if (!payload || !out || !ctx)
         return {0, false};
@@ -193,8 +211,8 @@ doh_wrap(const uint8_t *payload, size_t payload_len, uint8_t *out, size_t out_ca
     return {n, n > 0};
 }
 
-static tachyon::transport::FrameResult
-doh_unwrap(const uint8_t *frame, size_t frame_len, uint8_t *out, size_t out_cap) {
+static tachyon::transport::FrameResult doh_unwrap(const uint8_t *frame, size_t frame_len,
+                                                  uint8_t *out, size_t out_cap) {
     using tachyon::transport::FrameResult;
     const auto r = parse_dns_message(frame, frame_len);
     if (!r.ok || r.payload_len > out_cap)
@@ -216,10 +234,14 @@ doh_unwrap(const uint8_t *frame, size_t frame_len, uint8_t *out, size_t out_cap)
 
 static int doh_score(const tachyon::transport::EnvProfile &env) {
     int s = 45;
-    if (env.port == 443) s += 20;
-    if (env.port == 853) s += 15;
-    if (env.region == tachyon::transport::RegionHint::RESTRICTIVE) s += 20;
-    if (env.bandwidth == tachyon::transport::BandwidthTier::LOW) s += 10;
+    if (env.port == 443)
+        s += 20;
+    if (env.port == 853)
+        s += 15;
+    if (env.region == tachyon::transport::RegionHint::RESTRICTIVE)
+        s += 20;
+    if (env.bandwidth == tachyon::transport::BandwidthTier::LOW)
+        s += 10;
     return s;
 }
 
@@ -233,6 +255,8 @@ static const tachyon::transport::TransportOps doh_ops = {
     doh_score,
 };
 
-void register_transport() { tachyon::transport::transport_register(&doh_ops); }
+void register_transport() {
+    tachyon::transport::transport_register(&doh_ops);
+}
 
 } /* namespace tachyon::doh_mimic */

@@ -76,7 +76,7 @@ enum class State : uint8_t {
 struct ShaperState {
     State state = State::IDLE;
     uint64_t last_activity_ns = 0;
-    uint64_t next_cover_ns = 0;        /* When to emit the next decoy frame */
+    uint64_t next_cover_ns = 0; /* When to emit the next decoy frame */
     uint32_t cover_interval_mean_ms = 500;
     uint32_t bulk_idle_threshold_ms = 50;
     uint64_t cover_frames_emitted = 0; /* diagnostics */

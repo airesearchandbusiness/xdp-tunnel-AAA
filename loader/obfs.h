@@ -28,9 +28,9 @@
 namespace tachyon::obfs {
 
 enum class Mode : uint8_t {
-    NONE = 0,     /* No outer mimicry */
-    QUIC = 1,     /* QUIC-Initial long-header prefix (legacy behaviour) */
-    REALITY = 2,  /* Full TLS 1.3 ClientHello mimicry */
+    NONE = 0,    /* No outer mimicry */
+    QUIC = 1,    /* QUIC-Initial long-header prefix (legacy behaviour) */
+    REALITY = 2, /* Full TLS 1.3 ClientHello mimicry */
 };
 
 Mode mode_from_string(const char *s);
@@ -41,7 +41,7 @@ const char *mode_to_string(Mode m);
 constexpr size_t MAX_RECORD_LEN = 1400;
 
 struct Options {
-    const char *sni;          /* e.g. "www.cloudflare.com"; passed verbatim to SNI extension */
+    const char *sni;              /* e.g. "www.cloudflare.com"; passed verbatim to SNI extension */
     const uint8_t *client_random; /* 32 bytes; usually caller-provided randomness */
     const uint8_t *session_id;    /* 32 bytes (TLS 1.3 compat session ID) */
     const uint8_t *alpn_list;     /* packed: len1, bytes1, len2, bytes2, ... 0 */
