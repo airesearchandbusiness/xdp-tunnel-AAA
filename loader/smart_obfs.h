@@ -1,9 +1,47 @@
 /* SPDX-License-Identifier: MIT */
 #pragma once
-#include "tachyon.h"
 #include "bandwidth_estimator.h"
+#include "metrics.h"
+
+#include <cstdint>
 
 namespace tachyon {
+
+struct TunnelStats {
+    uint64_t tx_bytes = 0;
+    uint64_t rx_bytes = 0;
+    uint64_t cover_frames = 0;
+    uint64_t replay_drops = 0;
+    double loss_ratio = 0.0;
+
+    static TunnelStats from_metrics() {
+        auto s = metrics::snapshot();
+        TunnelStats ts;
+        ts.tx_bytes = s.tx_bytes;
+        ts.rx_bytes = s.rx_bytes;
+        ts.cover_frames = s.cover_frames_sent;
+        ts.replay_drops = s.replay_dropped;
+        return ts;
+    }
+};
+
+class AdaptiveObfsController {
+  public:
+    explicit AdaptiveObfsController(uint8_t initial_flags) : flags_(initial_flags) {}
+
+    uint8_t update(const TunnelStats &stats) {
+        if (stats.replay_drops > last_replay_drops_ + 100)
+            flags_ |= 0x01;
+        last_replay_drops_ = stats.replay_drops;
+        return flags_;
+    }
+
+    uint8_t flags() const { return flags_; }
+
+  private:
+    uint8_t flags_;
+    uint64_t last_replay_drops_ = 0;
+};
 
 class SmartObfsController {
   public:

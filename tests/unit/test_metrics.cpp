@@ -2,6 +2,13 @@
 #include <gtest/gtest.h>
 #include "metrics.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <cstring>
+#include <string>
+
 using namespace tachyon::metrics;
 
 class MetricsTest : public ::testing::Test {
@@ -65,4 +72,87 @@ TEST_F(MetricsTest, AllFieldsExercised) {
     EXPECT_EQ(s.transport_wrap_ok, 1u);
     EXPECT_EQ(s.transport_unwrap_fail, 1u);
     EXPECT_EQ(s.rl_rx_drops, 1u);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * MetricsExporter Health / Readiness Endpoint Tests
+ * ══════════════════════════════════════════════════════════════ */
+
+static std::string http_exchange(tachyon::MetricsExporter &ex, const char *path) {
+    uint16_t port = ex.port();
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        return "";
+    struct sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (connect(fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
+        close(fd);
+        return "";
+    }
+    std::string req = std::string("GET ") + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    send(fd, req.data(), req.size(), 0);
+    ex.poll(4);
+    struct timeval tv = {1, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    std::string result;
+    char buf[4096];
+    for (;;) {
+        ssize_t n = recv(fd, buf, sizeof(buf), 0);
+        if (n <= 0)
+            break;
+        result.append(buf, n);
+    }
+    close(fd);
+    return result;
+}
+
+TEST(MetricsExporterTest, HealthReturns200) {
+    tachyon::MetricsExporter ex;
+    ASSERT_TRUE(ex.start(0));
+    ASSERT_GT(ex.port(), 0);
+    std::string resp = http_exchange(ex, "/health");
+    EXPECT_NE(resp.find("200 OK"), std::string::npos);
+    EXPECT_NE(resp.find("\"status\":\"ok\""), std::string::npos);
+    ex.stop();
+}
+
+TEST(MetricsExporterTest, ReadyReturns503WhenNotReady) {
+    tachyon::MetricsExporter ex;
+    ASSERT_TRUE(ex.start(0));
+    std::string resp = http_exchange(ex, "/ready");
+    EXPECT_NE(resp.find("503"), std::string::npos);
+    EXPECT_NE(resp.find("not_ready"), std::string::npos);
+    ex.stop();
+}
+
+TEST(MetricsExporterTest, ReadyReturns200WhenReady) {
+    tachyon::MetricsExporter ex;
+    ASSERT_TRUE(ex.start(0));
+    ex.set_ready(true);
+    std::string resp = http_exchange(ex, "/ready");
+    EXPECT_NE(resp.find("200 OK"), std::string::npos);
+    EXPECT_NE(resp.find("\"status\":\"ready\""), std::string::npos);
+    ex.stop();
+}
+
+TEST(MetricsExporterTest, MetricsEndpointStillWorks) {
+    tachyon::MetricsExporter ex;
+    ASSERT_TRUE(ex.start(0));
+    std::string resp = http_exchange(ex, "/metrics");
+    EXPECT_NE(resp.find("200 OK"), std::string::npos);
+    EXPECT_NE(resp.find("tachyon_rx_packets_total"), std::string::npos);
+    ex.stop();
+}
+
+TEST(MetricsExporterTest, SetReadyToggle) {
+    tachyon::MetricsExporter ex;
+    ASSERT_TRUE(ex.start(0));
+    EXPECT_FALSE(ex.is_ready());
+    ex.set_ready(true);
+    EXPECT_TRUE(ex.is_ready());
+    ex.set_ready(false);
+    EXPECT_FALSE(ex.is_ready());
+    ex.stop();
 }

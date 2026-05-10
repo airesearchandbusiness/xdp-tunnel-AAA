@@ -75,8 +75,6 @@ Snapshot snapshot() {
 namespace tachyon {
 
 bool MetricsExporter::start(uint16_t port) {
-    if (port == 0)
-        return false;
     listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd_ < 0)
         return false;
@@ -95,7 +93,14 @@ bool MetricsExporter::start(uint16_t port) {
         listen_fd_ = -1;
         return false;
     }
-    port_ = port;
+    if (port == 0) {
+        struct sockaddr_in bound {};
+        socklen_t len = sizeof(bound);
+        getsockname(listen_fd_, reinterpret_cast<struct sockaddr *>(&bound), &len);
+        port_ = ntohs(bound.sin_port);
+    } else {
+        port_ = port;
+    }
     return true;
 }
 
@@ -163,7 +168,7 @@ void MetricsExporter::poll(int max_clients) {
     }
 }
 
-void MetricsExporter::serve_client(int client_fd) const {
+void MetricsExporter::serve_client(int client_fd) {
     char req[512] = {};
     ssize_t n = recv(client_fd, req, sizeof(req) - 1, MSG_DONTWAIT);
     if (n <= 0)
@@ -171,10 +176,32 @@ void MetricsExporter::serve_client(int client_fd) const {
     req[n] = '\0';
     if (strncmp(req, "GET ", 4) != 0)
         return;
-    std::string body = render();
+
+    const char *path = req + 4;
+    std::string body;
+    std::string content_type = "text/plain";
+    int status = 200;
+
+    if (strncmp(path, "/health", 7) == 0) {
+        body = "{\"status\":\"ok\"}\n";
+        content_type = "application/json";
+    } else if (strncmp(path, "/ready", 6) == 0) {
+        if (ready_) {
+            body = "{\"status\":\"ready\"}\n";
+        } else {
+            body = "{\"status\":\"not_ready\"}\n";
+            status = 503;
+        }
+        content_type = "application/json";
+    } else {
+        body = render();
+        content_type = "text/plain; version=0.0.4";
+    }
+
     std::ostringstream resp;
-    resp << "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\n"
-         << "Content-Length: " << body.size() << "\r\nConnection: close\r\n\r\n"
+    resp << "HTTP/1.1 " << status << (status == 200 ? " OK" : " Service Unavailable")
+         << "\r\nContent-Type: " << content_type << "\r\nContent-Length: " << body.size()
+         << "\r\nConnection: close\r\n\r\n"
          << body;
     std::string r = resp.str();
     send(client_fd, r.data(), r.size(), MSG_NOSIGNAL);
