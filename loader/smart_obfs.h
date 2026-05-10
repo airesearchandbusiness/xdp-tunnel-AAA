@@ -6,13 +6,12 @@
 namespace tachyon {
 
 class SmartObfsController {
-public:
+  public:
     SmartObfsController(uint8_t initial_flags, uint32_t initial_cover_hz)
         : obfs_(initial_flags), base_cover_hz_(initial_cover_hz),
           active_cover_hz_(initial_cover_hz) {}
 
-    void on_ack(uint64_t delivered_bytes, uint64_t interval_ns,
-                uint64_t rtt_ns, uint64_t now_ns) {
+    void on_ack(uint64_t delivered_bytes, uint64_t interval_ns, uint64_t rtt_ns, uint64_t now_ns) {
         bw_.on_ack(delivered_bytes, interval_ns, rtt_ns, now_ns);
     }
     void on_loss(uint64_t lost_bytes) { bw_.on_loss(lost_bytes); }
@@ -30,7 +29,7 @@ public:
     uint32_t active_cover_hz() const { return active_cover_hz_; }
     uint64_t bandwidth_bps() const { return bw_.bandwidth_bps(); }
 
-private:
+  private:
     AdaptiveObfsController obfs_;
     BandwidthEstimator bw_;
     uint32_t base_cover_hz_;
