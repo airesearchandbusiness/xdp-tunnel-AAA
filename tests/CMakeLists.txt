@@ -20,7 +20,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ── Options ──
+# -- Options --
 option(BUILD_FUZZ_TESTS  "Build libFuzzer fuzz test harnesses" OFF)
 option(BUILD_XDP_TESTS   "Build XDP/BPF test runner (requires libbpf)" OFF)
 option(BUILD_BENCHMARKS  "Build Google Benchmark harnesses" OFF)
@@ -28,10 +28,10 @@ option(ENABLE_COVERAGE   "Enable code coverage instrumentation" OFF)
 option(ENABLE_SANITIZE   "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 option(ENABLE_TSAN       "Enable ThreadSanitizer (incompatible with ENABLE_SANITIZE)" OFF)
 
-# ── Project root (parent of tests/) ──
+# -- Project root (parent of tests/) --
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
-# ── Coverage flags ──
+# -- Coverage flags --
 if(ENABLE_COVERAGE)
     if(ENABLE_SANITIZE)
         message(FATAL_ERROR "ENABLE_COVERAGE and ENABLE_SANITIZE are mutually exclusive")
@@ -41,7 +41,7 @@ if(ENABLE_COVERAGE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
 endif()
 
-# ── Sanitizer flags ──
+# -- Sanitizer flags --
 if(ENABLE_SANITIZE)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         message(WARNING "Sanitizers work best with Clang or GCC")
@@ -58,7 +58,7 @@ if(ENABLE_SANITIZE)
     add_link_options(${SANITIZE_FLAGS})
 endif()
 
-# ── ThreadSanitizer flags ──
+# -- ThreadSanitizer flags --
 if(ENABLE_TSAN)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         message(WARNING "ThreadSanitizer works best with Clang or GCC")
@@ -67,7 +67,7 @@ if(ENABLE_TSAN)
     add_link_options(-fsanitize=thread)
 endif()
 
-# ── Google Test ──
+# -- Google Test --
 include(FetchContent)
 FetchContent_Declare(
     googletest
@@ -81,11 +81,11 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 include(GoogleTest)
 
-# ── Find OpenSSL ──
+# -- Find OpenSSL --
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OPENSSL REQUIRED openssl>=3.0.0)
 
-# ── Optional: post-quantum backend auto-detection ──
+# -- Optional: post-quantum backend auto-detection --
 # Prefer native OpenSSL 3.5+ (ML-KEM built-in); else fall back to liboqs; else
 # compile the stub backend so tests that skip-on-unavailable still link.
 set(TACHYON_PQC_BACKEND "unavailable")
@@ -93,7 +93,7 @@ set(TACHYON_PQC_LIBS "")
 set(TACHYON_PQC_INCLUDES "")
 set(TACHYON_PQC_DEFINES "")
 
-# OpenSSL 3.5+ has native ML-KEM via EVP_KEM — check version.
+# OpenSSL 3.5+ has native ML-KEM via EVP_KEM -- check version.
 if(OPENSSL_VERSION VERSION_GREATER_EQUAL "3.5.0")
     set(TACHYON_PQC_BACKEND "openssl")
     list(APPEND TACHYON_PQC_DEFINES TACHYON_PQC_OPENSSL)
@@ -107,7 +107,7 @@ else()
     endif()
 endif()
 
-# ── tachyon_core static library ──
+# -- tachyon_core static library --
 # Compiles all control-plane modules that don't pull in libbpf. Tests can link
 # against this library and exercise every helper without needing kernel BPF.
 add_library(tachyon_core STATIC
@@ -129,10 +129,10 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/stun_mimic.cpp
     ${PROJECT_ROOT}/loader/metrics.cpp
     ${PROJECT_ROOT}/loader/rate_limiter.cpp
+    ${PROJECT_ROOT}/loader/ip_rate_limiter.cpp
+    ${PROJECT_ROOT}/loader/circuit_breaker.cpp
     ${PROJECT_ROOT}/loader/multipath.cpp
     ${PROJECT_ROOT}/loader/autoconf.cpp
-    ${PROJECT_ROOT}/loader/circuit_breaker.cpp
-    ${PROJECT_ROOT}/loader/ip_rate_limiter.cpp
 )
 
 target_include_directories(tachyon_core PUBLIC
@@ -152,7 +152,7 @@ target_compile_definitions(tachyon_core PRIVATE
 )
 target_compile_options(tachyon_core PRIVATE -Wall -Wextra)
 
-# ── Helper function to add a unit test ──
+# -- Helper function to add a unit test --
 function(add_tachyon_test TEST_NAME TEST_SOURCE)
     add_executable(${TEST_NAME} ${TEST_SOURCE})
     target_link_libraries(${TEST_NAME} PRIVATE
@@ -168,7 +168,7 @@ function(add_tachyon_test TEST_NAME TEST_SOURCE)
     gtest_discover_tests(${TEST_NAME} PROPERTIES TIMEOUT 30)
 endfunction()
 
-# ── Unit Tests ──
+# -- Unit Tests --
 add_tachyon_test(test_config      unit/test_config.cpp)
 add_tachyon_test(test_crypto      unit/test_crypto.cpp)
 add_tachyon_test(test_nonce_cache unit/test_nonce_cache.cpp)
@@ -194,10 +194,10 @@ add_tachyon_test(test_advanced   unit/test_advanced.cpp)
 add_tachyon_test(test_log        unit/test_log.cpp)
 add_tachyon_test(test_ip_rate_limiter unit/test_ip_rate_limiter.cpp)
 add_tachyon_test(test_circuit_breaker unit/test_circuit_breaker.cpp)
-add_tachyon_test(test_x448       unit/test_x448.cpp)
-add_tachyon_test(test_smart_obfs unit/test_smart_obfs.cpp)
+add_tachyon_test(test_x448         unit/test_x448.cpp)
+add_tachyon_test(test_smart_obfs   unit/test_smart_obfs.cpp)
 
-# ── XDP Test Runner (requires libbpf + privileges) ──
+# -- XDP Test Runner (requires libbpf + privileges) --
 if(BUILD_XDP_TESTS)
     pkg_check_modules(LIBBPF libbpf)
     if(NOT LIBBPF_FOUND)
@@ -224,7 +224,7 @@ if(BUILD_XDP_TESTS)
     endif()
 endif()
 
-# ── Google Benchmark harnesses ──
+# -- Google Benchmark harnesses --
 if(BUILD_BENCHMARKS)
     FetchContent_Declare(
         benchmark
@@ -261,7 +261,7 @@ if(BUILD_BENCHMARKS)
     endforeach()
 endif()
 
-# ── Fuzz Tests (requires clang + libFuzzer) ──
+# -- Fuzz Tests (requires clang + libFuzzer) --
 if(BUILD_FUZZ_TESTS)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(WARNING "Fuzz tests require clang compiler, skipping")
@@ -282,7 +282,7 @@ if(BUILD_FUZZ_TESTS)
     endif()
 endif()
 
-# ── Summary ──
+# -- Summary --
 message(STATUS "")
 message(STATUS "Tachyon Test Suite Configuration:")
 message(STATUS "  Coverage:    ${ENABLE_COVERAGE}")

@@ -54,13 +54,10 @@
 #include "../src/common.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Logging
+ * Logging (structured, JSON-capable — see loader/log.h)
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#define LOG_INFO(fmt, ...) fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...) fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_ERR(fmt, ...) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
-#define LOG_CRYPTO(fmt, ...) fprintf(stderr, "[CRYPTO] " fmt "\n", ##__VA_ARGS__)
+#include "log.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Userspace Mirror Structures
@@ -209,7 +206,7 @@ struct TunnelConfig {
     bool encryption = true;
     uint8_t obfs_flags = TACHYON_OBFS_ALL; /* Traffic obfuscation bitmask    */
 
-    /* ── v5 "Ghost-PQ" policy ───────────────────────────────────────────────
+    /* ── v5 "Ghost-PQ" policy ─────────────────────────────────────────────────
      * These are off by default so v4 configs keep working unchanged. They are
      * parsed from the INI by config.cpp and consumed by network.cpp. Strings
      * are stored raw; network.cpp maps them to the typed enums in
@@ -226,7 +223,7 @@ struct TunnelConfig {
     /* Resolved at runtime by tunnel.cpp — not parsed from config */
     uint8_t resolved_transport_id = 0;
 
-    /* ── Phase 23 advanced extensions ──────────────────────────────────── */
+    /* ── Phase 23 advanced extensions ──────────────────────────────────────── */
     uint32_t replay_window_size = 4096;
     bool metrics_enabled = false;
     uint16_t metrics_port = 9090;
@@ -235,7 +232,7 @@ struct TunnelConfig {
     bool multipath_enabled = false;
     std::vector<std::string> multipath_interfaces;
 
-    /* ── Phase 25 extensions ────────────────────────────────────────── */
+    /* ── Phase 25 extensions ────────────────────────────────────────────── */
     uint8_t kex_type = 0; /* TACHYON_KEX_X25519 (default) or TACHYON_KEX_X448 */
     bool afxdp_enabled = false;
     bool ipv6_enabled = false;
