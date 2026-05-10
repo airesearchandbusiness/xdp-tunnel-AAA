@@ -12,14 +12,15 @@ struct XskConfig {
 };
 
 class XskSocket {
-public:
+  public:
     XskSocket() = default;
     ~XskSocket() { close(); }
     XskSocket(const XskSocket &) = delete;
     XskSocket &operator=(const XskSocket &) = delete;
 
     bool open(const char *ifname, const XskConfig &cfg) {
-        (void)ifname; (void)cfg;
+        (void)ifname;
+        (void)cfg;
         return false;
     }
     void close() { fd_ = -1; }
@@ -32,11 +33,12 @@ public:
     }
 
     bool send(const uint8_t *data, size_t len) {
-        (void)data; (void)len;
+        (void)data;
+        (void)len;
         return false;
     }
 
-private:
+  private:
     int fd_ = -1;
 };
 
