@@ -57,9 +57,9 @@ Snapshot snapshot() {
 
 } /* namespace tachyon::metrics */
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * MetricsExporter — Prometheus HTTP endpoint (Phase 23)
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 #include "tachyon.h"
 #include <sstream>
@@ -118,7 +118,7 @@ std::string MetricsExporter::render() const {
     auto counter = [&](const char *m, const char *h, uint64_t v) {
         ss << "# HELP tachyon_" << m << " " << h << "\n"
            << "# TYPE tachyon_" << m << " counter\n"
-           << "tachyon_" << m << "{tunnel=\"" << tn << "\"} " << v << "\n";
+           << "tachyon_" << m << "{tunnel=\"" << tn << "\"}" << " " << v << "\n";
     };
     counter("rx_packets_total", "Total received packets", snap_rx_packets);
     counter("rx_bytes_total", "Total received bytes", snap_rx_bytes);
@@ -149,8 +149,11 @@ void MetricsExporter::poll(int max_clients) {
 }
 
 void MetricsExporter::serve_client(int client_fd) const {
-    char req[512];
-    recv(client_fd, req, sizeof(req) - 1, MSG_DONTWAIT);
+    char req[512] = {};
+    ssize_t n = recv(client_fd, req, sizeof(req) - 1, MSG_DONTWAIT);
+    if (n <= 0) return;
+    req[n] = '\0';
+    if (strncmp(req, "GET ", 4) != 0) return;
     std::string body = render();
     std::ostringstream resp;
     resp << "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\n"
