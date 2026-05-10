@@ -45,7 +45,7 @@ static size_t varint_decode(const uint8_t *buf, size_t len, uint64_t *out) {
     return width;
 }
 
-/* ── Header builder ───────────────────────────────────────────────── */
+/* ── Header builder ───────────────────────────────────────────── */
 
 size_t build_initial_header(uint8_t *out, size_t cap, const uint8_t *dcid, uint8_t dcid_len,
                             const uint8_t *scid, uint8_t scid_len, uint32_t pkt_num,
@@ -139,11 +139,9 @@ ParseResult parse_initial_header(const uint8_t *buf, size_t len) {
     if (buf[1] != 0x00 || buf[2] != 0x00 || buf[3] != 0x00 || buf[4] != 0x01)
         return r;
 
-    size_t off = 5;
+    size_t off = 5; /* len >= 7 guaranteed by the guard above */
 
     /* DCID */
-    if (off >= len)
-        return r;
     r.dcid_len = buf[off++];
     if (r.dcid_len > 20 || off + r.dcid_len > len)
         return r;
@@ -196,7 +194,7 @@ ParseResult parse_initial_header(const uint8_t *buf, size_t len) {
     return r;
 }
 
-/* ── Transport engine ─────────────────────────────────────────────── */
+/* ── Transport engine ─────────────────────────────────────────── */
 
 static tachyon::transport::FrameResult quic_wrap(const uint8_t *payload, size_t payload_len,
                                                  uint8_t *out, size_t out_cap,
