@@ -10,6 +10,7 @@
  *   - ECDH detects zero shared secrets (small-order point attack)
  *   - HKDF uses proper Extract-and-Expand per RFC 5869
  *   - AEAD encrypt/decrypt propagate errors to caller
+ *   - INT_MAX bounds check on all EVP size casts (CWE-681)
  */
 
 #include "tachyon.h"
@@ -20,9 +21,9 @@
 #error "Tachyon requires OpenSSL 3.0 or later"
 #endif
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * Global Crypto State
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 volatile sig_atomic_t g_exiting = 0;
 EVP_MAC *g_mac = nullptr;
@@ -48,9 +49,9 @@ void free_crypto_globals() {
     }
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * HMAC-SHA256
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 bool calc_hmac(const uint8_t *key, size_t key_len, const uint8_t *data, size_t data_len,
                uint8_t *out_mac) {
@@ -90,9 +91,9 @@ void generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, 
     calc_hmac(secret, TACHYON_HMAC_LEN, buf, sizeof(buf), out_cookie);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * X25519 ECDH
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 bool do_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_shared_secret) {
     bool result = false;
@@ -129,7 +130,6 @@ bool do_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_share
         }
     }
 
-    /* Reject zero shared secret (small-order point attack) */
     {
         uint8_t zero[TACHYON_X25519_KEY_LEN] = {0};
         if (CRYPTO_memcmp(out_shared_secret, zero, TACHYON_X25519_KEY_LEN) == 0) {
@@ -149,9 +149,9 @@ cleanup_keys:
     return result;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * HKDF-SHA256 (Extract and Expand per RFC 5869)
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 bool derive_kdf(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
                 const char *info, uint8_t *out_key) {
@@ -181,18 +181,16 @@ bool derive_kdf(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t
     return true;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * Generic AEAD encrypt/decrypt (unified for all cipher suites)
- *
- * Replaces the four near-identical functions (cp_aead_encrypt, cp_aead_decrypt,
- * aes_gcm_encrypt, aes_gcm_decrypt) with a single pair parametrised by
- * EVP_CIPHER. ChaCha20-Poly1305 and AES-GCM share identical EVP lifecycle.
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 static bool aead_encrypt(const EVP_CIPHER *cipher, const uint8_t *key,
                          const uint8_t *nonce, const uint8_t *ad, size_t ad_len,
                          const uint8_t *pt, size_t pt_len,
                          uint8_t *ct, uint8_t *tag) {
+    if (pt_len > static_cast<size_t>(INT_MAX) || ad_len > static_cast<size_t>(INT_MAX))
+        return false;
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx)
         return false;
@@ -219,6 +217,8 @@ static bool aead_decrypt(const EVP_CIPHER *cipher, const uint8_t *key,
                          const uint8_t *nonce, const uint8_t *ad, size_t ad_len,
                          const uint8_t *ct, size_t ct_len,
                          const uint8_t *tag, uint8_t *pt) {
+    if (ct_len > static_cast<size_t>(INT_MAX) || ad_len > static_cast<size_t>(INT_MAX))
+        return false;
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx)
         return false;
@@ -252,9 +252,9 @@ bool cp_aead_decrypt(const uint8_t *key, const uint8_t *ct, size_t ct_len, const
     return aead_decrypt(EVP_chacha20_poly1305(), key, nonce, ad, ad_len, ct, ct_len, tag, pt);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * X25519 Key Generation
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 bool generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out) {
     EVP_PKEY *pk = EVP_PKEY_Q_keygen(nullptr, nullptr, "X25519");
@@ -297,13 +297,9 @@ bool get_public_key(const uint8_t *priv, uint8_t *pub_out) {
     return ok;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * CipherSuite Registry
- *
- * All suites delegate to the unified aead_encrypt/aead_decrypt above.
- * The thin wrappers below exist only to match the CipherSuite function-
- * pointer signature (which includes the unused nonce_len parameter).
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 #define MAKE_SUITE_ENC(name, cipher_fn)                                         \
     static bool name(const uint8_t *key, const uint8_t *nonce, size_t,          \
@@ -337,33 +333,35 @@ static const CipherSuite kSuites[] = {
     {
         TACHYON_CIPHER_CHACHA20,
         "ChaCha20-Poly1305",
-        TACHYON_AEAD_KEY_LEN,    /* 32 bytes */
-        TACHYON_AEAD_TAG_LEN,    /* 16 bytes */
-        TACHYON_AEAD_IV_LEN,     /* 12 bytes */
+        TACHYON_AEAD_KEY_LEN,
+        TACHYON_AEAD_TAG_LEN,
+        TACHYON_AEAD_IV_LEN,
         chacha20_enc,
         chacha20_dec,
     },
     {
         TACHYON_CIPHER_AES128GCM,
         "AES-128-GCM",
-        16,                      /* 16-byte key */
-        TACHYON_AEAD_TAG_LEN,    /* 16 bytes */
-        TACHYON_AEAD_IV_LEN,     /* 12 bytes */
+        16,
+        TACHYON_AEAD_TAG_LEN,
+        TACHYON_AEAD_IV_LEN,
         aes128_enc,
         aes128_dec,
     },
     {
         TACHYON_CIPHER_AES256GCM,
         "AES-256-GCM",
-        TACHYON_AEAD_KEY_LEN,    /* 32 bytes */
-        TACHYON_AEAD_TAG_LEN,    /* 16 bytes */
-        TACHYON_AEAD_IV_LEN,     /* 12 bytes */
+        TACHYON_AEAD_KEY_LEN,
+        TACHYON_AEAD_TAG_LEN,
+        TACHYON_AEAD_IV_LEN,
         aes256_enc,
         aes256_dec,
     },
 };
 
 static constexpr size_t kNumSuites = sizeof(kSuites) / sizeof(kSuites[0]);
+static_assert(TACHYON_CIPHER_AES256GCM < kNumSuites, "AES256GCM index out of kSuites bounds");
+static_assert(TACHYON_CIPHER_CHACHA20 < kNumSuites, "CHACHA20 index out of kSuites bounds");
 
 const CipherSuite *get_cipher_suite(uint8_t type_id) {
     for (size_t i = 0; i < kNumSuites; i++) {
@@ -375,6 +373,6 @@ const CipherSuite *get_cipher_suite(uint8_t type_id) {
 
 const CipherSuite *select_best_suite(bool has_aesni) {
     if (has_aesni)
-        return &kSuites[TACHYON_CIPHER_AES256GCM]; /* index 2 */
-    return &kSuites[TACHYON_CIPHER_CHACHA20];       /* index 0 */
+        return &kSuites[TACHYON_CIPHER_AES256GCM];
+    return &kSuites[TACHYON_CIPHER_CHACHA20];
 }
