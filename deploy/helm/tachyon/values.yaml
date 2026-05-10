@@ -4,7 +4,19 @@ image:
   pullPolicy: IfNotPresent
 
 config:
+  # Required Interface fields (parser is case-sensitive PascalCase)
   listenPort: 443
+  virtualIP: 10.8.0.1/24
+  localPhysicalIP: 192.168.1.10
+  physicalInterface: eth0
+
+  # Required Peer fields
+  peer:
+    endpointIP: 192.168.1.20
+    endpointMAC: aa:bb:cc:dd:ee:ff
+    innerIP: 10.8.0.2
+
+  # Optional knobs
   mimicryType: quic
   obfsFlags: 0x3F
   logFormat: json
@@ -12,7 +24,9 @@ config:
   shutdownDrainSeconds: 10
 
 secrets:
-  privateKey: ""    # base64-encoded
+  # Hex-encoded; mounted as /run/secrets/* and resolved via TACHYON_*_KEY
+  # env vars in container entrypoint.
+  privateKey: ""
   peerPublicKey: ""
   psk: ""
 

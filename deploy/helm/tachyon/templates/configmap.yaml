@@ -8,11 +8,26 @@ data:
   tachyon.conf: |
     # Tachyon XDP Tunnel configuration
     # Rendered from Helm values on {{ now | date "2006-01-02T15:04:05Z07:00" }}
-    listen_port = {{ .Values.config.listenPort }}
-    mimicry_type = {{ .Values.config.mimicryType | quote }}
-    obfs_flags = {{ .Values.config.obfsFlags }}
-    log_format = {{ .Values.config.logFormat | quote }}
-    log_level = {{ .Values.config.logLevel | quote }}
-    shutdown_drain_seconds = {{ .Values.config.shutdownDrainSeconds }}
-    metrics_enabled = {{ .Values.metrics.enabled }}
-    metrics_port = {{ .Values.metrics.port }}
+    #
+    # Keys are case-sensitive PascalCase (parsed by loader/config.cpp).
+    # PrivateKey / PeerPublicKey / PSK are NOT rendered here — they come
+    # from the Secret via TACHYON_PRIVATE_KEY / TACHYON_PEER_PUBLIC_KEY /
+    # TACHYON_PSK environment variables.
+
+    [Interface]
+    ListenPort = {{ .Values.config.listenPort }}
+    VirtualIP = {{ .Values.config.virtualIP }}
+    LocalPhysicalIP = {{ .Values.config.localPhysicalIP }}
+    PhysicalInterface = {{ .Values.config.physicalInterface }}
+    MimicryType = {{ .Values.config.mimicryType }}
+    ObfsFlags = {{ .Values.config.obfsFlags }}
+    LogFormat = {{ .Values.config.logFormat }}
+    LogLevel = {{ .Values.config.logLevel }}
+    ShutdownDrainSeconds = {{ .Values.config.shutdownDrainSeconds }}
+    MetricsEnabled = {{ .Values.metrics.enabled }}
+    MetricsPort = {{ .Values.metrics.port }}
+
+    [Peer]
+    EndpointIP = {{ .Values.config.peer.endpointIP }}
+    EndpointMAC = {{ .Values.config.peer.endpointMAC }}
+    InnerIP = {{ .Values.config.peer.innerIP }}

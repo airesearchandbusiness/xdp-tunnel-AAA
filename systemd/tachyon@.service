@@ -6,7 +6,11 @@ Wants=network-online.target
 [Service]
 Type=notify
 NotifyAccess=main
-WatchdogSec=30
+# WatchdogSec is intentionally NOT enabled until network.cpp's main loop
+# emits periodic WATCHDOG=1 via tachyon::sd::notify_status(). Re-enabling
+# WatchdogSec without that ping would cause systemd to kill the service
+# after the watchdog interval. Track via a follow-up that wires
+# tachyon::sd::notify("WATCHDOG=1") into the keepalive tick.
 ExecStart=/usr/bin/tachyon up /etc/tachyon/%i.conf
 ExecStop=/usr/bin/tachyon down /etc/tachyon/%i.conf
 Restart=on-failure
