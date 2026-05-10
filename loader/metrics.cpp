@@ -185,6 +185,12 @@ void MetricsExporter::serve_client(int client_fd) {
     if (strncmp(path, "/health", 7) == 0) {
         body = "{\"status\":\"ok\"}\n";
         content_type = "application/json";
+    } else if (strncmp(path, "/version", 8) == 0) {
+#ifndef TACHYON_VERSION
+#define TACHYON_VERSION "unknown"
+#endif
+        body = std::string("{\"version\":\"") + TACHYON_VERSION + "\",\"protocol\":\"v5\"}\n";
+        content_type = "application/json";
     } else if (strncmp(path, "/ready", 6) == 0) {
         if (ready_) {
             body = "{\"status\":\"ready\"}\n";

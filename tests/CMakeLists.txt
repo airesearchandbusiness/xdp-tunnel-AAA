@@ -131,6 +131,9 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/rate_limiter.cpp
     ${PROJECT_ROOT}/loader/ip_rate_limiter.cpp
     ${PROJECT_ROOT}/loader/circuit_breaker.cpp
+    ${PROJECT_ROOT}/loader/audit.cpp
+    ${PROJECT_ROOT}/loader/shutdown.cpp
+    ${PROJECT_ROOT}/loader/sd_notify.cpp
     ${PROJECT_ROOT}/loader/multipath.cpp
     ${PROJECT_ROOT}/loader/autoconf.cpp
 )
@@ -194,8 +197,12 @@ add_tachyon_test(test_advanced   unit/test_advanced.cpp)
 add_tachyon_test(test_log        unit/test_log.cpp)
 add_tachyon_test(test_ip_rate_limiter unit/test_ip_rate_limiter.cpp)
 add_tachyon_test(test_circuit_breaker unit/test_circuit_breaker.cpp)
-add_tachyon_test(test_x448         unit/test_x448.cpp)
-add_tachyon_test(test_smart_obfs   unit/test_smart_obfs.cpp)
+add_tachyon_test(test_audit          unit/test_audit.cpp)
+add_tachyon_test(test_secret_resolution unit/test_secret_resolution.cpp)
+add_tachyon_test(test_shutdown       unit/test_shutdown.cpp)
+add_tachyon_test(test_sd_notify      unit/test_sd_notify.cpp)
+add_tachyon_test(test_x448           unit/test_x448.cpp)
+add_tachyon_test(test_smart_obfs     unit/test_smart_obfs.cpp)
 
 # -- XDP Test Runner (requires libbpf + privileges) --
 if(BUILD_XDP_TESTS)
@@ -237,27 +244,26 @@ if(BUILD_BENCHMARKS)
     set(BENCHMARK_INSTALL_DOCS      OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(benchmark)
 
-    add_executable(bench_crypto benchmarks/bench_crypto.cpp)
-    target_link_libraries(bench_crypto PRIVATE
-        tachyon_core
-        benchmark::benchmark_main
-    )
-    target_include_directories(bench_crypto PRIVATE
-        ${PROJECT_ROOT}/loader
-        ${PROJECT_ROOT}/src
-    )
-    target_compile_definitions(bench_crypto PRIVATE
-        TACHYON_VERSION="bench"
-        TACHYON_NO_BPF
-    )
-    target_compile_options(bench_crypto PRIVATE -O3 -Wall)
+    function(add_tachyon_bench BENCH_NAME BENCH_SOURCE)
+        add_executable(${BENCH_NAME} ${BENCH_SOURCE})
+        target_link_libraries(${BENCH_NAME} PRIVATE tachyon_core benchmark::benchmark_main)
+        target_include_directories(${BENCH_NAME} PRIVATE
+            ${PROJECT_ROOT}/loader
+            ${PROJECT_ROOT}/src
+        )
+        target_compile_definitions(${BENCH_NAME} PRIVATE
+            TACHYON_VERSION="bench"
+            TACHYON_NO_BPF
+        )
+        target_compile_options(${BENCH_NAME} PRIVATE -O3 -Wall)
+    endfunction()
 
+    add_tachyon_bench(bench_crypto          benchmarks/bench_crypto.cpp)
+    add_tachyon_bench(bench_log             benchmarks/bench_log.cpp)
+    add_tachyon_bench(bench_ip_rate_limiter benchmarks/bench_ip_rate_limiter.cpp)
+    add_tachyon_bench(bench_circuit_breaker benchmarks/bench_circuit_breaker.cpp)
     foreach(bench_name bench_transport bench_padding bench_ratchet bench_fingerprint)
-        add_executable(${bench_name} benchmarks/${bench_name}.cpp)
-        target_link_libraries(${bench_name} PRIVATE tachyon_core benchmark::benchmark_main)
-        target_include_directories(${bench_name} PRIVATE ${PROJECT_ROOT}/loader ${PROJECT_ROOT}/src)
-        target_compile_definitions(${bench_name} PRIVATE TACHYON_VERSION="bench" TACHYON_NO_BPF)
-        target_compile_options(${bench_name} PRIVATE -O3 -Wall)
+        add_tachyon_bench(${bench_name} benchmarks/${bench_name}.cpp)
     endforeach()
 endif()
 

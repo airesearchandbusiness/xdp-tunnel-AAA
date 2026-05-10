@@ -1,0 +1,37 @@
+#compdef tachyon
+# SPDX-License-Identifier: MIT
+# Zsh completion for the tachyon CLI.
+
+_tachyon() {
+    local -a commands
+    commands=(
+        'up:Bring up a tunnel from a config file'
+        'down:Tear down a running tunnel'
+        'show:Display statistics for a running tunnel'
+        'genkey:Generate a new X25519 private key'
+        'pubkey:Derive the public key from a private key on stdin'
+        'backup:Snapshot tunnel state to stdout'
+        'restore:Restore tunnel state from stdin'
+        'version:Print version information'
+        'help:Show usage'
+    )
+
+    _arguments -C \
+        '1: :->command' \
+        '*: :->args' && return 0
+
+    case $state in
+    command)
+        _describe -t commands 'tachyon command' commands
+        ;;
+    args)
+        case $words[2] in
+        up | down | show | backup | restore)
+            _files -g '*.conf' -W '(/etc/tachyon /run/tachyon .)'
+            ;;
+        esac
+        ;;
+    esac
+}
+
+_tachyon "$@"

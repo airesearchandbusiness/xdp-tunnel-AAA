@@ -1,0 +1,141 @@
+.\" SPDX-License-Identifier: MIT
+.TH TACHYON 1 "May 2026" "tachyon 1.2.0" "User Commands"
+
+.SH NAME
+tachyon \- post-quantum encrypted XDP tunnel
+
+.SH SYNOPSIS
+.B tachyon
+.I COMMAND
+[\fIARGUMENTS\fR]
+
+.SH DESCRIPTION
+.B tachyon
+is a high-performance encrypted tunnel using eBPF/XDP for the data plane and
+a kernel crypto module for in-kernel AEAD encryption. The control plane runs
+in userspace and performs an authenticated key exchange (AKE v5 "Ghost-PQ"),
+periodic key ratchet, and traffic-analysis countermeasures.
+
+.SH COMMANDS
+.TP
+.B up \fICONFIG\fR
+Bring up a tunnel using the INI-format configuration at \fICONFIG\fR. Loads
+the XDP program, attaches it to the configured physical interface, populates
+BPF maps, and starts the control-plane handshake.
+
+.TP
+.B down \fICONFIG\fR
+Detach the XDP program, remove BPF maps, and tear down the veth pair created
+for the tunnel named in \fICONFIG\fR.
+
+.TP
+.B show \fICONFIG\fR
+Print human-readable statistics (TX/RX bytes, packets, replay drops, crypto
+errors, handshake counts) for the named tunnel.
+
+.TP
+.B genkey
+Generate a new X25519 private key and print 64 hex characters to stdout.
+
+.TP
+.B pubkey
+Read a private key (64 hex characters) from stdin and print the corresponding
+public key to stdout.
+
+.TP
+.B backup \fICONFIG\fR
+Snapshot session state (encrypted with BackupKey from config) to stdout for
+warm-restart use cases.
+
+.TP
+.B restore \fICONFIG\fR
+Restore previously-snapshotted state from stdin.
+
+.TP
+.B version
+Print the build version.
+
+.SH ENVIRONMENT
+.TP
+.B TACHYON_PRIVATE_KEY
+Override the PrivateKey config field at runtime. Cleared from the process
+environment after the value is captured.
+
+.TP
+.B TACHYON_PEER_PUBLIC_KEY
+Override the PeerPublicKey config field.
+
+.TP
+.B TACHYON_PSK
+Override the PSK (preshared key) config field.
+
+.TP
+.B TACHYON_LOG_FORMAT
+\fBjson\fR or \fBtext\fR (default: text). Selects structured or
+human-readable log output.
+
+.TP
+.B TACHYON_LOG_LEVEL
+\fBdebug\fR, \fBinfo\fR (default), \fBwarn\fR, or \fBerror\fR. Controls
+verbosity.
+
+.SH SIGNALS
+.TP
+.B SIGTERM, SIGINT
+Initiate graceful shutdown with drain phase (default 5 seconds, configurable
+via \fIShutdownDrainSeconds\fR). All keys are cleansed from memory before exit.
+
+.TP
+.B SIGHUP
+Reload configuration. Hot-reloadable fields:
+.IR obfs_flags ,
+.IR cover_rate_hz ,
+.IR port_hop_seconds ,
+.IR padding ,
+.IR LogLevel .
+Non-reloadable fields are logged as warnings and ignored.
+
+.TP
+.B SIGUSR1
+Trigger zero-downtime hot-restart: fork+exec a new instance with the listen
+socket inherited via FD passing, then drain the old instance.
+
+.SH FILES
+.TP
+.I /etc/tachyon/*.conf
+Default location for tunnel config files.
+
+.TP
+.I /sys/fs/bpf/tachyon/*
+Pinned BPF maps (one directory per tunnel name).
+
+.TP
+.I /var/log/tachyon-audit.log
+Audit log destination when \fIAuditLog\fR is set in config.
+
+.SH HEALTH ENDPOINTS
+When \fIMetricsEnabled = true\fR, an HTTP server is bound on
+\fIMetricsPort\fR (default 9090) on loopback only:
+.IP \(bu
+\fBGET /health\fR \(em liveness probe (always 200 if process alive)
+.IP \(bu
+\fBGET /ready\fR \(em readiness probe (200 once a session key is established)
+.IP \(bu
+\fBGET /metrics\fR \(em Prometheus exposition format
+.IP \(bu
+\fBGET /version\fR \(em build version JSON
+
+.SH SEE ALSO
+.BR ip-link (8),
+.BR bpftool (8),
+.BR systemd-analyze (1).
+
+The full operations runbook lives at
+.I /usr/share/doc/tachyon/OPERATIONS.md.
+
+.SH AUTHORS
+The Tachyon Maintainers.
+
+.SH LICENSE
+MIT for userspace components, GPL-2.0 for kernel module and XDP/eBPF code.
+See \fI/usr/share/doc/tachyon/LICENSE\fR.

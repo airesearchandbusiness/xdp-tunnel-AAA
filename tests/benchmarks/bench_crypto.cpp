@@ -47,7 +47,7 @@ class CryptoBenchmark : public benchmark::Fixture {
 BENCHMARK_DEFINE_F(CryptoBenchmark, AeadEncrypt)(benchmark::State &state) {
     const size_t pt_size = static_cast<size_t>(state.range(0));
 
-    uint8_t key[TACHYON_AEAD_KEY_LEN], nonce[TACHYON_AEAD_NONCE_LEN];
+    uint8_t key[TACHYON_AEAD_KEY_LEN], nonce[TACHYON_AEAD_IV_LEN];
     memset(key, 0x42, sizeof(key));
     memset(nonce, 0x00, sizeof(nonce));
 
@@ -77,7 +77,7 @@ BENCHMARK_REGISTER_F(CryptoBenchmark, AeadEncrypt)
 BENCHMARK_DEFINE_F(CryptoBenchmark, AeadDecrypt)(benchmark::State &state) {
     const size_t pt_size = static_cast<size_t>(state.range(0));
 
-    uint8_t key[TACHYON_AEAD_KEY_LEN], nonce[TACHYON_AEAD_NONCE_LEN];
+    uint8_t key[TACHYON_AEAD_KEY_LEN], nonce[TACHYON_AEAD_IV_LEN];
     memset(key, 0x42, sizeof(key));
     memset(nonce, 0x00, sizeof(nonce));
 
