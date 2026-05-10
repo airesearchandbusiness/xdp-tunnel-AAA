@@ -5,7 +5,9 @@ namespace tachyon::metrics {
 
 static Counters g_counters;
 
-Counters &global() { return g_counters; }
+Counters &global() {
+    return g_counters;
+}
 
 void reset() {
     auto &c = g_counters;
@@ -73,33 +75,43 @@ Snapshot snapshot() {
 namespace tachyon {
 
 bool MetricsExporter::start(uint16_t port) {
-    if (port == 0) return false;
+    if (port == 0)
+        return false;
     listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd_ < 0) return false;
+    if (listen_fd_ < 0)
+        return false;
     int opt = 1;
     setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     int flags = fcntl(listen_fd_, F_GETFL, 0);
-    if (flags >= 0) fcntl(listen_fd_, F_SETFL, flags | O_NONBLOCK);
-    struct sockaddr_in addr{};
+    if (flags >= 0)
+        fcntl(listen_fd_, F_SETFL, flags | O_NONBLOCK);
+    struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (bind(listen_fd_, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0 ||
         listen(listen_fd_, 8) < 0) {
-        close(listen_fd_); listen_fd_ = -1; return false;
+        close(listen_fd_);
+        listen_fd_ = -1;
+        return false;
     }
     port_ = port;
     return true;
 }
 
 void MetricsExporter::stop() {
-    if (listen_fd_ >= 0) { close(listen_fd_); listen_fd_ = -1; }
+    if (listen_fd_ >= 0) {
+        close(listen_fd_);
+        listen_fd_ = -1;
+    }
 }
 
 void MetricsExporter::update(const ::userspace_stats &s, const std::string &name) {
     tunnel_name_ = name;
-    snap_rx_packets = s.rx_packets; snap_rx_bytes = s.rx_bytes;
-    snap_tx_packets = s.tx_packets; snap_tx_bytes = s.tx_bytes;
+    snap_rx_packets = s.rx_packets;
+    snap_rx_bytes = s.rx_bytes;
+    snap_tx_packets = s.tx_packets;
+    snap_tx_bytes = s.tx_bytes;
     snap_rx_replay_drops = s.rx_replay_drops;
     snap_rx_crypto_errors = s.rx_crypto_errors;
     snap_rx_invalid_session = s.rx_invalid_session;
@@ -132,17 +144,20 @@ std::string MetricsExporter::render() const {
     counter("tx_crypto_errors_total", "TX crypto failures", snap_tx_crypto_errors);
     counter("tx_headroom_errors_total", "TX headroom failures", snap_tx_headroom_errors);
     counter("tx_ratelimit_drops_total", "TX rate-limit drops", snap_tx_ratelimit_drops);
-    counter("rx_ratelimit_data_drops_total", "RX data rate-limit drops", snap_rx_ratelimit_data_drops);
+    counter("rx_ratelimit_data_drops_total", "RX data rate-limit drops",
+            snap_rx_ratelimit_data_drops);
     counter("rx_roam_events_total", "Peer roaming events", snap_rx_roam_events);
     ss << "# EOF\n";
     return ss.str();
 }
 
 void MetricsExporter::poll(int max_clients) {
-    if (listen_fd_ < 0) return;
+    if (listen_fd_ < 0)
+        return;
     for (int i = 0; i < max_clients; ++i) {
         int client = accept(listen_fd_, nullptr, nullptr);
-        if (client < 0) break;
+        if (client < 0)
+            break;
         serve_client(client);
         close(client);
     }
@@ -151,13 +166,16 @@ void MetricsExporter::poll(int max_clients) {
 void MetricsExporter::serve_client(int client_fd) const {
     char req[512] = {};
     ssize_t n = recv(client_fd, req, sizeof(req) - 1, MSG_DONTWAIT);
-    if (n <= 0) return;
+    if (n <= 0)
+        return;
     req[n] = '\0';
-    if (strncmp(req, "GET ", 4) != 0) return;
+    if (strncmp(req, "GET ", 4) != 0)
+        return;
     std::string body = render();
     std::ostringstream resp;
     resp << "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\n"
-         << "Content-Length: " << body.size() << "\r\nConnection: close\r\n\r\n" << body;
+         << "Content-Length: " << body.size() << "\r\nConnection: close\r\n\r\n"
+         << body;
     std::string r = resp.str();
     send(client_fd, r.data(), r.size(), MSG_NOSIGNAL);
 }

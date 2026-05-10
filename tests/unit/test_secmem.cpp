@@ -193,7 +193,10 @@ TEST(Secmem, KeyBufDestructorCleansesContents) {
 }
 
 TEST(Secmem, KeyBufVariousSizes) {
-    KeyBuf<1> k1; KeyBuf<8> k8; KeyBuf<48> k48; KeyBuf<256> k256;
+    KeyBuf<1> k1;
+    KeyBuf<8> k8;
+    KeyBuf<48> k48;
+    KeyBuf<256> k256;
     EXPECT_EQ(k1.size(), 1u);
     EXPECT_EQ(k8.size(), 8u);
     EXPECT_EQ(k48.size(), 48u);

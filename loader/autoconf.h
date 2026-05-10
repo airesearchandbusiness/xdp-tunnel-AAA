@@ -16,9 +16,9 @@
 
 /* Result of hardware probing. */
 struct AutoDetectedConfig {
-    uint8_t  cipher_type;     /* TACHYON_CIPHER_* best for this CPU  */
-    uint16_t interface_mtu;   /* Physical interface MTU (bytes)       */
-    bool     has_aesni;       /* True if AES-NI / ARM Crypto detected */
+    uint8_t cipher_type;    /* TACHYON_CIPHER_* best for this CPU  */
+    uint16_t interface_mtu; /* Physical interface MTU (bytes)       */
+    bool has_aesni;         /* True if AES-NI / ARM Crypto detected */
 };
 
 /* Probe CPU and network interface, return recommended config.

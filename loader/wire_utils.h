@@ -17,25 +17,29 @@ struct Writer {
     size_t pos;
 
     bool put_u8(uint8_t v) {
-        if (pos + 1 > cap) return false;
+        if (pos + 1 > cap)
+            return false;
         buf[pos++] = v;
         return true;
     }
     bool put_u16(uint16_t v) {
-        if (pos + 2 > cap) return false;
+        if (pos + 2 > cap)
+            return false;
         buf[pos++] = static_cast<uint8_t>(v >> 8);
         buf[pos++] = static_cast<uint8_t>(v);
         return true;
     }
     bool put_u24(uint32_t v) {
-        if (pos + 3 > cap) return false;
+        if (pos + 3 > cap)
+            return false;
         buf[pos++] = static_cast<uint8_t>(v >> 16);
         buf[pos++] = static_cast<uint8_t>(v >> 8);
         buf[pos++] = static_cast<uint8_t>(v);
         return true;
     }
     bool put_u32(uint32_t v) {
-        if (pos + 4 > cap) return false;
+        if (pos + 4 > cap)
+            return false;
         buf[pos++] = static_cast<uint8_t>(v >> 24);
         buf[pos++] = static_cast<uint8_t>(v >> 16);
         buf[pos++] = static_cast<uint8_t>(v >> 8);
@@ -43,19 +47,20 @@ struct Writer {
         return true;
     }
     bool put_bytes(const uint8_t *src, size_t len) {
-        if (pos + len > cap) return false;
+        if (pos + len > cap)
+            return false;
         std::memcpy(buf + pos, src, len);
         pos += len;
         return true;
     }
     void patch_u16(size_t at, uint16_t v) {
-        assert(at + 2 <= cap);  /* CWE-787: catch out-of-bounds patch in debug builds */
-        buf[at]     = static_cast<uint8_t>(v >> 8);
+        assert(at + 2 <= cap); /* CWE-787: catch out-of-bounds patch in debug builds */
+        buf[at] = static_cast<uint8_t>(v >> 8);
         buf[at + 1] = static_cast<uint8_t>(v);
     }
     void patch_u24(size_t at, uint32_t v) {
-        assert(at + 3 <= cap);  /* CWE-787: catch out-of-bounds patch in debug builds */
-        buf[at]     = static_cast<uint8_t>(v >> 16);
+        assert(at + 3 <= cap); /* CWE-787: catch out-of-bounds patch in debug builds */
+        buf[at] = static_cast<uint8_t>(v >> 16);
         buf[at + 1] = static_cast<uint8_t>(v >> 8);
         buf[at + 2] = static_cast<uint8_t>(v);
     }
@@ -90,7 +95,9 @@ inline uint64_t rand_u64() {
     return r;
 }
 
-inline size_t pad4(size_t n) { return (n + 3) & ~static_cast<size_t>(3); }
+inline size_t pad4(size_t n) {
+    return (n + 3) & ~static_cast<size_t>(3);
+}
 
 } /* namespace tachyon::wire */
 

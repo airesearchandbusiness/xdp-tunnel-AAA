@@ -48,7 +48,7 @@ class Transcript {
 
     ~Transcript();
 
-    Transcript(const Transcript &)            = delete;
+    Transcript(const Transcript &) = delete;
     Transcript &operator=(const Transcript &) = delete;
 
     Transcript(Transcript &&other) noexcept;

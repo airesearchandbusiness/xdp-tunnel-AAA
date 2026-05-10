@@ -28,10 +28,10 @@
 namespace tachyon::rl {
 
 struct TokenBucket {
-    uint64_t tokens;     /* current tokens (in bytes) */
-    uint64_t burst;      /* max tokens */
-    uint64_t rate_bps;   /* bytes per second refill rate */
-    uint64_t last_ns;    /* last refill timestamp (ns) */
+    uint64_t tokens;   /* current tokens (in bytes) */
+    uint64_t burst;    /* max tokens */
+    uint64_t rate_bps; /* bytes per second refill rate */
+    uint64_t last_ns;  /* last refill timestamp (ns) */
 };
 
 /* Initialise a bucket. If rate_bps==0 the bucket is unlimited

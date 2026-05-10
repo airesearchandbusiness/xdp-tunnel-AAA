@@ -34,14 +34,14 @@
 
 namespace tachyon::hkex {
 
-constexpr size_t X25519_PK_LEN   = 32;
-constexpr size_t X25519_SK_LEN   = 32;
-constexpr size_t X25519_SS_LEN   = 32;
+constexpr size_t X25519_PK_LEN = 32;
+constexpr size_t X25519_SK_LEN = 32;
+constexpr size_t X25519_SS_LEN = 32;
 
-constexpr size_t HYBRID_PK_LEN   = X25519_PK_LEN + tachyon::pqc::MLKEM768_PUBLIC_KEY_LEN;  /* 1216 */
-constexpr size_t HYBRID_SK_LEN   = X25519_SK_LEN + tachyon::pqc::MLKEM768_SECRET_KEY_LEN;  /* 2432 */
-constexpr size_t HYBRID_CT_LEN   = X25519_PK_LEN + tachyon::pqc::MLKEM768_CIPHERTEXT_LEN;  /* 1120 */
-constexpr size_t HYBRID_SS_LEN   = 48;  /* HKDF-SHA384 PRK width */
+constexpr size_t HYBRID_PK_LEN = X25519_PK_LEN + tachyon::pqc::MLKEM768_PUBLIC_KEY_LEN; /* 1216 */
+constexpr size_t HYBRID_SK_LEN = X25519_SK_LEN + tachyon::pqc::MLKEM768_SECRET_KEY_LEN; /* 2432 */
+constexpr size_t HYBRID_CT_LEN = X25519_PK_LEN + tachyon::pqc::MLKEM768_CIPHERTEXT_LEN; /* 1120 */
+constexpr size_t HYBRID_SS_LEN = 48; /* HKDF-SHA384 PRK width */
 
 /*
  * Long-term key generation.
@@ -67,10 +67,8 @@ bool hybrid_keygen(uint8_t pk[HYBRID_PK_LEN], uint8_t sk[HYBRID_SK_LEN]);
  * `context` is mixed into the HKDF salt, binding the shared secret to the
  * application / handshake transcript. Pass the transcript hash here.
  */
-bool hybrid_encapsulate(const uint8_t peer_pk[HYBRID_PK_LEN],
-                        const uint8_t *context, size_t context_len,
-                        uint8_t ct[HYBRID_CT_LEN],
-                        uint8_t ss[HYBRID_SS_LEN]);
+bool hybrid_encapsulate(const uint8_t peer_pk[HYBRID_PK_LEN], const uint8_t *context,
+                        size_t context_len, uint8_t ct[HYBRID_CT_LEN], uint8_t ss[HYBRID_SS_LEN]);
 
 /*
  * Decapsulate with the local hybrid secret key.
@@ -80,10 +78,8 @@ bool hybrid_encapsulate(const uint8_t peer_pk[HYBRID_PK_LEN],
  * ss on invalid ML-KEM ciphertext (FIPS 203 §6.3 implicit rejection) —
  * match this against the sender's expected value to detect tampering.
  */
-bool hybrid_decapsulate(const uint8_t sk[HYBRID_SK_LEN],
-                        const uint8_t ct[HYBRID_CT_LEN],
-                        const uint8_t *context, size_t context_len,
-                        uint8_t ss[HYBRID_SS_LEN]);
+bool hybrid_decapsulate(const uint8_t sk[HYBRID_SK_LEN], const uint8_t ct[HYBRID_CT_LEN],
+                        const uint8_t *context, size_t context_len, uint8_t ss[HYBRID_SS_LEN]);
 
 /*
  * Query whether the hybrid path is usable on this build. Equivalent to

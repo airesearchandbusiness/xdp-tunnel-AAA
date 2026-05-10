@@ -41,12 +41,11 @@ namespace tachyon {
  * max is always available in O(1) from the front.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-template <typename T>
-class WindowedMaxFilter {
-public:
+template <typename T> class WindowedMaxFilter {
+  public:
     struct Sample {
-        T        val = {};
-        uint64_t t   = 0;
+        T val = {};
+        uint64_t t = 0;
     };
 
     /* Record a new sample at time `now_ns`, evicting any older than `window_ns`. */
@@ -55,8 +54,10 @@ public:
         if (size_ > 0 && now_ns - buf_[0].t > window_ns) {
             buf_[0] = buf_[1];
             buf_[1] = buf_[2];
-            if (size_ > 1) --size_;
-            if (size_ > 1) --size_; /* at most remove one "oldest" per update */
+            if (size_ > 1)
+                --size_;
+            if (size_ > 1)
+                --size_; /* at most remove one "oldest" per update */
         }
 
         /* Maintain non-increasing order (discard dominated older samples) */
@@ -80,7 +81,7 @@ public:
     bool empty() const { return size_ == 0; }
     void reset() { size_ = 0; }
 
-private:
+  private:
     std::array<Sample, 3> buf_{};
     size_t size_ = 0;
 };
@@ -90,13 +91,13 @@ private:
  * ══════════════════════════════════════════════════════════════════════════ */
 
 class BandwidthEstimator {
-public:
+  public:
     /* Pacing and congestion-window gains (BBR default probe_bw phase) */
-    static constexpr double   kPacingGain  = 1.25;
-    static constexpr double   kCwndGain    = 2.0;
+    static constexpr double kPacingGain = 1.25;
+    static constexpr double kCwndGain = 2.0;
 
     /* Sliding windows for BtlBw and RTTProp estimation */
-    static constexpr uint64_t kBwWindowNs  = 10'000'000'000ULL; /* 10 s */
+    static constexpr uint64_t kBwWindowNs = 10'000'000'000ULL;  /* 10 s */
     static constexpr uint64_t kRttWindowNs = 10'000'000'000ULL; /* 10 s */
 
     /* ── Feedback entry points ─────────────────────────────────────────── */
@@ -108,15 +109,13 @@ public:
      *   rtt_ns          : round-trip time measured for this ACK
      *   now_ns          : monotonic timestamp of this event (CLOCK_MONOTONIC)
      */
-    void on_ack(uint64_t delivered_bytes, uint64_t interval_ns,
-                uint64_t rtt_ns, uint64_t now_ns) {
+    void on_ack(uint64_t delivered_bytes, uint64_t interval_ns, uint64_t rtt_ns, uint64_t now_ns) {
         if (interval_ns == 0)
             return;
 
         /* Delivery rate sample in bits-per-second */
         const double rate_bps =
-            static_cast<double>(delivered_bytes) * 8.0e9 /
-            static_cast<double>(interval_ns);
+            static_cast<double>(delivered_bytes) * 8.0e9 / static_cast<double>(interval_ns);
 
         bw_filter_.update(static_cast<uint64_t>(rate_bps), now_ns, kBwWindowNs);
         btl_bw_bps_ = bw_filter_.best();
@@ -124,29 +123,25 @@ public:
         /* RTTProp: minimum RTT, refreshed once per window */
         if (rtt_ns < rtt_prop_ns_ ||
             (rtt_prop_stamp_ > 0 && now_ns - rtt_prop_stamp_ > kRttWindowNs)) {
-            rtt_prop_ns_    = rtt_ns;
+            rtt_prop_ns_ = rtt_ns;
             rtt_prop_stamp_ = now_ns;
         }
 
         /* SRTT / RTTVAR per RFC 6298 §2.3 */
         if (srtt_ns_ == 0) {
-            srtt_ns_   = rtt_ns;
+            srtt_ns_ = rtt_ns;
             rttvar_ns_ = rtt_ns / 2;
         } else {
-            const uint64_t dev = (rtt_ns > srtt_ns_)
-                                 ? (rtt_ns - srtt_ns_)
-                                 : (srtt_ns_ - rtt_ns);
-            rttvar_ns_ = (3 * rttvar_ns_ + dev) / 4;   /* β = 1/4 */
-            srtt_ns_   = (7 * srtt_ns_ + rtt_ns)  / 8; /* α = 1/8 */
+            const uint64_t dev = (rtt_ns > srtt_ns_) ? (rtt_ns - srtt_ns_) : (srtt_ns_ - rtt_ns);
+            rttvar_ns_ = (3 * rttvar_ns_ + dev) / 4; /* β = 1/4 */
+            srtt_ns_ = (7 * srtt_ns_ + rtt_ns) / 8;  /* α = 1/8 */
         }
 
         total_delivered_ += delivered_bytes;
     }
 
     /* Call on packet loss detection. */
-    void on_loss(uint64_t lost_bytes) {
-        total_lost_ += lost_bytes;
-    }
+    void on_loss(uint64_t lost_bytes) { total_lost_ += lost_bytes; }
 
     /* ── Derived metrics ───────────────────────────────────────────────── */
 
@@ -172,8 +167,7 @@ public:
 
     /* Recommended send pacing rate in bps (BtlBw × pacing_gain). */
     uint64_t pacing_rate_bps() const {
-        return static_cast<uint64_t>(
-            static_cast<double>(btl_bw_bps_) * kPacingGain);
+        return static_cast<uint64_t>(static_cast<double>(btl_bw_bps_) * kPacingGain);
     }
 
     /* Recommended in-flight cap in bytes: BtlBw_bps × RTTProp_s × cwnd_gain. */
@@ -181,7 +175,7 @@ public:
         if (btl_bw_bps_ == 0 || rtt_prop_ns_ == std::numeric_limits<uint64_t>::max())
             return 0;
         const double bw_Bps = static_cast<double>(btl_bw_bps_) / 8.0;
-        const double rtt_s  = static_cast<double>(rtt_prop_ns_) / 1e9;
+        const double rtt_s = static_cast<double>(rtt_prop_ns_) / 1e9;
         return static_cast<uint64_t>(bw_Bps * rtt_s * kCwndGain);
     }
 
@@ -203,27 +197,27 @@ public:
     /* Reset all state (e.g., after a rekey / path change). */
     void reset() {
         bw_filter_.reset();
-        btl_bw_bps_      = 0;
-        rtt_prop_ns_     = std::numeric_limits<uint64_t>::max();
-        rtt_prop_stamp_  = 0;
-        srtt_ns_         = 0;
-        rttvar_ns_       = 0;
+        btl_bw_bps_ = 0;
+        rtt_prop_ns_ = std::numeric_limits<uint64_t>::max();
+        rtt_prop_stamp_ = 0;
+        srtt_ns_ = 0;
+        rttvar_ns_ = 0;
         total_delivered_ = 0;
-        total_lost_      = 0;
+        total_lost_ = 0;
     }
 
     bool has_samples() const { return !bw_filter_.empty(); }
 
-private:
+  private:
     WindowedMaxFilter<uint64_t> bw_filter_;
 
-    uint64_t btl_bw_bps_     = 0;
-    uint64_t rtt_prop_ns_    = std::numeric_limits<uint64_t>::max();
+    uint64_t btl_bw_bps_ = 0;
+    uint64_t rtt_prop_ns_ = std::numeric_limits<uint64_t>::max();
     uint64_t rtt_prop_stamp_ = 0;
-    uint64_t srtt_ns_        = 0;
-    uint64_t rttvar_ns_      = 0;
+    uint64_t srtt_ns_ = 0;
+    uint64_t rttvar_ns_ = 0;
     uint64_t total_delivered_ = 0;
-    uint64_t total_lost_      = 0;
+    uint64_t total_lost_ = 0;
 };
 
 } /* namespace tachyon */

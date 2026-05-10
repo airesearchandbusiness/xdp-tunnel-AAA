@@ -34,31 +34,30 @@
 
 namespace tachyon::stun_mimic {
 
-constexpr size_t   STUN_HEADER_LEN    = 20;
-constexpr size_t   STUN_ATTR_HEADER   = 4;
-constexpr uint32_t STUN_MAGIC_COOKIE  = 0x2112A442;
-constexpr uint16_t STUN_BINDING_REQ   = 0x0001;
-constexpr uint16_t STUN_DATA_IND      = 0x0017; /* Data Indication */
-constexpr uint16_t ATTR_DATA          = 0x0013;
-constexpr uint16_t ATTR_FINGERPRINT   = 0x8028;
-constexpr size_t   STUN_OVERHEAD      = STUN_HEADER_LEN + STUN_ATTR_HEADER + 8; /* +fingerprint */
-constexpr size_t   STUN_MAX_PAYLOAD   = 1400;
+constexpr size_t STUN_HEADER_LEN = 20;
+constexpr size_t STUN_ATTR_HEADER = 4;
+constexpr uint32_t STUN_MAGIC_COOKIE = 0x2112A442;
+constexpr uint16_t STUN_BINDING_REQ = 0x0001;
+constexpr uint16_t STUN_DATA_IND = 0x0017; /* Data Indication */
+constexpr uint16_t ATTR_DATA = 0x0013;
+constexpr uint16_t ATTR_FINGERPRINT = 0x8028;
+constexpr size_t STUN_OVERHEAD = STUN_HEADER_LEN + STUN_ATTR_HEADER + 8; /* +fingerprint */
+constexpr size_t STUN_MAX_PAYLOAD = 1400;
 
 void register_transport();
 
 /* Build a STUN message wrapping `payload` in a DATA attribute.
  * `txn_id` must be 12 bytes. Returns total message length. */
-size_t build_stun_message(uint8_t *out, size_t cap, uint16_t msg_type,
-                          const uint8_t txn_id[12],
+size_t build_stun_message(uint8_t *out, size_t cap, uint16_t msg_type, const uint8_t txn_id[12],
                           const uint8_t *payload, size_t payload_len);
 
 /* Parse a STUN message and extract the DATA attribute payload. */
 struct StunParseResult {
-    bool     ok;
+    bool ok;
     uint16_t msg_type;
-    uint8_t  txn_id[12];
-    size_t   data_offset;
-    size_t   data_len;
+    uint8_t txn_id[12];
+    size_t data_offset;
+    size_t data_len;
 };
 StunParseResult parse_stun_message(const uint8_t *buf, size_t len);
 

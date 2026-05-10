@@ -80,7 +80,7 @@ TEST(CipherSuiteTest, AllSuitesHaveNonNullFunctions) {
         EXPECT_NE(cs->decrypt, nullptr);
         EXPECT_NE(cs->name, nullptr);
         EXPECT_GT(cs->key_len, 0u);
-        EXPECT_EQ(cs->tag_len, 16u);  /* All AEAD suites use 16-byte tags */
+        EXPECT_EQ(cs->tag_len, 16u); /* All AEAD suites use 16-byte tags */
     }
 }
 
@@ -104,15 +104,11 @@ static void test_suite_roundtrip(uint8_t cipher_id) {
 
     uint8_t ct[64] = {};
     uint8_t tag[16] = {};
-    ASSERT_TRUE(cs->encrypt(key, nonce, 12,
-                             aad, sizeof(aad) - 1,
-                             reinterpret_cast<const uint8_t *>(plaintext), pt_len,
-                             ct, tag));
+    ASSERT_TRUE(cs->encrypt(key, nonce, 12, aad, sizeof(aad) - 1,
+                            reinterpret_cast<const uint8_t *>(plaintext), pt_len, ct, tag));
 
     uint8_t pt[64] = {};
-    ASSERT_TRUE(cs->decrypt(key, nonce, 12,
-                             aad, sizeof(aad) - 1,
-                             ct, pt_len, tag, pt));
+    ASSERT_TRUE(cs->decrypt(key, nonce, 12, aad, sizeof(aad) - 1, ct, pt_len, tag, pt));
 
     EXPECT_EQ(memcmp(pt, plaintext, pt_len), 0);
 }
@@ -140,9 +136,8 @@ TEST(CipherSuiteTest, TamperedTagFails) {
 
     uint8_t ct[64] = {};
     uint8_t tag[16] = {};
-    ASSERT_TRUE(cs->encrypt(key, nonce, 12, nullptr, 0,
-                             reinterpret_cast<const uint8_t *>(pt), pt_len,
-                             ct, tag));
+    ASSERT_TRUE(cs->encrypt(key, nonce, 12, nullptr, 0, reinterpret_cast<const uint8_t *>(pt),
+                            pt_len, ct, tag));
 
     tag[0] ^= 0xFF; /* Corrupt tag */
     uint8_t out[64] = {};
@@ -369,10 +364,10 @@ TEST(AdaptiveObfsTest, DisabledFlagsUnchangedUnderCongestion) {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 TEST(PqKemTest, ConstantSizes) {
-    EXPECT_EQ(TACHYON_PQ_SS_LEN,  32);
-    EXPECT_EQ(TACHYON_PQ_PK_LEN,  1184);
-    EXPECT_EQ(TACHYON_PQ_SK_LEN,  2400);
-    EXPECT_EQ(TACHYON_PQ_CT_LEN,  1088);
+    EXPECT_EQ(TACHYON_PQ_SS_LEN, 32);
+    EXPECT_EQ(TACHYON_PQ_PK_LEN, 1184);
+    EXPECT_EQ(TACHYON_PQ_SK_LEN, 2400);
+    EXPECT_EQ(TACHYON_PQ_CT_LEN, 1088);
 }
 
 TEST(PqKemTest, FlagBitDoesNotConflictWithExistingFlags) {
@@ -411,7 +406,7 @@ TEST(WireFormatTest, KeyInitExtendedSize) {
 }
 
 TEST(WireFormatTest, KeyInitCipherTypeField) {
-    struct tachyon_key_init ki{};
+    struct tachyon_key_init ki {};
     ki.cipher_type = TACHYON_CIPHER_AES256GCM;
     EXPECT_EQ(ki.cipher_type, TACHYON_CIPHER_AES256GCM);
 }

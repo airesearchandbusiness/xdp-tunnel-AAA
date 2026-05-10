@@ -56,26 +56,26 @@ class Window {
 
     /* Introspection */
     uint64_t highest() const noexcept { return highest_; }
-    size_t   width()   const noexcept { return width_; }
+    size_t width() const noexcept { return width_; }
 
     /* Stats — all monotonically increasing counters. */
     uint64_t accepted() const noexcept { return accepted_; }
-    uint64_t replays()  const noexcept { return replays_; }
-    uint64_t stale()    const noexcept { return stale_; }
+    uint64_t replays() const noexcept { return replays_; }
+    uint64_t stale() const noexcept { return stale_; }
 
   private:
     bool get_bit(uint64_t seq) const;
     void set_bit(uint64_t seq);
     void shift_window(uint64_t delta);
 
-    std::vector<uint64_t> bits_;   /* width_/64 words */
-    size_t                width_   = 0;
-    uint64_t              highest_ = 0; /* highest accepted seq; 0 = none yet */
-    bool                  any_seen_ = false;
+    std::vector<uint64_t> bits_; /* width_/64 words */
+    size_t width_ = 0;
+    uint64_t highest_ = 0; /* highest accepted seq; 0 = none yet */
+    bool any_seen_ = false;
 
     uint64_t accepted_ = 0;
-    uint64_t replays_  = 0;
-    uint64_t stale_    = 0;
+    uint64_t replays_ = 0;
+    uint64_t stale_ = 0;
 };
 
 } /* namespace tachyon::replay */

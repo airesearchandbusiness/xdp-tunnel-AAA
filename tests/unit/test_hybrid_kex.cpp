@@ -29,11 +29,10 @@
 
 using namespace tachyon::hkex;
 
-#define SKIP_IF_UNAVAILABLE()                              \
-    do {                                                   \
-        if (!hybrid_available())                           \
-            GTEST_SKIP() << "Hybrid KEX unavailable: "     \
-                         << tachyon::pqc::pqc_backend();   \
+#define SKIP_IF_UNAVAILABLE()                                                                      \
+    do {                                                                                           \
+        if (!hybrid_available())                                                                   \
+            GTEST_SKIP() << "Hybrid KEX unavailable: " << tachyon::pqc::pqc_backend();             \
     } while (0)
 
 TEST(HybridKex, SizeConstantsMatchSpec) {
