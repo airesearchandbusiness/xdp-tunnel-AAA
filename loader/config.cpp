@@ -307,6 +307,14 @@ TunnelConfig parse_config(const std::string &filename) {
         }
     }
 
+    /* Phase 25 extensions */
+    std::string kex_str = get_val(kv, "KeyExchange");
+    if (kex_str == "x448" || kex_str == "X448")
+        cfg.kex_type = 1;
+
+    set_bool_if(cfg.afxdp_enabled, "AfXdpEnabled");
+    set_bool_if(cfg.ipv6_enabled, "IPv6Enabled");
+
     return cfg;
 }
 

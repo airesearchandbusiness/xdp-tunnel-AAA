@@ -206,7 +206,7 @@ struct TunnelConfig {
     bool encryption = true;
     uint8_t obfs_flags = TACHYON_OBFS_ALL; /* Traffic obfuscation bitmask    */
 
-    /* ── v5 "Ghost-PQ" policy ───────────────────────────────────────────────
+    /* ── v5 "Ghost-PQ" policy ─────────────────────────────────────────────────
      * These are off by default so v4 configs keep working unchanged. They are
      * parsed from the INI by config.cpp and consumed by network.cpp. Strings
      * are stored raw; network.cpp maps them to the typed enums in
@@ -223,7 +223,7 @@ struct TunnelConfig {
     /* Resolved at runtime by tunnel.cpp — not parsed from config */
     uint8_t resolved_transport_id = 0;
 
-    /* ── Phase 23 advanced extensions ──────────────────────────────────── */
+    /* ── Phase 23 advanced extensions ──────────────────────────────────────── */
     uint32_t replay_window_size = 4096;
     bool metrics_enabled = false;
     uint16_t metrics_port = 9090;
@@ -231,6 +231,11 @@ struct TunnelConfig {
     uint16_t tfs_pkt_len = 1400;
     bool multipath_enabled = false;
     std::vector<std::string> multipath_interfaces;
+
+    /* ── Phase 25 extensions ────────────────────────────────────────────── */
+    uint8_t kex_type = 0; /* TACHYON_KEX_X25519 (default) or TACHYON_KEX_X448 */
+    bool afxdp_enabled = false;
+    bool ipv6_enabled = false;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -403,6 +408,8 @@ bool cp_aead_decrypt(const uint8_t *key, const uint8_t *ct, size_t ct_len, const
 
 bool generate_x25519_keypair(uint8_t *priv_out, uint8_t *pub_out);
 bool get_public_key(const uint8_t *priv, uint8_t *pub_out);
+bool generate_x448_keypair(uint8_t *priv_out, uint8_t *pub_out);
+bool do_x448_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_ss);
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Function Declarations - tunnel.cpp

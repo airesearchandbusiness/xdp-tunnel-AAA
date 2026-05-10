@@ -297,6 +297,61 @@ bool get_public_key(const uint8_t *priv, uint8_t *pub_out) {
 }
 
 /* ======================================================================
+ * X448 Key Exchange
+ * ====================================================================== */
+
+bool generate_x448_keypair(uint8_t *priv_out, uint8_t *pub_out) {
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_X448, nullptr);
+    if (!ctx)
+        return false;
+    EVP_PKEY *pk = nullptr;
+    bool ok = false;
+    if (EVP_PKEY_keygen_init(ctx) > 0 && EVP_PKEY_keygen(ctx, &pk) > 0 && pk) {
+        size_t len = TACHYON_X448_KEY_LEN;
+        ok = (EVP_PKEY_get_raw_private_key(pk, priv_out, &len) > 0 && len == TACHYON_X448_KEY_LEN);
+        if (ok) {
+            len = TACHYON_X448_KEY_LEN;
+            ok =
+                (EVP_PKEY_get_raw_public_key(pk, pub_out, &len) > 0 && len == TACHYON_X448_KEY_LEN);
+        }
+    }
+    EVP_PKEY_free(pk);
+    EVP_PKEY_CTX_free(ctx);
+    if (!ok) {
+        OPENSSL_cleanse(priv_out, TACHYON_X448_KEY_LEN);
+        OPENSSL_cleanse(pub_out, TACHYON_X448_KEY_LEN);
+    }
+    return ok;
+}
+
+bool do_x448_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_ss) {
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_X448, nullptr, my_priv, 56);
+    if (!pkey)
+        return false;
+    EVP_PKEY *peer = EVP_PKEY_new_raw_public_key(EVP_PKEY_X448, nullptr, peer_pub, 56);
+    if (!peer) {
+        EVP_PKEY_free(pkey);
+        return false;
+    }
+    bool result = false;
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(pkey, nullptr);
+    if (ctx && EVP_PKEY_derive_init(ctx) > 0 && EVP_PKEY_derive_set_peer(ctx, peer) > 0) {
+        size_t slen = 56;
+        if (EVP_PKEY_derive(ctx, out_ss, &slen) > 0 && slen == 56) {
+            uint8_t zero[56] = {0};
+            if (CRYPTO_memcmp(out_ss, zero, 56) != 0)
+                result = true;
+            else
+                OPENSSL_cleanse(out_ss, 56);
+        }
+    }
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(peer);
+    EVP_PKEY_free(pkey);
+    return result;
+}
+
+/* ======================================================================
  * CipherSuite Registry
  * ====================================================================== */
 

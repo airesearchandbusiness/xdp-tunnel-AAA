@@ -25,9 +25,9 @@
 #include "tfs.h"
 #include "metrics.h"
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ==================================================================
  * Helpers
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ================================================================== */
 
 static int make_test_fd() {
     return dup(STDOUT_FILENO);
@@ -59,9 +59,9 @@ static const std::string kBaseConf =
     "EndpointMAC = aa:bb:cc:dd:ee:ff\n"
     "InnerIP = 10.8.0.2\n";
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ==================================================================
  * PathManager Tests
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ================================================================== */
 
 using namespace tachyon::multipath;
 
@@ -191,9 +191,9 @@ TEST(PathManagerTest, OnDataRxResetsState) {
     EXPECT_TRUE(pm.paths()[0].active);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ==================================================================
  * BandwidthEstimator Tests
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ================================================================== */
 
 using tachyon::BandwidthEstimator;
 
@@ -276,9 +276,9 @@ TEST(BandwidthEstimatorTest, ZeroIntervalIgnored) {
     EXPECT_EQ(be.bandwidth_bps(), 0u);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ==================================================================
  * TFSController Tests
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ================================================================== */
 
 using tachyon::TFSController;
 
@@ -390,9 +390,9 @@ TEST(TFSControllerTest, ScheduleReanchorsOnLargeGap) {
     EXPECT_FALSE(tfs.get_next(10'005'000, out, dummy));
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ==================================================================
  * MetricsExporter Tests
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ================================================================== */
 
 using tachyon::MetricsExporter;
 
@@ -486,8 +486,8 @@ TEST(MetricsExporterTest, StartHighPortBindsAndStops) {
 
 TEST(MetricsExporterTest, StartStopIsIdempotent) {
     MetricsExporter mx;
-    mx.stop(); /* stop on never-started — must not crash */
-    mx.stop(); /* double-stop — must not crash */
+    mx.stop(); /* stop on never-started -- must not crash */
+    mx.stop(); /* double-stop -- must not crash */
     EXPECT_FALSE(mx.is_running());
 }
 
@@ -500,7 +500,7 @@ TEST(MetricsExporterTest, PollWhenNotRunningIsSafe) {
 
 TEST(MetricsExporterTest, RenderHandlesLargeCounters) {
     /* Validate uint64_t maximum values render correctly (no overflow,
-     * no truncation) — defends against the INT_MAX bounds-check fix. */
+     * no truncation) -- defends against the INT_MAX bounds-check fix. */
     MetricsExporter mx;
     userspace_stats stats{};
     stats.rx_packets = UINT64_MAX;
@@ -514,9 +514,9 @@ TEST(MetricsExporterTest, RenderHandlesLargeCounters) {
     EXPECT_NE(out.find("9223372036854775808"), std::string::npos);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ==================================================================
  * CipherRenegotiator Tests
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ================================================================== */
 
 TEST(CipherRenegotiatorTest, InitialStateIdle) {
     CipherRenegotiator cr;
@@ -624,9 +624,9 @@ TEST(CipherRenegotiatorTest, ResetCancelsProposal) {
     EXPECT_EQ(cr.state(), CipherRenegotiator::State::IDLE);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
- * Config Parsing — Phase 23 Directives
- * ══════════════════════════════════════════════════════════════════════════ */
+/* ==================================================================
+ * Config Parsing -- Phase 23 Directives
+ * ================================================================== */
 
 TEST(ConfigPhase23Test, ReplayWindowSizeDefault) {
     TunnelConfig cfg = parse_from_string(kBaseConf);
@@ -670,9 +670,9 @@ TEST(ConfigPhase23Test, TFSPktLenParsed) {
     EXPECT_EQ(cfg.tfs_pkt_len, 1200u);
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
- * Wire Format — Phase 23 Size Verification
- * ══════════════════════════════════════════════════════════════════════════ */
+/* ==================================================================
+ * Wire Format -- Phase 23 Size Verification
+ * ================================================================== */
 
 TEST(WireFormatPhase23Test, CipherNegSize20) {
     EXPECT_EQ(sizeof(MsgCipherNeg), 20u);

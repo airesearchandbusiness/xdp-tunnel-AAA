@@ -171,6 +171,15 @@ typedef int32_t __s32;
 #define TACHYON_CIPHER_AES256GCM 2 /* AES-256-GCM (AES-NI accelerated)      */
 #define TACHYON_CIPHER_MAX 2       /* Highest valid cipher type             */
 
+/* Key exchange algorithm identifiers */
+#define TACHYON_KEX_X25519 0
+#define TACHYON_KEX_X448 1
+#define TACHYON_X448_KEY_LEN 56
+
+/* Protocol capability flags (MsgInit.flags field) */
+#define TACHYON_FLAG_IPV6 0x04 /* IPv6 inner/outer support */
+#define TACHYON_IPV6_HDR_LEN 40
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Packet Types
  *
