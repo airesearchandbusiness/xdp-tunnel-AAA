@@ -413,7 +413,13 @@ jobs:
 
       - name: Run clang-tidy
         run: |
+          # Exclude main.cpp, tunnel.cpp, network.cpp — all require libbpf
+          # headers and aren't part of the test compile_commands DB. Their
+          # loader build is verified separately by the build job.
           find loader/ -name '*.cpp' \
+            -not -name 'main.cpp' \
+            -not -name 'tunnel.cpp' \
+            -not -name 'network.cpp' \
             | xargs clang-tidy-18 \
                 -p build/tidy \
                 --config-file=.clang-tidy \

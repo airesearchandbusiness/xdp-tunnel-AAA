@@ -430,23 +430,45 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
  * Utility Helpers
  * ══════════════════════════════════════════════════════════════════════════ */
 
+/* Convert one hex character to its 4-bit value. Returns -1 on non-hex input. */
+inline int hex_nibble(unsigned char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
 inline bool hex2bin(const std::string &hex, uint8_t *bin, size_t bin_len) {
     if (hex.size() != bin_len * 2)
         return false;
     for (size_t i = 0; i < bin_len; i++) {
-        const auto hi = static_cast<unsigned char>(hex[i * 2]);
-        const auto lo = static_cast<unsigned char>(hex[i * 2 + 1]);
-        if (!isxdigit(hi) || !isxdigit(lo))
-            return false; /* reject non-hex characters early */
-        if (sscanf(&hex[i * 2], "%2hhx", &bin[i]) != 1)
+        const int hi = hex_nibble(static_cast<unsigned char>(hex[i * 2]));
+        const int lo = hex_nibble(static_cast<unsigned char>(hex[i * 2 + 1]));
+        if (hi < 0 || lo < 0)
             return false;
+        bin[i] = static_cast<uint8_t>((hi << 4) | lo);
     }
     return true;
 }
 
 inline bool parse_mac(const std::string &str, uint8_t mac[6]) {
-    return sscanf(str.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0], &mac[1], &mac[2], &mac[3],
-                  &mac[4], &mac[5]) == 6;
+    /* Expect "xx:xx:xx:xx:xx:xx" — exactly 17 chars, colons at 2,5,8,11,14 */
+    if (str.size() != 17)
+        return false;
+    for (size_t i = 0; i < 6; ++i) {
+        const size_t off = i * 3;
+        if (i < 5 && str[off + 2] != ':')
+            return false;
+        const int hi = hex_nibble(static_cast<unsigned char>(str[off]));
+        const int lo = hex_nibble(static_cast<unsigned char>(str[off + 1]));
+        if (hi < 0 || lo < 0)
+            return false;
+        mac[i] = static_cast<uint8_t>((hi << 4) | lo);
+    }
+    return true;
 }
 
 inline std::string trim(std::string s) {
