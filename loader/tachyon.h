@@ -54,13 +54,10 @@
 #include "../src/common.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Logging
+ * Logging (structured, JSON-capable — see loader/log.h)
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#define LOG_INFO(fmt, ...) fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...) fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__)
-#define LOG_ERR(fmt, ...) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
-#define LOG_CRYPTO(fmt, ...) fprintf(stderr, "[CRYPTO] " fmt "\n", ##__VA_ARGS__)
+#include "log.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Userspace Mirror Structures
