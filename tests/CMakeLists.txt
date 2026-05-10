@@ -130,6 +130,7 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/metrics.cpp
     ${PROJECT_ROOT}/loader/rate_limiter.cpp
     ${PROJECT_ROOT}/loader/multipath.cpp
+    ${PROJECT_ROOT}/loader/autoconf.cpp
 )
 
 target_include_directories(tachyon_core PUBLIC
@@ -186,6 +187,7 @@ add_tachyon_test(test_metrics     unit/test_metrics.cpp)
 add_tachyon_test(test_rate_limiter unit/test_rate_limiter.cpp)
 add_tachyon_test(test_integration_v5 unit/test_integration_v5.cpp)
 add_tachyon_test(test_phase23    unit/test_phase23.cpp)
+add_tachyon_test(test_autoconf   unit/test_autoconf.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)
