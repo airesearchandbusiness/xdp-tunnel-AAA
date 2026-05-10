@@ -48,8 +48,10 @@ int build_record(char *buf, size_t buflen, const EventInfo &info) {
     if (info.peer_ip != 0) {
         struct in_addr addr;
         addr.s_addr = info.peer_ip;
-        const char *ip_str = inet_ntoa(addr);
-        int m = snprintf(buf + n, buflen - n, ",\"peer_ip\":\"%s\"", ip_str ? ip_str : "");
+        char ip_str[INET_ADDRSTRLEN] = {};
+        if (inet_ntop(AF_INET, &addr, ip_str, sizeof(ip_str)) == nullptr)
+            ip_str[0] = '\0';
+        int m = snprintf(buf + n, buflen - n, ",\"peer_ip\":\"%s\"", ip_str);
         if (m < 0)
             return m;
         n += m;
