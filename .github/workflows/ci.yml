@@ -1,1 +1,256 @@
-placeholder_restore_needed
+# Tachyon XDP Tunnel - Continuous Integration
+#
+# Stages: Lint -> Build -> Unit Tests -> Coverage -> Sanitize -> clang-tidy -> CodeQL
+#
+# Triggered on: push to main, pull requests against main
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  lint:
+    name: "lint"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'cppcheck'
+      - name: clang-format
+        run: |
+          find tests/ src/ loader/ \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -print \
+            | xargs clang-format --dry-run --Werror --style=file
+      - name: shellcheck
+        run: find tests/ -name '*.sh' -exec shellcheck -x -S warning {} +
+      - name: cppcheck
+        run: |
+          cppcheck --enable=warning,performance,portability --error-exitcode=1 \
+            --suppress=missingInclude --suppress=missingIncludeSystem \
+            --suppress=unknownMacro:src/xdp_core.c \
+            --suppress=preprocessorErrorDirective:loader/crypto.cpp \
+            --inline-suppr --std=c11 src/ loader/ 2>&1 | tee cppcheck-report.txt
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: "build"
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libssl-dev libelf-dev'
+      - name: Build test suite
+        run: |
+          cmake -B build -S tests -DCMAKE_BUILD_TYPE=Debug -DBUILD_XDP_TESTS=OFF -DBUILD_FUZZ_TESTS=OFF
+          cmake --build build -j$(nproc)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: build/
+          retention-days: 1
+
+  build-matrix:
+    name: "build / ${{ matrix.name }}"
+    runs-on: ubuntu-24.04
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gcc, cc: gcc, cxx: g++, packages: 'libssl-dev' }
+          - { name: clang-18, cc: clang-18, cxx: clang++-18, packages: 'clang-18 libssl-dev' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: ${{ matrix.packages }}
+      - run: |
+          cmake -B build/matrix -S tests \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-Werror"
+          cmake --build build/matrix -j$(nproc)
+          cd build/matrix && ctest --output-on-failure --timeout 60
+
+  test:
+    name: "test / unit"
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libssl-dev'
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: build/
+      - run: |
+          chmod +x build/test_* 2>/dev/null || true
+          cd build && ctest --output-on-failure --timeout 60
+
+  security:
+    name: "security / codeql"
+    runs-on: ubuntu-24.04
+    needs: lint
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+          queries: security-and-quality
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libbpf-dev libelf-dev libssl-dev zlib1g-dev'
+      - run: make loader 2>&1 || true
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:cpp"
+
+  trivy:
+    name: "security / trivy"
+    runs-on: ubuntu-24.04
+    needs: lint
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy'
+
+  coverage:
+    name: "coverage"
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libssl-dev lcov bc'
+      - run: |
+          cmake -B build/cov -S tests -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
+          cmake --build build/cov -j$(nproc)
+          cd build/cov && ctest --output-on-failure --timeout 60
+      - name: Collect + enforce coverage
+        run: |
+          lcov --capture --directory build/cov --output-file build/cov/coverage.info --ignore-errors mismatch 2>/dev/null
+          lcov --remove build/cov/coverage.info '/usr/*' '*/tests/*' '*/googletest/*' --output-file build/cov/coverage-filtered.info 2>/dev/null
+          COVERAGE=$(lcov --summary build/cov/coverage-filtered.info 2>/dev/null | grep 'lines' | sed 's/.*: //' | sed 's/%.*//')
+          echo "Line coverage: ${COVERAGE}%"
+          if [ "$(echo "$COVERAGE < 80" | bc -l)" -eq 1 ]; then
+            echo "::error::Line coverage ${COVERAGE}% is below 80% threshold"
+            exit 1
+          fi
+      - uses: codecov/codecov-action@v5
+        with:
+          files: build/cov/coverage-filtered.info
+          flags: unit
+          fail_ci_if_error: false
+
+  valgrind:
+    name: "memory / valgrind"
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'libssl-dev valgrind'
+      - run: |
+          cmake -B build/vg -S tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/vg -j$(nproc)
+          valgrind --leak-check=full --error-exitcode=1 --suppressions=tests/valgrind.supp \
+            ctest --test-dir build/vg --output-on-failure
+
+  sanitize:
+    name: "test / sanitize (ASan+UBSan)"
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'clang-18 libssl-dev'
+      - run: |
+          cmake -B build/san -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZE=ON
+          cmake --build build/san -j$(nproc)
+      - env:
+          ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:detect_leaks=1"
+          UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+        run: cd build/san && ctest --output-on-failure --timeout 120
+
+  analysis:
+    name: "analysis / clang-tidy"
+    runs-on: ubuntu-24.04
+    needs: lint
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'clang-18 clang-tidy-18 libssl-dev libelf-dev'
+      - run: |
+          cmake -B build/tidy -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build/tidy -j$(nproc)
+          find loader/ -name '*.cpp' -not -name 'main.cpp' -not -name 'tunnel.cpp' -not -name 'network.cpp' \
+            | xargs clang-tidy-18 -p build/tidy 2>&1 | tee clang-tidy-report.txt
+
+  tsan:
+    name: "test / tsan (ThreadSanitizer)"
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          packages: 'clang-18 libssl-dev'
+      - run: |
+          cmake -B build/tsan -S tests \
+            -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_BUILD_TYPE=Debug -DENABLE_TSAN=ON
+          cmake --build build/tsan -j$(nproc)
+      - env:
+          TSAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+        run: cd build/tsan && ctest --output-on-failure --timeout 120
