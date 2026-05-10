@@ -5,15 +5,9 @@
 
 #include "tachyon.h"
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * Tunnel Name Validation
- *
- * Tunnel names are used as components in Linux interface names ("t_<name>_in")
- * and BPF filesystem paths. They must be restricted to a safe character set
- * to prevent shell injection (via run_cmd callers) and stay within IFNAMSIZ.
- *
- * IFNAMSIZ=16; wrapper "t_<name>_in" consumes 5 static chars + null → 10 max.
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 static bool is_valid_tunnel_name(const std::string &name) {
     if (name.empty() || name.size() > 10)
@@ -25,12 +19,9 @@ static bool is_valid_tunnel_name(const std::string &name) {
     return true;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * INI Config Parser
- *
- * Parses WireGuard-style INI files with [Section] headers.
- * Keys are stored both as "Section.Key" and bare "Key" for flexibility.
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 static std::unordered_map<std::string, std::string> parse_ini(const std::string &filename) {
     std::unordered_map<std::string, std::string> kv;
@@ -41,7 +32,6 @@ static std::unordered_map<std::string, std::string> parse_ini(const std::string 
         return kv;
     }
 
-    /* Guard against unreasonably large files (DoS protection) */
     file.seekg(0, std::ios::end);
     auto file_size = file.tellg();
     file.seekg(0, std::ios::beg);
@@ -61,13 +51,11 @@ static std::unordered_map<std::string, std::string> parse_ini(const std::string 
         if (line.empty() || line[0] == '#' || line[0] == ';')
             continue;
 
-        /* Section header */
         if (line.front() == '[' && line.back() == ']') {
             section = line.substr(1, line.size() - 2) + ".";
             continue;
         }
 
-        /* Key = Value */
         auto pos = line.find('=');
         if (pos == std::string::npos) {
             LOG_WARN("Config line %d: missing '=' separator", lineno);
@@ -78,13 +66,15 @@ static std::unordered_map<std::string, std::string> parse_ini(const std::string 
         std::string val = trim(line.substr(pos + 1));
 
         kv[section + key] = val;
-        kv[key] = val; /* Allow lookup without section prefix */
+        /* Bare-key lookup convenience: when the same key appears in multiple
+         * sections, the last occurrence wins. v5 directives use sectioned
+         * lookup (e.g. "Peer.EndpointIP") to avoid this ambiguity. */
+        kv[key] = val;
     }
 
     return kv;
 }
 
-/* Helper: look up a key with fallback alias */
 static std::string get_val(const std::unordered_map<std::string, std::string> &kv,
                            const std::string &primary, const std::string &fallback = "") {
     auto it = kv.find(primary);
@@ -116,7 +106,15 @@ TunnelConfig parse_config(const std::string &filename) {
     std::string port_str = get_val(kv, "ListenPort");
     if (!port_str.empty()) {
         try {
-            cfg.listen_port = std::stoi(port_str);
+            int v = std::stoi(port_str);
+            /* Range-validate immediately rather than relying on validate_config
+             * downstream — keeps cfg.listen_port within sane bounds (CWE-190). */
+            if (v >= 1 && v <= 65535) {
+                cfg.listen_port = v;
+            } else {
+                LOG_WARN("ListenPort %d out of range [1,65535], using default %d",
+                         v, cfg.listen_port);
+            }
         } catch (const std::exception &) {
             LOG_WARN("Invalid ListenPort '%s', using default %d", port_str.c_str(),
                      cfg.listen_port);
@@ -126,7 +124,13 @@ TunnelConfig parse_config(const std::string &filename) {
     std::string mimicry_str = get_val(kv, "MimicryType");
     if (!mimicry_str.empty()) {
         try {
-            cfg.mimicry_type = std::stoi(mimicry_str);
+            int v = std::stoi(mimicry_str);
+            if (v == TACHYON_MIMICRY_NONE || v == TACHYON_MIMICRY_QUIC) {
+                cfg.mimicry_type = v;
+            } else {
+                LOG_WARN("MimicryType %d out of range [0,1], using default %d",
+                         v, cfg.mimicry_type);
+            }
         } catch (const std::exception &) {
             LOG_WARN("Invalid MimicryType '%s', using default %d", mimicry_str.c_str(),
                      cfg.mimicry_type);
@@ -137,12 +141,10 @@ TunnelConfig parse_config(const std::string &filename) {
     if (enc_str == "false" || enc_str == "0")
         cfg.encryption = false;
 
-    /* ObfuscationFlags: bitmask for traffic analysis countermeasures.
-     * Default is TACHYON_OBFS_ALL (all flags enabled). Set to 0 to disable. */
     std::string obfs_str = get_val(kv, "ObfuscationFlags");
     if (!obfs_str.empty()) {
         try {
-            int val = std::stoi(obfs_str, nullptr, 0); /* supports hex 0x3F */
+            int val = std::stoi(obfs_str, nullptr, 0);
             cfg.obfs_flags = static_cast<uint8_t>(val & 0xFF);
         } catch (const std::exception &) {
             LOG_WARN("Invalid ObfuscationFlags '%s', using default 0x%02x", obfs_str.c_str(),
@@ -150,7 +152,7 @@ TunnelConfig parse_config(const std::string &filename) {
         }
     }
 
-    /* ── v5 "Ghost-PQ" policy knobs ─────────────────────────────────── */
+    /* v5 Ghost-PQ policy knobs */
     auto set_if = [&](std::string &dst, const char *key) {
         std::string v = get_val(kv, key);
         if (!v.empty()) dst = v;
@@ -179,7 +181,7 @@ TunnelConfig parse_config(const std::string &filename) {
     set_bool_if(cfg.ttl_random, "TTLRandom");
     set_bool_if(cfg.mac_random, "MACRandom");
 
-    /* ── Phase 23 advanced knobs ───────────────────────────────────────── */
+    /* Phase 23 advanced knobs */
     std::string rws_str = get_val(kv, "ReplayWindowSize");
     if (!rws_str.empty()) {
         try {
@@ -202,8 +204,16 @@ TunnelConfig parse_config(const std::string &filename) {
 
     std::string tpps_str = get_val(kv, "TrafficShapingPPS");
     if (!tpps_str.empty()) {
-        try { cfg.tfs_pps = static_cast<uint32_t>(std::stoul(tpps_str)); }
-        catch (...) {}
+        try {
+            unsigned long v = std::stoul(tpps_str);
+            /* Cap at 100k pps (matches TFSController::kMaxPps). Larger values
+             * indicate misconfiguration and would saturate the link (CWE-190). */
+            if (v <= 100000UL) {
+                cfg.tfs_pps = static_cast<uint32_t>(v);
+            } else {
+                LOG_WARN("TrafficShapingPPS %lu exceeds 100000 cap, ignoring", v);
+            }
+        } catch (...) {}
     }
 
     std::string tlen_str = get_val(kv, "TrafficShapingPktLen");
@@ -231,9 +241,9 @@ TunnelConfig parse_config(const std::string &filename) {
     return cfg;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * Config Validation
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 bool validate_config(const TunnelConfig &cfg) {
     bool ok = true;
@@ -259,7 +269,6 @@ bool validate_config(const TunnelConfig &cfg) {
     check(cfg.listen_port > 0 && cfg.listen_port < 65536, "ListenPort must be 1-65535");
     check(is_valid_tunnel_name(cfg.name), "Tunnel name must be 1-10 chars of [a-zA-Z0-9_-]");
 
-    /* Validate MAC format + reject all-zero and broadcast */
     if (!cfg.peer_endpoint_mac.empty()) {
         uint8_t mac[6];
         if (!parse_mac(cfg.peer_endpoint_mac, mac)) {
@@ -272,7 +281,6 @@ bool validate_config(const TunnelConfig &cfg) {
         }
     }
 
-    /* Validate IP format + reject loopback, broadcast, link-local, 0.0.0.0 */
     if (!cfg.peer_endpoint_ip.empty()) {
         struct in_addr tmp;
         if (inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &tmp) != 1) {
@@ -290,19 +298,17 @@ bool validate_config(const TunnelConfig &cfg) {
     return ok;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* ======================================================================
  * Tunnel Name Extraction
- * ══════════════════════════════════════════════════════════════════════════ */
+ * ====================================================================== */
 
 std::string tunnel_name_from_conf(const std::string &conf_path) {
     std::string name = conf_path;
 
-    /* Strip directory prefix */
     size_t p = name.find_last_of('/');
     if (p != std::string::npos)
         name = name.substr(p + 1);
 
-    /* Strip file extension */
     p = name.find('.');
     if (p != std::string::npos)
         name = name.substr(0, p);
