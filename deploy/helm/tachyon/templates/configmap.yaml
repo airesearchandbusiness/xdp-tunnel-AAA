@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tachyon.fullname" . }}-config
+  labels:
+    {{- include "tachyon.labels" . | nindent 4 }}
+data:
+  tachyon.conf: |
+    # Tachyon XDP Tunnel configuration
+    # Rendered from Helm values on {{ now | date "2006-01-02T15:04:05Z07:00" }}
+    listen_port = {{ .Values.config.listenPort }}
+    mimicry_type = {{ .Values.config.mimicryType | quote }}
+    obfs_flags = {{ .Values.config.obfsFlags }}
+    log_format = {{ .Values.config.logFormat | quote }}
+    log_level = {{ .Values.config.logLevel | quote }}
+    shutdown_drain_seconds = {{ .Values.config.shutdownDrainSeconds }}
+    metrics_enabled = {{ .Values.metrics.enabled }}
+    metrics_port = {{ .Values.metrics.port }}

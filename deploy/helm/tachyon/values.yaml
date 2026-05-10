@@ -1,0 +1,55 @@
+image:
+  repository: ghcr.io/airesearchandbusiness/tachyon
+  tag: "1.2.0"
+  pullPolicy: IfNotPresent
+
+config:
+  listenPort: 443
+  mimicryType: quic
+  obfsFlags: 0x3F
+  logFormat: json
+  logLevel: info
+  shutdownDrainSeconds: 10
+
+secrets:
+  privateKey: ""    # base64-encoded
+  peerPublicKey: ""
+  psk: ""
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+
+metrics:
+  enabled: true
+  port: 9090
+  serviceMonitor:
+    enabled: false
+
+probes:
+  liveness:
+    httpGet:
+      path: /health
+      port: metrics
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    httpGet:
+      path: /ready
+      port: metrics
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+securityContext:
+  capabilities:
+    add:
+      - NET_ADMIN
+      - BPF
+      - SYS_ADMIN
+
+nodeSelector: {}
+tolerations: []
