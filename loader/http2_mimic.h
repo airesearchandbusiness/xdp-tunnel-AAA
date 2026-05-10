@@ -34,32 +34,32 @@
 
 namespace tachyon::http2_mimic {
 
-constexpr size_t H2_FRAME_HEADER    = 9;
-constexpr size_t H2_MAX_PAYLOAD     = 16384; /* default MAX_FRAME_SIZE */
-constexpr size_t H2_PREFACE_LEN     = 24;    /* PRI * HTTP/2.0... */
+constexpr size_t H2_FRAME_HEADER = 9;
+constexpr size_t H2_MAX_PAYLOAD = 16384; /* default MAX_FRAME_SIZE */
+constexpr size_t H2_PREFACE_LEN = 24;    /* PRI * HTTP/2.0... */
 
 /* HTTP/2 frame types */
-constexpr uint8_t H2_DATA     = 0x00;
-constexpr uint8_t H2_HEADERS  = 0x01;
+constexpr uint8_t H2_DATA = 0x00;
+constexpr uint8_t H2_HEADERS = 0x01;
 constexpr uint8_t H2_SETTINGS = 0x04;
 
 /* Flags */
-constexpr uint8_t H2_FLAG_END_STREAM  = 0x01;
+constexpr uint8_t H2_FLAG_END_STREAM = 0x01;
 constexpr uint8_t H2_FLAG_END_HEADERS = 0x04;
 
 void register_transport();
 
 /* Build a 9-byte HTTP/2 frame header. Returns 9 always. */
-size_t build_frame_header(uint8_t out[H2_FRAME_HEADER], uint32_t length,
-                          uint8_t type, uint8_t flags, uint32_t stream_id);
+size_t build_frame_header(uint8_t out[H2_FRAME_HEADER], uint32_t length, uint8_t type,
+                          uint8_t flags, uint32_t stream_id);
 
 /* Parse a 9-byte frame header from `buf`. */
 struct FrameHeader {
     uint32_t length;
-    uint8_t  type;
-    uint8_t  flags;
+    uint8_t type;
+    uint8_t flags;
     uint32_t stream_id;
-    bool     ok;
+    bool ok;
 };
 FrameHeader parse_frame_header(const uint8_t *buf, size_t len);
 
@@ -67,12 +67,11 @@ FrameHeader parse_frame_header(const uint8_t *buf, size_t len);
 size_t build_connection_preface(uint8_t *out, size_t cap);
 
 /* Build a minimal HEADERS frame for GET / with given authority. */
-size_t build_headers_frame(uint8_t *out, size_t cap, const char *authority,
-                           uint32_t stream_id);
+size_t build_headers_frame(uint8_t *out, size_t cap, const char *authority, uint32_t stream_id);
 
 /* Build a DATA frame wrapping `payload`. Returns total frame bytes. */
-size_t build_data_frame(uint8_t *out, size_t cap, const uint8_t *payload,
-                        size_t payload_len, uint32_t stream_id);
+size_t build_data_frame(uint8_t *out, size_t cap, const uint8_t *payload, size_t payload_len,
+                        uint32_t stream_id);
 
 } /* namespace tachyon::http2_mimic */
 

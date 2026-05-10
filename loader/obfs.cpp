@@ -85,30 +85,29 @@ uint16_t pick_grease() {
 /* ── ClientHello builder ────────────────────────────────────────────────── */
 
 size_t build_client_hello(uint8_t *out, size_t out_cap, const Options &opts) {
-    if (!out || out_cap < MAX_RECORD_LEN || !opts.sni || !opts.client_random ||
-        !opts.session_id)
+    if (!out || out_cap < MAX_RECORD_LEN || !opts.sni || !opts.client_random || !opts.session_id)
         return 0;
 
     Writer w{out, out_cap, 0};
 
     /* TLS record header (will patch length after body is written) */
-    if (!w.put_u8(0x16))         /* ContentType = handshake */
+    if (!w.put_u8(0x16)) /* ContentType = handshake */
         return 0;
-    if (!w.put_u16(0x0303))       /* legacy_record_version = TLS 1.2 */
+    if (!w.put_u16(0x0303)) /* legacy_record_version = TLS 1.2 */
         return 0;
     const size_t record_len_at = w.pos;
-    if (!w.put_u16(0))            /* placeholder for record length */
+    if (!w.put_u16(0)) /* placeholder for record length */
         return 0;
 
     /* Handshake header */
-    if (!w.put_u8(0x01))         /* HandshakeType = ClientHello */
+    if (!w.put_u8(0x01)) /* HandshakeType = ClientHello */
         return 0;
     const size_t hs_len_at = w.pos;
-    if (!w.put_u24(0))            /* placeholder for handshake length */
+    if (!w.put_u24(0)) /* placeholder for handshake length */
         return 0;
 
     /* ClientHello body */
-    if (!w.put_u16(0x0303))       /* legacy_version = TLS 1.2 */
+    if (!w.put_u16(0x0303)) /* legacy_version = TLS 1.2 */
         return 0;
     if (!w.put_bytes(opts.client_random, 32))
         return 0;
@@ -171,13 +170,13 @@ size_t build_client_hello(uint8_t *out, size_t out_cap, const Options &opts) {
     /* supported_versions: TLS 1.3 only (plus GREASE) */
     if (!w.put_u16(EXT_SUPPORTED_VERSIONS))
         return 0;
-    if (!w.put_u16(5))            /* ext body length */
+    if (!w.put_u16(5)) /* ext body length */
         return 0;
-    if (!w.put_u8(4))             /* list length */
+    if (!w.put_u8(4)) /* list length */
         return 0;
     if (!w.put_u16(pick_grease()))
         return 0;
-    if (!w.put_u16(0x0304))       /* TLS 1.3 */
+    if (!w.put_u16(0x0304)) /* TLS 1.3 */
         return 0;
 
     /* supported_groups */
@@ -236,9 +235,9 @@ size_t build_client_hello(uint8_t *out, size_t out_cap, const Options &opts) {
         const uint16_t body_len = 2 + 2 + 2 + 32;
         if (!w.put_u16(body_len))
             return 0;
-        if (!w.put_u16(2 + 2 + 32))     /* shares list length */
+        if (!w.put_u16(2 + 2 + 32)) /* shares list length */
             return 0;
-        if (!w.put_u16(0x001d))          /* x25519 */
+        if (!w.put_u16(0x001d)) /* x25519 */
             return 0;
         if (!w.put_u16(32))
             return 0;
@@ -277,7 +276,8 @@ int parse_client_hello_sni(const uint8_t *p, size_t len, char *out, size_t out_c
     const uint8_t *end = p + 5 + rec_len;
     if (q + 4 > end || q[0] != 0x01)
         return -1;
-    const size_t hs_len = (static_cast<size_t>(q[1]) << 16) | (static_cast<size_t>(q[2]) << 8) | q[3];
+    const size_t hs_len =
+        (static_cast<size_t>(q[1]) << 16) | (static_cast<size_t>(q[2]) << 8) | q[3];
     q += 4;
     if (q + hs_len > end)
         return -1;
@@ -367,9 +367,9 @@ static constexpr size_t TLS_RECORD_HDR = 5;
 static constexpr uint8_t TLS_CT_HANDSHAKE = 0x16;
 static constexpr uint8_t TLS_CT_APPLICATION_DATA = 0x17;
 
-static tachyon::transport::FrameResult
-reality_wrap(const uint8_t *payload, size_t payload_len, uint8_t *out, size_t out_cap,
-             const tachyon::transport::FrameContext *ctx) {
+static tachyon::transport::FrameResult reality_wrap(const uint8_t *payload, size_t payload_len,
+                                                    uint8_t *out, size_t out_cap,
+                                                    const tachyon::transport::FrameContext *ctx) {
     using tachyon::transport::FrameResult;
     if (!payload || !out || !ctx)
         return {0, false};
@@ -396,7 +396,7 @@ reality_wrap(const uint8_t *payload, size_t payload_len, uint8_t *out, size_t ou
         /* Append payload as Application Data record */
         if (ch_len + TLS_RECORD_HDR + payload_len > out_cap)
             return {0, false};
-        out[ch_len]     = TLS_CT_APPLICATION_DATA;
+        out[ch_len] = TLS_CT_APPLICATION_DATA;
         out[ch_len + 1] = 0x03;
         out[ch_len + 2] = 0x03;
         out[ch_len + 3] = static_cast<uint8_t>(payload_len >> 8);
@@ -417,8 +417,8 @@ reality_wrap(const uint8_t *payload, size_t payload_len, uint8_t *out, size_t ou
     return {TLS_RECORD_HDR + payload_len, true};
 }
 
-static tachyon::transport::FrameResult
-reality_unwrap(const uint8_t *frame, size_t frame_len, uint8_t *out, size_t out_cap) {
+static tachyon::transport::FrameResult reality_unwrap(const uint8_t *frame, size_t frame_len,
+                                                      uint8_t *out, size_t out_cap) {
     using tachyon::transport::FrameResult;
     if (frame_len < TLS_RECORD_HDR)
         return {0, false};
@@ -449,9 +449,12 @@ reality_unwrap(const uint8_t *frame, size_t frame_len, uint8_t *out, size_t out_
 
 static int reality_score(const tachyon::transport::EnvProfile &env) {
     int s = 55;
-    if (env.port == 443 || env.port == 8443) s += 25;
-    if (env.region == tachyon::transport::RegionHint::RESTRICTIVE) s += 20;
-    if (env.bandwidth == tachyon::transport::BandwidthTier::HIGH) s += 5;
+    if (env.port == 443 || env.port == 8443)
+        s += 25;
+    if (env.region == tachyon::transport::RegionHint::RESTRICTIVE)
+        s += 20;
+    if (env.bandwidth == tachyon::transport::BandwidthTier::HIGH)
+        s += 5;
     return s;
 }
 
@@ -465,6 +468,8 @@ static const tachyon::transport::TransportOps reality_ops = {
     reality_score,
 };
 
-void register_reality_transport() { tachyon::transport::transport_register(&reality_ops); }
+void register_reality_transport() {
+    tachyon::transport::transport_register(&reality_ops);
+}
 
 } /* namespace tachyon::obfs */

@@ -42,9 +42,9 @@ uint32_t const_time_select_u32(uint8_t cond, uint32_t a, uint32_t b) {
 }
 
 void const_time_copy(uint8_t cond, void *dst, const void *src, size_t n) {
-    const uint8_t m    = mask8(cond);
-    uint8_t       *d   = static_cast<uint8_t *>(dst);
-    const uint8_t *s   = static_cast<const uint8_t *>(src);
+    const uint8_t m = mask8(cond);
+    uint8_t *d = static_cast<uint8_t *>(dst);
+    const uint8_t *s = static_cast<const uint8_t *>(src);
     for (size_t i = 0; i < n; ++i)
         d[i] = static_cast<uint8_t>((d[i] & ~m) | (s[i] & m));
 }
@@ -75,7 +75,7 @@ SecureBytes::SecureBytes(size_t n) {
     data_ = static_cast<uint8_t *>(std::calloc(1, n));
     if (!data_)
         throw std::bad_alloc();
-    size_   = n;
+    size_ = n;
     locked_ = lock_region(data_, size_);
 }
 
@@ -84,23 +84,25 @@ SecureBytes::SecureBytes(const uint8_t *src, size_t n) : SecureBytes(n) {
         std::memcpy(data_, src, n);
 }
 
-SecureBytes::~SecureBytes() { wipe(); }
+SecureBytes::~SecureBytes() {
+    wipe();
+}
 
 SecureBytes::SecureBytes(SecureBytes &&other) noexcept
     : data_(other.data_), size_(other.size_), locked_(other.locked_) {
-    other.data_   = nullptr;
-    other.size_   = 0;
+    other.data_ = nullptr;
+    other.size_ = 0;
     other.locked_ = false;
 }
 
 SecureBytes &SecureBytes::operator=(SecureBytes &&other) noexcept {
     if (this != &other) {
         wipe();
-        data_         = other.data_;
-        size_         = other.size_;
-        locked_       = other.locked_;
-        other.data_   = nullptr;
-        other.size_   = 0;
+        data_ = other.data_;
+        size_ = other.size_;
+        locked_ = other.locked_;
+        other.data_ = nullptr;
+        other.size_ = 0;
         other.locked_ = false;
     }
     return *this;
@@ -113,8 +115,8 @@ void SecureBytes::wipe() noexcept {
     if (locked_)
         unlock_region(data_, size_);
     std::free(data_);
-    data_   = nullptr;
-    size_   = 0;
+    data_ = nullptr;
+    size_ = 0;
     locked_ = false;
 }
 

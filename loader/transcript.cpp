@@ -56,18 +56,22 @@ Transcript::~Transcript() {
     ctx_ = nullptr;
 }
 
-Transcript::Transcript(Transcript &&other) noexcept : ctx_(other.ctx_) { other.ctx_ = nullptr; }
+Transcript::Transcript(Transcript &&other) noexcept : ctx_(other.ctx_) {
+    other.ctx_ = nullptr;
+}
 
 Transcript &Transcript::operator=(Transcript &&other) noexcept {
     if (this != &other) {
         EVP_MD_CTX_free(ctx_);
-        ctx_       = other.ctx_;
+        ctx_ = other.ctx_;
         other.ctx_ = nullptr;
     }
     return *this;
 }
 
-bool Transcript::absorb(const void *data, size_t len) { return absorb_framed(ctx_, data, len); }
+bool Transcript::absorb(const void *data, size_t len) {
+    return absorb_framed(ctx_, data, len);
+}
 
 bool Transcript::snapshot(uint8_t out[DIGEST_LEN]) const {
     if (!ctx_)

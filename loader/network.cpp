@@ -29,8 +29,7 @@
 #include "hybrid_kex.h"
 #include "secmem.h"
 
-template <size_t N>
-using KeyBuf = tachyon::secmem::KeyBuf<N>;
+template <size_t N> using KeyBuf = tachyon::secmem::KeyBuf<N>;
 
 static uint64_t monotonic_sec() {
     struct timespec ts;
@@ -48,8 +47,8 @@ static uint64_t monotonic_ns() {
     return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000ULL + static_cast<uint64_t>(ts.tv_nsec);
 }
 
-static void send_framed(int sock, const void *msg, size_t msg_len,
-                        const struct sockaddr_in *dest, const TunnelConfig &cfg) {
+static void send_framed(int sock, const void *msg, size_t msg_len, const struct sockaddr_in *dest,
+                        const TunnelConfig &cfg) {
     using namespace tachyon::transport;
     using namespace tachyon::padding;
     auto &met = tachyon::metrics::global();
@@ -82,8 +81,8 @@ static void send_framed(int sock, const void *msg, size_t msg_len,
     if (tid != TransportId::NONE && transport_get(tid)) {
         uint8_t framed[4096];
         FrameContext ctx{};
-        ctx.seq         = g_frame_seq++;
-        ctx.sni         = cfg.obfuscation_sni.c_str();
+        ctx.seq = g_frame_seq++;
+        ctx.sni = cfg.obfuscation_sni.c_str();
         ctx.conn_id_len = 8;
         RAND_bytes(ctx.conn_id, 8);
 
@@ -92,8 +91,8 @@ static void send_framed(int sock, const void *msg, size_t msg_len,
             met.transport_wrap_ok.fetch_add(1, std::memory_order_relaxed);
             met.tx_packets.fetch_add(1, std::memory_order_relaxed);
             met.tx_bytes.fetch_add(r.bytes, std::memory_order_relaxed);
-            sendto(sock, framed, r.bytes, 0,
-                   reinterpret_cast<const struct sockaddr *>(dest), sizeof(*dest));
+            sendto(sock, framed, r.bytes, 0, reinterpret_cast<const struct sockaddr *>(dest),
+                   sizeof(*dest));
             return;
         }
         met.transport_wrap_fail.fetch_add(1, std::memory_order_relaxed);
@@ -101,8 +100,8 @@ static void send_framed(int sock, const void *msg, size_t msg_len,
 
     met.tx_packets.fetch_add(1, std::memory_order_relaxed);
     met.tx_bytes.fetch_add(payload_len, std::memory_order_relaxed);
-    sendto(sock, payload, payload_len, 0,
-           reinterpret_cast<const struct sockaddr *>(dest), sizeof(*dest));
+    sendto(sock, payload, payload_len, 0, reinterpret_cast<const struct sockaddr *>(dest),
+           sizeof(*dest));
 }
 
 static void inject_keys_to_kernel(struct bpf_object *obj, uint32_t session_id, uint8_t *tx_key,
@@ -358,7 +357,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     g_exiting = 1;
                 } else {
                     LOG_WARN("Cookie secret rotation failed (streak=%d) - "
-                             "retaining old secret", cookie_failure_streak);
+                             "retaining old secret",
+                             cookie_failure_streak);
                 }
             }
 
@@ -466,10 +466,10 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
             if (cfg.port_hop_seconds > 0) {
                 uint64_t hop_now = static_cast<uint64_t>(time(nullptr));
-                uint16_t new_port = tachyon::fp::port_hop_current(
-                    psk_bytes, cfg.port_hop_seconds, hop_now);
+                uint16_t new_port =
+                    tachyon::fp::port_hop_current(psk_bytes, cfg.port_hop_seconds, hop_now);
                 if (new_port != current_hop_port) {
-                    struct sockaddr_in rebind{};
+                    struct sockaddr_in rebind {};
                     rebind.sin_family = AF_INET;
                     rebind.sin_port = htons(new_port);
                     rebind.sin_addr.s_addr = INADDR_ANY;
@@ -496,8 +496,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
             if (cfg.cover_rate_hz > 0 && !handshake_active) {
                 uint64_t now_ns = monotonic_ns();
-                uint32_t cover_sz = tachyon::padding::shaper_poll_cover(
-                    shaper, now_ns, 64, 1400);
+                uint32_t cover_sz = tachyon::padding::shaper_poll_cover(shaper, now_ns, 64, 1400);
                 if (cover_sz > 0) {
                     uint8_t cover[1500];
                     RAND_bytes(cover, cover_sz);
@@ -555,8 +554,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 auto tid = static_cast<TransportId>(cfg.resolved_transport_id);
                 if (tid != TransportId::NONE && transport_get(tid)) {
                     uint8_t unwrapped[4096];
-                    auto r = transport_unwrap(tid, buf, static_cast<size_t>(n),
-                                             unwrapped, sizeof(unwrapped));
+                    auto r = transport_unwrap(tid, buf, static_cast<size_t>(n), unwrapped,
+                                              sizeof(unwrapped));
                     if (r.ok) {
                         memcpy(buf, unwrapped, r.bytes);
                         n = static_cast<int>(r.bytes);
@@ -587,8 +586,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
                 }
                 last_rx_time = now;
-            }
-            else if (flag == TACHYON_PKT_INIT && n >= (int)sizeof(MsgInit)) {
+            } else if (flag == TACHYON_PKT_INIT && n >= (int)sizeof(MsgInit)) {
                 if (is_initiator)
                     continue;
                 auto *msg = reinterpret_cast<MsgInit *>(buf);
@@ -604,8 +602,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                                 current_window, cmsg.cookie);
                 send_framed(sock, &cmsg, sizeof(cmsg), &src, cfg);
                 last_tx_time = now;
-            }
-            else if (flag == TACHYON_PKT_COOKIE && n >= (int)sizeof(MsgCookie)) {
+            } else if (flag == TACHYON_PKT_COOKIE && n >= (int)sizeof(MsgCookie)) {
                 if (!is_initiator)
                     continue;
                 auto *msg = reinterpret_cast<MsgCookie *>(buf);
@@ -636,15 +633,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 send_framed(sock, &amsg, sizeof(amsg), &p_addr, cfg);
                 last_tx_time = now;
-            }
-            else if (flag == TACHYON_PKT_AUTH && n >= (int)sizeof(MsgAuth)) {
+            } else if (flag == TACHYON_PKT_AUTH && n >= (int)sizeof(MsgAuth)) {
                 if (is_initiator)
                     continue;
                 auto *msg = reinterpret_cast<MsgAuth *>(buf);
                 if (ntohl(msg->session_id) != session_id)
                     continue;
-                if (replay_window.peek(msg->client_nonce) !=
-                    tachyon::replay::Result::ACCEPTED) {
+                if (replay_window.peek(msg->client_nonce) != tachyon::replay::Result::ACCEPTED) {
                     met.replay_dropped.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
@@ -721,8 +716,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 OPENSSL_cleanse(my_eph_priv, 32);
                 met.hs_completed.fetch_add(1, std::memory_order_relaxed);
                 LOG_INFO("Handshake complete (responder). Datapath armed.");
-            }
-            else if (flag == TACHYON_PKT_FINISH && n >= (int)sizeof(MsgFinish)) {
+            } else if (flag == TACHYON_PKT_FINISH && n >= (int)sizeof(MsgFinish)) {
                 if (!is_initiator || !handshake_active)
                     continue;
                 auto *msg = reinterpret_cast<MsgFinish *>(buf);

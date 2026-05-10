@@ -36,46 +36,46 @@ namespace tachyon::multipath {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 struct PathMetrics {
-    int      sock_fd     = -1;    /* UDP socket descriptor                    */
-    bool     active      = false; /* Path currently considered reachable       */
-    bool     primary     = false; /* Currently elected primary path            */
+    int sock_fd = -1;     /* UDP socket descriptor                    */
+    bool active = false;  /* Path currently considered reachable       */
+    bool primary = false; /* Currently elected primary path            */
 
     /* RTT state (RFC 6298) — all times in microseconds */
-    uint64_t rtt_ewma_us  = 0;                                   /* Smoothed RTT          */
-    uint64_t rtt_min_us   = std::numeric_limits<uint64_t>::max(); /* Minimum RTT (RTTProp) */
-    uint64_t jitter_us    = 0;                                   /* Mean deviation        */
+    uint64_t rtt_ewma_us = 0;                                   /* Smoothed RTT          */
+    uint64_t rtt_min_us = std::numeric_limits<uint64_t>::max(); /* Minimum RTT (RTTProp) */
+    uint64_t jitter_us = 0;                                     /* Mean deviation        */
 
     /* Loss tracking */
-    uint32_t loss_ppm       = 0; /* Loss rate (parts-per-million)             */
-    uint32_t probes_sent    = 0; /* Lifetime probe count                      */
-    uint32_t probes_acked   = 0; /* Lifetime ack count                        */
+    uint32_t loss_ppm = 0;         /* Loss rate (parts-per-million)             */
+    uint32_t probes_sent = 0;      /* Lifetime probe count                      */
+    uint32_t probes_acked = 0;     /* Lifetime ack count                        */
     uint32_t consecutive_lost = 0; /* Consecutive probes without ack          */
 
     /* Activity timestamps (monotonic µs) */
-    uint64_t last_tx_us   = 0;
-    uint64_t last_rx_us   = 0;
+    uint64_t last_tx_us = 0;
+    uint64_t last_rx_us = 0;
 
     /* Identification */
     std::string local_ip;
-    uint16_t    local_port = 0;
+    uint16_t local_port = 0;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Tuning Constants
  * ══════════════════════════════════════════════════════════════════════════ */
 
-static constexpr double   kRttAlpha          = 0.125;  /* 1/8  — RFC 6298 SRTT alpha       */
-static constexpr double   kRttBeta           = 0.25;   /* 1/4  — RFC 6298 RTTVAR beta      */
-static constexpr double   kLossAlpha         = 0.0625; /* 1/16 — loss EWMA                 */
-static constexpr uint32_t kDeadProbeThresh   = 5;      /* Consecutive losses → mark dead   */
-static constexpr uint64_t kDefaultBaseRtt    = 50000;  /* 50 ms fallback when no samples   */
+static constexpr double kRttAlpha = 0.125;         /* 1/8  — RFC 6298 SRTT alpha       */
+static constexpr double kRttBeta = 0.25;           /* 1/4  — RFC 6298 RTTVAR beta      */
+static constexpr double kLossAlpha = 0.0625;       /* 1/16 — loss EWMA                 */
+static constexpr uint32_t kDeadProbeThresh = 5;    /* Consecutive losses → mark dead   */
+static constexpr uint64_t kDefaultBaseRtt = 50000; /* 50 ms fallback when no samples   */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * PathManager
  * ══════════════════════════════════════════════════════════════════════════ */
 
 class PathManager {
-public:
+  public:
     PathManager() = default;
     ~PathManager();
 
@@ -111,15 +111,15 @@ public:
     static uint64_t score(const PathMetrics &m);
 
     /* Socket fd of the currently elected primary path (-1 if no active paths). */
-    int best_fd()  const;
+    int best_fd() const;
     int best_idx() const { return best_idx_; }
 
     /* Introspection */
     const std::vector<PathMetrics> &paths() const { return paths_; }
-    size_t path_count()  const { return paths_.size(); }
+    size_t path_count() const { return paths_.size(); }
     size_t active_count() const;
 
-private:
+  private:
     std::vector<PathMetrics> paths_;
     int best_idx_ = -1;
 

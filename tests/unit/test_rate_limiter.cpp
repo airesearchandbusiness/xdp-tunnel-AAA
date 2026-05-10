@@ -81,6 +81,6 @@ TEST(RateLimiter, LargeElapsedNoOverflow) {
     TokenBucket b;
     const uint64_t rate = 12'500'000'000ULL; /* 100 Gbps in bytes */
     bucket_init(b, rate, rate, 0);
-    EXPECT_TRUE(bucket_allow(b, rate, 0)); /* drain */
+    EXPECT_TRUE(bucket_allow(b, rate, 0));                /* drain */
     EXPECT_TRUE(bucket_allow(b, rate, 1'000'000'000ULL)); /* 1s refill */
 }

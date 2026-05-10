@@ -44,7 +44,9 @@ const char *pqc_backend() {
 
 #if defined(TACHYON_PQC_OPENSSL)
 
-static const char *ml_kem_name() { return "ML-KEM-768"; }
+static const char *ml_kem_name() {
+    return "ML-KEM-768";
+}
 
 bool mlkem768_keygen(uint8_t *pk_out, uint8_t *sk_out) {
     bool ok = false;
@@ -85,9 +87,8 @@ out:
 
 bool mlkem768_encapsulate(const uint8_t *peer_pk, uint8_t *ct_out, uint8_t *ss_out) {
     bool ok = false;
-    EVP_PKEY *pkey =
-        EVP_PKEY_new_raw_public_key_ex(nullptr, ml_kem_name(), nullptr, peer_pk,
-                                       MLKEM768_PUBLIC_KEY_LEN);
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key_ex(nullptr, ml_kem_name(), nullptr, peer_pk,
+                                                    MLKEM768_PUBLIC_KEY_LEN);
     EVP_PKEY_CTX *ctx = nullptr;
     if (!pkey)
         goto out;
@@ -119,9 +120,8 @@ out:
 
 bool mlkem768_decapsulate(const uint8_t *sk, const uint8_t *ct, uint8_t *ss_out) {
     bool ok = false;
-    EVP_PKEY *pkey =
-        EVP_PKEY_new_raw_private_key_ex(nullptr, ml_kem_name(), nullptr, sk,
-                                        MLKEM768_SECRET_KEY_LEN);
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key_ex(nullptr, ml_kem_name(), nullptr, sk,
+                                                     MLKEM768_SECRET_KEY_LEN);
     EVP_PKEY_CTX *ctx = nullptr;
     if (!pkey)
         goto out;
@@ -208,8 +208,8 @@ bool mlkem768_decapsulate(const uint8_t *, const uint8_t *, uint8_t *ss_out) {
 
 /* ── HKDF-SHA384 ────────────────────────────────────────────────────────── */
 
-bool hkdf_sha384_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ikm,
-                         size_t ikm_len, uint8_t out[48]) {
+bool hkdf_sha384_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
+                         uint8_t out[48]) {
     EVP_KDF *kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
     if (!kdf)
         return false;
@@ -235,9 +235,8 @@ bool hkdf_sha384_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ik
     return rc > 0;
 }
 
-bool hybrid_combine(const uint8_t *ss_classical, size_t ss_classical_len,
-                    const uint8_t *ss_pq, size_t ss_pq_len, const char *context,
-                    uint8_t out[48]) {
+bool hybrid_combine(const uint8_t *ss_classical, size_t ss_classical_len, const uint8_t *ss_pq,
+                    size_t ss_pq_len, const char *context, uint8_t out[48]) {
     /* Concatenate IKM = classical || pq so a break of either primitive alone
      * cannot reveal the combined secret (per hybrid-KEX best practice). */
     uint8_t ikm[256];

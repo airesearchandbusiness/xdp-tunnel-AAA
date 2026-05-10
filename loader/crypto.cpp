@@ -185,9 +185,8 @@ bool derive_kdf(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t
  * Generic AEAD encrypt/decrypt (unified for all cipher suites)
  * ====================================================================== */
 
-static bool aead_encrypt(const EVP_CIPHER *cipher, const uint8_t *key,
-                         const uint8_t *nonce, const uint8_t *ad, size_t ad_len,
-                         const uint8_t *pt, size_t pt_len,
+static bool aead_encrypt(const EVP_CIPHER *cipher, const uint8_t *key, const uint8_t *nonce,
+                         const uint8_t *ad, size_t ad_len, const uint8_t *pt, size_t pt_len,
                          uint8_t *ct, uint8_t *tag) {
     if (pt_len > static_cast<size_t>(INT_MAX) || ad_len > static_cast<size_t>(INT_MAX))
         return false;
@@ -213,9 +212,8 @@ out:
     return ok;
 }
 
-static bool aead_decrypt(const EVP_CIPHER *cipher, const uint8_t *key,
-                         const uint8_t *nonce, const uint8_t *ad, size_t ad_len,
-                         const uint8_t *ct, size_t ct_len,
+static bool aead_decrypt(const EVP_CIPHER *cipher, const uint8_t *key, const uint8_t *nonce,
+                         const uint8_t *ad, size_t ad_len, const uint8_t *ct, size_t ct_len,
                          const uint8_t *tag, uint8_t *pt) {
     if (ct_len > static_cast<size_t>(INT_MAX) || ad_len > static_cast<size_t>(INT_MAX))
         return false;
@@ -243,7 +241,8 @@ out:
 bool cp_aead_encrypt(const uint8_t *key, const uint8_t *pt, size_t pt_len, const uint8_t *ad,
                      size_t ad_len, const uint8_t *nonce, uint8_t *ct, uint8_t *tag) {
     bool ok = aead_encrypt(EVP_chacha20_poly1305(), key, nonce, ad, ad_len, pt, pt_len, ct, tag);
-    if (!ok) LOG_ERR("AEAD encrypt failed");
+    if (!ok)
+        LOG_ERR("AEAD encrypt failed");
     return ok;
 }
 
@@ -301,30 +300,26 @@ bool get_public_key(const uint8_t *priv, uint8_t *pub_out) {
  * CipherSuite Registry
  * ====================================================================== */
 
-#define MAKE_SUITE_ENC(name, cipher_fn)                                         \
-    static bool name(const uint8_t *key, const uint8_t *nonce, size_t,          \
-                     const uint8_t *aad, size_t aad_len,                        \
-                     const uint8_t *pt, size_t pt_len,                          \
-                     uint8_t *ct, uint8_t *tag) {                               \
-        return aead_encrypt(cipher_fn(), key, nonce, aad, aad_len,              \
-                            pt, pt_len, ct, tag);                               \
+#define MAKE_SUITE_ENC(name, cipher_fn)                                                            \
+    static bool name(const uint8_t *key, const uint8_t *nonce, size_t, const uint8_t *aad,         \
+                     size_t aad_len, const uint8_t *pt, size_t pt_len, uint8_t *ct,                \
+                     uint8_t *tag) {                                                               \
+        return aead_encrypt(cipher_fn(), key, nonce, aad, aad_len, pt, pt_len, ct, tag);           \
     }
 
-#define MAKE_SUITE_DEC(name, cipher_fn)                                         \
-    static bool name(const uint8_t *key, const uint8_t *nonce, size_t,          \
-                     const uint8_t *aad, size_t aad_len,                        \
-                     const uint8_t *ct, size_t ct_len,                          \
-                     const uint8_t *tag, uint8_t *pt) {                         \
-        return aead_decrypt(cipher_fn(), key, nonce, aad, aad_len,              \
-                            ct, ct_len, tag, pt);                               \
+#define MAKE_SUITE_DEC(name, cipher_fn)                                                            \
+    static bool name(const uint8_t *key, const uint8_t *nonce, size_t, const uint8_t *aad,         \
+                     size_t aad_len, const uint8_t *ct, size_t ct_len, const uint8_t *tag,         \
+                     uint8_t *pt) {                                                                \
+        return aead_decrypt(cipher_fn(), key, nonce, aad, aad_len, ct, ct_len, tag, pt);           \
     }
 
 MAKE_SUITE_ENC(chacha20_enc, EVP_chacha20_poly1305)
 MAKE_SUITE_DEC(chacha20_dec, EVP_chacha20_poly1305)
-MAKE_SUITE_ENC(aes128_enc,   EVP_aes_128_gcm)
-MAKE_SUITE_DEC(aes128_dec,   EVP_aes_128_gcm)
-MAKE_SUITE_ENC(aes256_enc,   EVP_aes_256_gcm)
-MAKE_SUITE_DEC(aes256_dec,   EVP_aes_256_gcm)
+MAKE_SUITE_ENC(aes128_enc, EVP_aes_128_gcm)
+MAKE_SUITE_DEC(aes128_dec, EVP_aes_128_gcm)
+MAKE_SUITE_ENC(aes256_enc, EVP_aes_256_gcm)
+MAKE_SUITE_DEC(aes256_dec, EVP_aes_256_gcm)
 
 #undef MAKE_SUITE_ENC
 #undef MAKE_SUITE_DEC

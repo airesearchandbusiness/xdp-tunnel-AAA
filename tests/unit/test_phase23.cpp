@@ -37,7 +37,8 @@ static TunnelConfig parse_from_string(const std::string &content) {
     char path[] = "/tmp/tachyon_test_XXXXXX.conf";
     int fd = mkstemps(path, 5);
     EXPECT_GE(fd, 0);
-    if (fd < 0) return {};
+    if (fd < 0)
+        return {};
     write(fd, content.data(), content.size());
     close(fd);
     TunnelConfig cfg = parse_config(path);
@@ -151,8 +152,12 @@ TEST(PathManagerTest, ScoreInactiveIsMax) {
 
 TEST(PathManagerTest, ScoreLowerRTTIsBetter) {
     PathMetrics fast, slow;
-    fast.active = true; fast.sock_fd = 1; fast.rtt_ewma_us = 1000;
-    slow.active = true; slow.sock_fd = 2; slow.rtt_ewma_us = 50000;
+    fast.active = true;
+    fast.sock_fd = 1;
+    fast.rtt_ewma_us = 1000;
+    slow.active = true;
+    slow.sock_fd = 2;
+    slow.rtt_ewma_us = 50000;
     EXPECT_LT(PathManager::score(fast), PathManager::score(slow));
 }
 
@@ -481,15 +486,15 @@ TEST(MetricsExporterTest, StartHighPortBindsAndStops) {
 
 TEST(MetricsExporterTest, StartStopIsIdempotent) {
     MetricsExporter mx;
-    mx.stop();        /* stop on never-started — must not crash */
-    mx.stop();        /* double-stop — must not crash */
+    mx.stop(); /* stop on never-started — must not crash */
+    mx.stop(); /* double-stop — must not crash */
     EXPECT_FALSE(mx.is_running());
 }
 
 TEST(MetricsExporterTest, PollWhenNotRunningIsSafe) {
     /* Calling poll() before start() must be a no-op, not a crash. */
     MetricsExporter mx;
-    mx.poll(8);   /* should return immediately */
+    mx.poll(8); /* should return immediately */
     EXPECT_FALSE(mx.is_running());
 }
 
@@ -499,7 +504,7 @@ TEST(MetricsExporterTest, RenderHandlesLargeCounters) {
     MetricsExporter mx;
     userspace_stats stats{};
     stats.rx_packets = UINT64_MAX;
-    stats.tx_bytes   = UINT64_MAX - 1;
+    stats.tx_bytes = UINT64_MAX - 1;
     stats.rx_replay_drops = (1ULL << 63);
     mx.update(stats, "max");
     std::string out = mx.render();
@@ -540,7 +545,8 @@ TEST(CipherRenegotiatorTest, HandleProposalReturnsAck) {
     CipherRenegotiator initiator, responder;
     uint8_t key[32] = {0x42};
     MsgCipherNeg msg = initiator.propose(0x1234, TACHYON_CIPHER_AES256GCM, key, sizeof(key));
-    MsgCipherAck ack = responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
+    MsgCipherAck ack =
+        responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
     EXPECT_EQ(ack.flags, TACHYON_PKT_CIPHER_ACK);
     EXPECT_EQ(ack.selected_cipher, TACHYON_CIPHER_AES256GCM);
 }
@@ -549,7 +555,8 @@ TEST(CipherRenegotiatorTest, HandleProposalEchoesEpoch) {
     CipherRenegotiator initiator, responder;
     uint8_t key[32] = {0x42};
     MsgCipherNeg msg = initiator.propose(0x1234, TACHYON_CIPHER_AES128GCM, key, sizeof(key));
-    MsgCipherAck ack = responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
+    MsgCipherAck ack =
+        responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
     EXPECT_EQ(ack.epoch, msg.epoch);
     EXPECT_EQ(ack.nonce, msg.nonce);
 }
@@ -558,7 +565,8 @@ TEST(CipherRenegotiatorTest, HandleProposalBadSession) {
     CipherRenegotiator initiator, responder;
     uint8_t key[32] = {0x42};
     MsgCipherNeg msg = initiator.propose(0x1234, TACHYON_CIPHER_AES256GCM, key, sizeof(key));
-    MsgCipherAck ack = responder.handle_proposal(msg, 0x9999, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
+    MsgCipherAck ack =
+        responder.handle_proposal(msg, 0x9999, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
     EXPECT_EQ(ack.flags, 0);
 }
 
@@ -566,7 +574,8 @@ TEST(CipherRenegotiatorTest, HandleAckSucceeds) {
     CipherRenegotiator initiator, responder;
     uint8_t key[32] = {0x42};
     MsgCipherNeg msg = initiator.propose(0x1234, TACHYON_CIPHER_AES256GCM, key, sizeof(key));
-    MsgCipherAck ack = responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
+    MsgCipherAck ack =
+        responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
     uint8_t out_cipher = 0xFF;
     EXPECT_TRUE(initiator.handle_ack(ack, &out_cipher, key, sizeof(key)));
     EXPECT_EQ(out_cipher, TACHYON_CIPHER_AES256GCM);
@@ -577,7 +586,8 @@ TEST(CipherRenegotiatorTest, HandleAckBadEpoch) {
     CipherRenegotiator initiator, responder;
     uint8_t key[32] = {0x42};
     MsgCipherNeg msg = initiator.propose(0x1234, TACHYON_CIPHER_AES256GCM, key, sizeof(key));
-    MsgCipherAck ack = responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
+    MsgCipherAck ack =
+        responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
     ack.epoch = 0xFF;
     uint8_t out_cipher = 0;
     EXPECT_FALSE(initiator.handle_ack(ack, &out_cipher, key, sizeof(key)));
@@ -596,7 +606,8 @@ TEST(CipherRenegotiatorTest, CommitDoneToIdle) {
     CipherRenegotiator initiator, responder;
     uint8_t key[32] = {0x42};
     MsgCipherNeg msg = initiator.propose(0x1234, TACHYON_CIPHER_AES256GCM, key, sizeof(key));
-    MsgCipherAck ack = responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
+    MsgCipherAck ack =
+        responder.handle_proposal(msg, 0x1234, TACHYON_CIPHER_CHACHA20, key, sizeof(key));
     uint8_t out_cipher = 0;
     initiator.handle_ack(ack, &out_cipher, key, sizeof(key));
     EXPECT_EQ(initiator.state(), CipherRenegotiator::State::COMMITTED);

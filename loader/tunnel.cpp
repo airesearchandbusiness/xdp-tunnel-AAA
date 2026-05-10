@@ -224,11 +224,11 @@ void command_up(const std::string &conf_file) {
         TransportId tid = transport_id_from_string(cfg.obfuscation.c_str());
         if (tid == TransportId::AUTO) {
             EnvProfile env{};
-            env.port      = static_cast<uint16_t>(cfg.listen_port);
-            env.udp       = true;
+            env.port = static_cast<uint16_t>(cfg.listen_port);
+            env.udp = true;
             env.bandwidth = BandwidthTier::MEDIUM;
-            env.region    = RegionHint::OPEN;
-            env.sni_hint  = cfg.obfuscation_sni.c_str();
+            env.region = RegionHint::OPEN;
+            env.sni_hint = cfg.obfuscation_sni.c_str();
             tid = transport_auto_select(env);
             LOG_INFO("Transport auto-selected: %s", transport_id_to_string(tid));
         } else if (tid != TransportId::NONE) {
@@ -242,9 +242,8 @@ void command_up(const std::string &conf_file) {
         uint8_t rand_mac[6];
         tachyon::fp::random_locally_admin_mac(rand_mac);
         char mac_str[18];
-        snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                 rand_mac[0], rand_mac[1], rand_mac[2],
-                 rand_mac[3], rand_mac[4], rand_mac[5]);
+        snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x", rand_mac[0],
+                 rand_mac[1], rand_mac[2], rand_mac[3], rand_mac[4], rand_mac[5]);
         run_cmd("ip link set " + v_out + " address " + mac_str, /*quiet=*/true);
         LOG_INFO("MAC randomized to %s", mac_str);
     }

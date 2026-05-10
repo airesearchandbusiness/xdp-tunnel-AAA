@@ -73,7 +73,9 @@ uint32_t padme_round(uint32_t n) {
 
 /* ── Cover-traffic shaper ───────────────────────────────────────────────── */
 
-static uint64_t rand_u64() { return tachyon::wire::rand_u64(); }
+static uint64_t rand_u64() {
+    return tachyon::wire::rand_u64();
+}
 
 /*
  * Sample from exponential distribution with mean mean_ns using inverse CDF
@@ -90,7 +92,7 @@ static uint64_t sample_exponential_ns(uint64_t mean_ns) {
     const double u = static_cast<double>(u_int) / static_cast<double>(UINT64_MAX);
     const double sample = -static_cast<double>(mean_ns) * log(u);
     if (sample < 0 || sample > 1e18)
-        return mean_ns;  /* clamp pathological outliers */
+        return mean_ns; /* clamp pathological outliers */
     return static_cast<uint64_t>(sample);
 }
 
@@ -118,8 +120,7 @@ void shaper_on_real_frame(ShaperState &s, uint64_t now_ns) {
     }
 }
 
-uint32_t shaper_poll_cover(ShaperState &s, uint64_t now_ns, uint32_t min_size,
-                           uint32_t max_size) {
+uint32_t shaper_poll_cover(ShaperState &s, uint64_t now_ns, uint32_t min_size, uint32_t max_size) {
     /* Cover disabled */
     if (s.cover_interval_mean_ms == 0)
         return 0;

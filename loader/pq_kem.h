@@ -41,10 +41,10 @@
 #define TACHYON_FLAG_PQ 0x02
 
 /* ML-KEM-768 wire sizes (per NIST FIPS 203) */
-#define TACHYON_PQ_PK_LEN  1184  /* ML-KEM-768 public key bytes   */
-#define TACHYON_PQ_SK_LEN  2400  /* ML-KEM-768 secret key bytes   */
-#define TACHYON_PQ_CT_LEN  1088  /* ML-KEM-768 ciphertext bytes   */
-#define TACHYON_PQ_SS_LEN    32  /* ML-KEM-768 shared secret bytes */
+#define TACHYON_PQ_PK_LEN 1184 /* ML-KEM-768 public key bytes   */
+#define TACHYON_PQ_SK_LEN 2400 /* ML-KEM-768 secret key bytes   */
+#define TACHYON_PQ_CT_LEN 1088 /* ML-KEM-768 ciphertext bytes   */
+#define TACHYON_PQ_SS_LEN 32   /* ML-KEM-768 shared secret bytes */
 
 #ifdef TACHYON_PQ
 /* ══════════════════════════════════════════════════════════════════════════
@@ -54,8 +54,8 @@
 #include <oqs/oqs.h>
 
 struct PqKemState {
-    std::vector<uint8_t> pk;  /* ML-KEM-768 public key  (TACHYON_PQ_PK_LEN bytes) */
-    std::vector<uint8_t> sk;  /* ML-KEM-768 secret key  (TACHYON_PQ_SK_LEN bytes) */
+    std::vector<uint8_t> pk; /* ML-KEM-768 public key  (TACHYON_PQ_PK_LEN bytes) */
+    std::vector<uint8_t> sk; /* ML-KEM-768 secret key  (TACHYON_PQ_SK_LEN bytes) */
 };
 
 /* Generate an ML-KEM-768 keypair. Returns false on failure. */
@@ -74,7 +74,7 @@ inline bool pq_kem_keygen(PqKemState &state) {
 /* Encapsulate to peer_pk. Writes ciphertext to ct, shared secret to ss[32].
  * ct must be at least TACHYON_PQ_CT_LEN bytes. */
 inline bool pq_kem_encap(const uint8_t *peer_pk, std::vector<uint8_t> &ct,
-                          uint8_t ss[TACHYON_PQ_SS_LEN]) {
+                         uint8_t ss[TACHYON_PQ_SS_LEN]) {
     ct.resize(OQS_KEM_ml_kem_768_length_ciphertext);
     OQS_STATUS st = OQS_KEM_ml_kem_768_encaps(ct.data(), ss, peer_pk);
     if (st != OQS_SUCCESS) {
@@ -86,7 +86,7 @@ inline bool pq_kem_encap(const uint8_t *peer_pk, std::vector<uint8_t> &ct,
 
 /* Decapsulate ct using secret key in state. Writes shared secret to ss[32]. */
 inline bool pq_kem_decap(const PqKemState &state, const uint8_t *ct,
-                          uint8_t ss[TACHYON_PQ_SS_LEN]) {
+                         uint8_t ss[TACHYON_PQ_SS_LEN]) {
     if (state.sk.empty())
         return false;
     OQS_STATUS st = OQS_KEM_ml_kem_768_decaps(ss, ct, state.sk.data());
@@ -97,12 +97,11 @@ inline bool pq_kem_decap(const PqKemState &state, const uint8_t *ct,
  * x25519_ss: 32 bytes (X25519 shared secret)
  * kyber_ss:  32 bytes (ML-KEM-768 shared secret)
  * out:       32 bytes (combined session key material) */
-inline bool pq_combine_secrets(const uint8_t *x25519_ss, const uint8_t *kyber_ss,
-                                uint8_t *out) {
+inline bool pq_combine_secrets(const uint8_t *x25519_ss, const uint8_t *kyber_ss, uint8_t *out) {
     /* Concatenate both shared secrets as IKM */
     uint8_t ikm[64];
-    memcpy(ikm,      x25519_ss, 32);
-    memcpy(ikm + 32, kyber_ss,  32);
+    memcpy(ikm, x25519_ss, 32);
+    memcpy(ikm + 32, kyber_ss, 32);
 
     /* Use a fixed all-zero salt (HKDF spec allows this) */
     static const uint8_t zero_salt[32] = {0};
@@ -110,8 +109,8 @@ inline bool pq_combine_secrets(const uint8_t *x25519_ss, const uint8_t *kyber_ss
     /* HKDF-Extract: PRK = HMAC-SHA256(salt, IKM) */
     /* HKDF-Expand:  out = HKDF-Expand(PRK, info, 32) */
     /* Delegated to derive_kdf() from crypto.cpp */
-    extern bool derive_kdf(const uint8_t *, size_t, const uint8_t *, size_t,
-                            const char *, uint8_t *);
+    extern bool derive_kdf(const uint8_t *, size_t, const uint8_t *, size_t, const char *,
+                           uint8_t *);
     return derive_kdf(zero_salt, 32, ikm, 64, TACHYON_KDF_PQ_HYBRID, out);
 }
 
@@ -125,10 +124,18 @@ struct PqKemState {
     std::vector<uint8_t> sk;
 };
 
-inline bool pq_kem_keygen(PqKemState &) { return false; }
-inline bool pq_kem_encap(const uint8_t *, std::vector<uint8_t> &, uint8_t *) { return false; }
-inline bool pq_kem_decap(const PqKemState &, const uint8_t *, uint8_t *) { return false; }
-inline bool pq_combine_secrets(const uint8_t *, const uint8_t *, uint8_t *) { return false; }
+inline bool pq_kem_keygen(PqKemState &) {
+    return false;
+}
+inline bool pq_kem_encap(const uint8_t *, std::vector<uint8_t> &, uint8_t *) {
+    return false;
+}
+inline bool pq_kem_decap(const PqKemState &, const uint8_t *, uint8_t *) {
+    return false;
+}
+inline bool pq_combine_secrets(const uint8_t *, const uint8_t *, uint8_t *) {
+    return false;
+}
 
 #endif /* TACHYON_PQ */
 

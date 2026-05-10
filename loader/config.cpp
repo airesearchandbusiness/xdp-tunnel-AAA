@@ -112,8 +112,8 @@ TunnelConfig parse_config(const std::string &filename) {
             if (v >= 1 && v <= 65535) {
                 cfg.listen_port = v;
             } else {
-                LOG_WARN("ListenPort %d out of range [1,65535], using default %d",
-                         v, cfg.listen_port);
+                LOG_WARN("ListenPort %d out of range [1,65535], using default %d", v,
+                         cfg.listen_port);
             }
         } catch (const std::exception &) {
             LOG_WARN("Invalid ListenPort '%s', using default %d", port_str.c_str(),
@@ -128,8 +128,8 @@ TunnelConfig parse_config(const std::string &filename) {
             if (v == TACHYON_MIMICRY_NONE || v == TACHYON_MIMICRY_QUIC) {
                 cfg.mimicry_type = v;
             } else {
-                LOG_WARN("MimicryType %d out of range [0,1], using default %d",
-                         v, cfg.mimicry_type);
+                LOG_WARN("MimicryType %d out of range [0,1], using default %d", v,
+                         cfg.mimicry_type);
             }
         } catch (const std::exception &) {
             LOG_WARN("Invalid MimicryType '%s', using default %d", mimicry_str.c_str(),
@@ -155,7 +155,8 @@ TunnelConfig parse_config(const std::string &filename) {
     /* v5 Ghost-PQ policy knobs */
     auto set_if = [&](std::string &dst, const char *key) {
         std::string v = get_val(kv, key);
-        if (!v.empty()) dst = v;
+        if (!v.empty())
+            dst = v;
     };
     set_if(cfg.pqc_mode, "Pqc");
     set_if(cfg.obfuscation, "Obfuscation");
@@ -164,19 +165,24 @@ TunnelConfig parse_config(const std::string &filename) {
 
     auto set_uint_if = [&](uint32_t &dst, const char *key) {
         std::string v = get_val(kv, key);
-        if (v.empty()) return;
+        if (v.empty())
+            return;
         try {
             long n = std::stol(v);
-            if (n >= 0 && n <= 65535) dst = static_cast<uint32_t>(n);
-        } catch (...) {}
+            if (n >= 0 && n <= 65535)
+                dst = static_cast<uint32_t>(n);
+        } catch (...) {
+        }
     };
     set_uint_if(cfg.cover_rate_hz, "CoverRateHz");
     set_uint_if(cfg.port_hop_seconds, "PortHopSeconds");
 
     auto set_bool_if = [&](bool &dst, const char *key) {
         std::string v = get_val(kv, key);
-        if (v == "true" || v == "1" || v == "yes" || v == "on") dst = true;
-        else if (v == "false" || v == "0" || v == "no" || v == "off") dst = false;
+        if (v == "true" || v == "1" || v == "yes" || v == "on")
+            dst = true;
+        else if (v == "false" || v == "0" || v == "no" || v == "off")
+            dst = false;
     };
     set_bool_if(cfg.ttl_random, "TTLRandom");
     set_bool_if(cfg.mac_random, "MACRandom");
@@ -188,7 +194,8 @@ TunnelConfig parse_config(const std::string &filename) {
             unsigned long v = std::stoul(rws_str);
             if (v >= 64 && v <= 65536 && (v % 64) == 0)
                 cfg.replay_window_size = static_cast<uint32_t>(v);
-        } catch (...) {}
+        } catch (...) {
+        }
     }
 
     set_bool_if(cfg.metrics_enabled, "MetricsEnabled");
@@ -199,7 +206,8 @@ TunnelConfig parse_config(const std::string &filename) {
             unsigned long v = std::stoul(mp_str);
             if (v >= 1024 && v <= 65535)
                 cfg.metrics_port = static_cast<uint16_t>(v);
-        } catch (...) {}
+        } catch (...) {
+        }
     }
 
     std::string tpps_str = get_val(kv, "TrafficShapingPPS");
@@ -213,7 +221,8 @@ TunnelConfig parse_config(const std::string &filename) {
             } else {
                 LOG_WARN("TrafficShapingPPS %lu exceeds 100000 cap, ignoring", v);
             }
-        } catch (...) {}
+        } catch (...) {
+        }
     }
 
     std::string tlen_str = get_val(kv, "TrafficShapingPktLen");
@@ -222,7 +231,8 @@ TunnelConfig parse_config(const std::string &filename) {
             unsigned long v = std::stoul(tlen_str);
             if (v >= 64 && v <= 1500)
                 cfg.tfs_pkt_len = static_cast<uint16_t>(v);
-        } catch (...) {}
+        } catch (...) {
+        }
     }
 
     set_bool_if(cfg.multipath_enabled, "MultiPathEnabled");

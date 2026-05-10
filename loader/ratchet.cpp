@@ -19,8 +19,8 @@ namespace {
  * because pqc.cpp exposes SHA384; the ratchet uses SHA256 so that each
  * chain step costs ~half the CPU of the handshake combiner.
  */
-bool hkdf_sha256_expand(const uint8_t prk[32], const uint8_t *info, size_t info_len,
-                        uint8_t *out, size_t out_len) {
+bool hkdf_sha256_expand(const uint8_t prk[32], const uint8_t *info, size_t info_len, uint8_t *out,
+                        size_t out_len) {
     EVP_KDF *kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
     if (!kdf)
         return false;
@@ -45,7 +45,7 @@ bool hkdf_sha256_expand(const uint8_t prk[32], const uint8_t *info, size_t info_
 
 constexpr const char *LABEL_CHAIN_INIT = "tch5-ratchet-chain";
 constexpr const char *LABEL_CHAIN_NEXT = "tch5-ratchet-next";
-constexpr const char *LABEL_MSG_KEY    = "tch5-ratchet-msg";
+constexpr const char *LABEL_MSG_KEY = "tch5-ratchet-msg";
 
 /* Build the info string "label" || counter_be8 for msg-key derivation. */
 void write_counter_be(uint8_t out[8], uint64_t c) {
@@ -72,8 +72,8 @@ void ratchet_wipe(SendState &s) {
     s.counter = 0;
 }
 
-bool ratchet_next(SendState &s, uint8_t out_key[MSG_KEY_LEN],
-                  uint8_t out_nonce[NONCE_PREFIX_LEN], uint64_t *out_counter) {
+bool ratchet_next(SendState &s, uint8_t out_key[MSG_KEY_LEN], uint8_t out_nonce[NONCE_PREFIX_LEN],
+                  uint64_t *out_counter) {
     if (s.counter == UINT64_MAX)
         return false; /* overflow — caller must rekey */
 
@@ -95,10 +95,9 @@ bool ratchet_next(SendState &s, uint8_t out_key[MSG_KEY_LEN],
     /* Advance the chain: chain_key' = HKDF(chain_key, "next"). We derive
      * into a temporary so a crypto failure cannot desync the counter. */
     uint8_t next_chain[ROOT_KEY_LEN];
-    const bool adv_ok = hkdf_sha256_expand(s.chain_key,
-                                           reinterpret_cast<const uint8_t *>(LABEL_CHAIN_NEXT),
-                                           std::strlen(LABEL_CHAIN_NEXT), next_chain,
-                                           ROOT_KEY_LEN);
+    const bool adv_ok =
+        hkdf_sha256_expand(s.chain_key, reinterpret_cast<const uint8_t *>(LABEL_CHAIN_NEXT),
+                           std::strlen(LABEL_CHAIN_NEXT), next_chain, ROOT_KEY_LEN);
     if (!adv_ok) {
         secmem::secure_zero(next_chain, sizeof(next_chain));
         secmem::secure_zero(out_key, MSG_KEY_LEN);

@@ -101,8 +101,8 @@ TEST(Replay, ResetClearsState) {
 
 TEST(Replay, WidthClampedAndAligned) {
     /* Non-multiple-of-64 widths clamp down; out-of-range clamps in. */
-    Window a(63);     /* rounds to 64 */
-    Window b(100);    /* rounds to 64 */
+    Window a(63);      /* rounds to 64 */
+    Window b(100);     /* rounds to 64 */
     Window c(200'000); /* clamps to 65536 */
     EXPECT_EQ(a.width(), 64u);
     EXPECT_EQ(b.width(), 64u);
@@ -116,6 +116,6 @@ TEST(Replay, StatsCountersAccumulate) {
     ASSERT_EQ(w.check_and_commit(10), Result::REPLAY);
     ASSERT_EQ(w.check_and_commit(20), Result::REPLAY);
     EXPECT_EQ(w.accepted(), 2u);
-    EXPECT_EQ(w.replays(),  2u);
-    EXPECT_EQ(w.stale(),    0u);
+    EXPECT_EQ(w.replays(), 2u);
+    EXPECT_EQ(w.stale(), 0u);
 }
