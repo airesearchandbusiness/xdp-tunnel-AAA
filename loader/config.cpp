@@ -20,6 +20,65 @@ static bool is_valid_tunnel_name(const std::string &name) {
 }
 
 /* ======================================================================
+ * Secret Resolution (env-var / file:// URI)
+ * ======================================================================
+ *
+ * resolve_secret() lets operators keep PrivateKey/PSK/PeerPublicKey out of
+ * the config file, which would otherwise persist on disk and leak via
+ * backups, container images, or shoulder-surfing.
+ *
+ * Resolution order:
+ *   1. If `env_var` is set in the process environment, that value wins and
+ *      is then unset() so it no longer appears in /proc/PID/environ. This
+ *      is best-effort: copies already taken by child processes / forked
+ *      threads are not affected.
+ *   2. Else if the config value starts with "file://", the remainder is
+ *      treated as a filesystem path and the file's contents (with trailing
+ *      whitespace trimmed) are returned. On open failure we LOG_WARN and
+ *      fall back to the original string so operators get a clear signal.
+ *   3. Else the config value is returned verbatim.
+ */
+
+static std::string resolve_secret(const std::string &config_val, const char *env_var) {
+    if (env_var != nullptr) {
+        const char *env_val = std::getenv(env_var);
+        if (env_val != nullptr) {
+            std::string result(env_val);
+            /* Clear the env slot so /proc/<pid>/environ no longer exposes
+             * the secret. unsetenv() failure is non-fatal; we already have
+             * the value in `result`. */
+            unsetenv(env_var);
+            return result;
+        }
+    }
+
+    static const std::string kFileScheme = "file://";
+    if (config_val.size() > kFileScheme.size() &&
+        config_val.compare(0, kFileScheme.size(), kFileScheme) == 0) {
+        std::string path = config_val.substr(kFileScheme.size());
+        std::ifstream f(path);
+        if (!f.is_open()) {
+            LOG_WARN("resolve_secret: cannot open '%s', returning original value", path.c_str());
+            return config_val;
+        }
+        std::ostringstream oss;
+        oss << f.rdbuf();
+        std::string contents = oss.str();
+        /* Trim trailing whitespace/newlines — operators routinely create
+         * secret files with `echo`, which adds a stray '\n'. */
+        const auto last = contents.find_last_not_of(" \t\r\n");
+        if (last == std::string::npos) {
+            contents.clear();
+        } else {
+            contents.erase(last + 1);
+        }
+        return contents;
+    }
+
+    return config_val;
+}
+
+/* ======================================================================
  * INI Config Parser
  * ====================================================================== */
 
@@ -93,9 +152,9 @@ TunnelConfig parse_config(const std::string &filename) {
     TunnelConfig cfg;
 
     cfg.name = tunnel_name_from_conf(filename);
-    cfg.private_key = get_val(kv, "PrivateKey");
-    cfg.peer_public_key = get_val(kv, "PeerPublicKey");
-    cfg.psk = get_val(kv, "PresharedKey", "Secret");
+    cfg.private_key = resolve_secret(get_val(kv, "PrivateKey"), "TACHYON_PRIVATE_KEY");
+    cfg.peer_public_key = resolve_secret(get_val(kv, "PeerPublicKey"), "TACHYON_PEER_PUBLIC_KEY");
+    cfg.psk = resolve_secret(get_val(kv, "PresharedKey", "Secret"), "TACHYON_PSK");
     cfg.virtual_ip = get_val(kv, "VirtualIP", "Interface.VirtualIP");
     cfg.local_physical_ip = get_val(kv, "LocalPhysicalIP", "LocalIP");
     cfg.physical_interface = get_val(kv, "PhysicalInterface", "PhysIface");
