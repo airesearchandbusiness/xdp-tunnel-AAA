@@ -105,10 +105,13 @@ class MetricsExporter {
     std::string render() const;
     bool is_running() const { return listen_fd_ >= 0; }
     uint16_t port() const { return port_; }
+    void set_ready(bool ready) { ready_ = ready; }
+    bool is_ready() const { return ready_; }
 
   private:
-    void serve_client(int client_fd) const;
+    void serve_client(int client_fd);
     int listen_fd_ = -1;
+    bool ready_ = false;
     uint16_t port_ = 0;
     std::string tunnel_name_;
     uint64_t snap_rx_packets = 0, snap_rx_bytes = 0;

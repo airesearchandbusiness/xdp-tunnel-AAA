@@ -460,12 +460,12 @@ TEST(MetricsExporterTest, RenderEOFTerminated) {
     EXPECT_NE(out.find("# EOF"), std::string::npos);
 }
 
-TEST(MetricsExporterTest, StartZeroPortFails) {
-    /* Port 0 is "any port" but the API explicitly rejects it. */
+TEST(MetricsExporterTest, StartZeroPortPicksEphemeral) {
     MetricsExporter mx;
-    EXPECT_FALSE(mx.start(0));
-    EXPECT_FALSE(mx.is_running());
-    EXPECT_EQ(mx.port(), 0);
+    EXPECT_TRUE(mx.start(0));
+    EXPECT_TRUE(mx.is_running());
+    EXPECT_GT(mx.port(), 0);
+    mx.stop();
 }
 
 TEST(MetricsExporterTest, StartHighPortBindsAndStops) {
