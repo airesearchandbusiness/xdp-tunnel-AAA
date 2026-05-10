@@ -322,12 +322,12 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint64_t last_decoy = monotonic_sec();
         uint64_t decoy_interval = TACHYON_DECOY_BASE;
 
-        /* Per-message AEAD nonce counters: prevent (key, nonce) reuse when
-         * multiple keepalives or decoys are emitted within the same second.
-         * Counters reset on every handshake (new cp_enc_key), so the
-         * (key, nonce) pair never repeats across the key's lifetime. CWE-323. */
-        uint32_t keepalive_counter = 0;
-        uint32_t decoy_counter = 0;
+        /* Unified control-plane AEAD nonce counter: shared across keepalives
+         * AND decoys so no two control packets under the same cp_enc_key can
+         * produce the same (key, nonce) pair.  The lower 3 bytes are carried
+         * in MsgKeepalive.pad[3] so the receiver can reconstruct the nonce.
+         * Resets on every handshake (new cp_enc_key).  CWE-323. */
+        uint32_t ctrl_nonce_ctr = 0;
 
         /* Cookie rotation failure tracking — escalate after persistent RNG failure (CWE-755) */
         int cookie_failure_streak = 0;
@@ -381,12 +381,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t k_ad[12];
                 memcpy(k_ad, &kmsg.session_id, 4);
                 memcpy(k_ad + 4, &kmsg.timestamp, 8);
-                /* Nonce: [timestamp:8][counter:4] guarantees uniqueness per
-                 * (key, nonce) pair within the same second (CWE-323). */
                 uint8_t k_nonce[12] = {0};
                 memcpy(k_nonce, &kmsg.timestamp, 8);
-                uint32_t kc_le = keepalive_counter++;
-                memcpy(k_nonce + 8, &kc_le, 4);
+                uint32_t ctr_le = ctrl_nonce_ctr++;
+                memcpy(k_nonce + 8, &ctr_le, 4);
+                memcpy(kmsg.pad, &ctr_le, 3);
 
                 uint8_t dummy[16];
                 if (RAND_bytes(dummy, 16) != 1) {
@@ -420,10 +419,10 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t d_ad[12], d_nonce[12] = {0}, d_pt[16];
                 memcpy(d_ad, &decoy_msg.session_id, 4);
                 memcpy(d_ad + 4, &decoy_msg.timestamp, 8);
-                /* Counter prevents nonce reuse within the same second (CWE-323) */
                 memcpy(d_nonce, &decoy_msg.timestamp, 8);
-                uint32_t dc_le = decoy_counter++;
-                memcpy(d_nonce + 8, &dc_le, 4);
+                uint32_t ctr_le = ctrl_nonce_ctr++;
+                memcpy(d_nonce + 8, &ctr_le, 4);
+                memcpy(decoy_msg.pad, &ctr_le, 3);
 
                 if (RAND_bytes(d_pt, 16) == 1 &&
                     cp_aead_encrypt(cp_enc_key, d_pt, 16, d_ad, 12, d_nonce, decoy_msg.ciphertext,
@@ -445,6 +444,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                                new_cp_key)) {
                     OPENSSL_cleanse(cp_enc_key, 32);
                     memcpy(cp_enc_key, new_cp_key, 32);
+                    ctrl_nonce_ctr = 0;
 
                     KeyBuf<32> new_chain;
                     derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_DECOY_SEED,
@@ -464,6 +464,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 LOG_INFO("Hitless key rotation initiated");
             }
 
+            /* Port hopping — wall-clock time() is intentional here (not
+             * monotonic_sec): both peers must derive the same hop port
+             * from the same epoch number, which only works if both use
+             * the same wall-clock reference. NTP drift tolerance is
+             * implicit in the period quantization. */
             if (cfg.port_hop_seconds > 0) {
                 uint64_t hop_now = static_cast<uint64_t>(time(nullptr));
                 uint16_t new_port =
@@ -579,6 +584,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 memcpy(k_ad + 4, &msg->timestamp, 8);
                 uint8_t k_nonce[12] = {0};
                 memcpy(k_nonce, &msg->timestamp, 8);
+                uint32_t rx_ctr = 0;
+                memcpy(&rx_ctr, msg->pad, 3);
+                memcpy(k_nonce + 8, &rx_ctr, 4);
                 uint8_t decrypted[16];
                 if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
                                      msg->ciphertext + 16, decrypted)) {
@@ -748,6 +756,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 handshake_active = false;
                 first_boot = false;
                 last_rekey_success = now;
+                ctrl_nonce_ctr = 0;
 
                 tachyon::ratchet::ratchet_init(send_ratchet, tx_key);
                 tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
