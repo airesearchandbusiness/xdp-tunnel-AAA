@@ -44,11 +44,29 @@ jobs:
         run: find tests/ -name '*.sh' -exec shellcheck -x -S warning {} +
       - name: cppcheck
         run: |
-          cppcheck --enable=warning,performance,portability --error-exitcode=1 \
-            --suppress=missingInclude --suppress=missingIncludeSystem \
+          cppcheck \
+            --enable=warning,performance,portability \
+            --error-exitcode=1 \
+            --suppress=missingInclude \
+            --suppress=missingIncludeSystem \
             --suppress=unknownMacro:src/xdp_core.c \
             --suppress=preprocessorErrorDirective:loader/crypto.cpp \
-            --inline-suppr --std=c11 src/ loader/ 2>&1 | tee cppcheck-report.txt
+            --inline-suppr \
+            --std=c11 \
+            src/ loader/ \
+            2>&1 | tee cppcheck-report.txt
+          if grep -q "^[^:]*:[0-9]*:[0-9]*: error:" cppcheck-report.txt; then
+            echo "::error::cppcheck found errors — see report above"
+            exit 1
+          fi
+          echo "cppcheck: clean"
+      - name: Upload cppcheck report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppcheck-report
+          path: cppcheck-report.txt
+          if-no-files-found: ignore
       - name: Secret scanning (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         continue-on-error: true
