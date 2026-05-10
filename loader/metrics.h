@@ -77,13 +77,13 @@ Snapshot snapshot();
 
 } /* namespace tachyon::metrics */
 
-/* ════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Prometheus / OpenMetrics HTTP Exporter (Phase 23)
  *
  * Serves tunnel statistics on a localhost TCP port in OpenMetrics text
  * format. Complements the in-process atomic Counters above with an
  * external scrape endpoint.
- * ════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 #include <string>
 
