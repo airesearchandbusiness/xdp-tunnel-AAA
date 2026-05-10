@@ -14,12 +14,12 @@
 #ifndef TACHYON_COMMON_H
 #define TACHYON_COMMON_H
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Type Compatibility Layer
  *
  * eBPF and kernel code get __u32 etc. from <linux/types.h>.
  * Userspace C/C++ needs explicit typedefs.
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,25 +39,25 @@ typedef int32_t __s32;
 #endif
 #endif
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Protocol Version & Identity
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_PROTO_VERSION 5    /* AKE v5.0 "Ghost-PQ"           */
 #define TACHYON_PROTO_VERSION_V4 4 /* Legacy v4 for compat flag   */
 #define TACHYON_MODULE_NAME "tachyon-crypto"
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Capacity Limits
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_MAX_SESSIONS 256
 #define TACHYON_MAX_TX_CPUS 64        /* Per-CPU sequence partitioning */
 #define TACHYON_MAX_IP_SESSIONS 1024  /* ip_to_session LRU capacity    */
 #define TACHYON_MAX_RATELIMIT 65536   /* Control plane rate-limit LRU  */
 #define TACHYON_NONCE_CACHE_MAX 50000 /* Userspace nonce dedup cache   */
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Wire Format Sizes (bytes)
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_ETH_HDR_LEN 14
 #define TACHYON_IP_HDR_LEN 20
 #define TACHYON_UDP_HDR_LEN 8
@@ -84,23 +84,23 @@ typedef int32_t __s32;
 /* Minimum encapsulated packet: outer headers + ghost + at least 1 byte + tag */
 #define TACHYON_MIN_ENCAP_LEN (TACHYON_OUTER_HDR_LEN + TACHYON_AEAD_TAG_LEN + 1)
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Replay Protection
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_REPLAY_WINDOW 256 /* Sliding window size in packets */
 #define TACHYON_REPLAY_WORDS 4    /* 256 / 64 = 4 bitmap words     */
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Network Tuning
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_TARGET_MSS 1360    /* Clamped MSS to hide overhead   */
 #define TACHYON_TUNNEL_MTU 1420    /* Virtual interface MTU          */
 #define TACHYON_MAX_FRAME_LEN 1500 /* Physical MTU assumption        */
 #define TACHYON_DEFAULT_PORT 443   /* Default listen port            */
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Timing Constants (seconds)
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_KEEPALIVE_BASE 8           /* Keepalive base interval        */
 #define TACHYON_KEEPALIVE_JITTER 8         /* Keepalive jitter range         */
 #define TACHYON_RETRY_BASE 2               /* Handshake retry base interval  */
@@ -114,20 +114,20 @@ typedef int32_t __s32;
 #define TACHYON_DECOY_JITTER 5             /* Decoy chaff jitter range (s)   */
 #define TACHYON_KEY_RATCHET_INTERVAL 300   /* Forward secrecy ratchet (5min) */
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Sequence Number Encoding
  *
  * Format: [CPU_ID : 16 bits][Sequence : 48 bits]
  * This allows per-CPU lock-free sequence generation with 281 trillion
  * packets per CPU before wrap-around.
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_SEQ_CPU_SHIFT 48
 #define TACHYON_SEQ_CPU_MASK 0xFFFF000000000000ULL
 #define TACHYON_SEQ_NUM_MASK 0x0000FFFFFFFFFFFFULL
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * QUIC Mimicry Constants
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_MIMICRY_NONE 0 /* Standard UDP encapsulation     */
 #define TACHYON_MIMICRY_QUIC 1 /* QUIC short-header mimicry      */
 
@@ -143,13 +143,13 @@ typedef int32_t __s32;
 #define TACHYON_PAD_JITTER_MASK 0x0F  /* Full-pad jitter mask           */
 #define TACHYON_TARGET_OUTER_LEN 1490 /* Target outer frame length      */
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Traffic Obfuscation Flags (tachyon_config.obfs_flags bitmask)
  *
  * Each bit enables an independent traffic analysis countermeasure in the
  * XDP datapath. Combining all flags produces a tunnel whose external
  * traffic is statistically indistinguishable from random UDP/QUIC traffic.
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_OBFS_TTL_JITTER 0x01 /* Randomize outer TTL (63-65)    */
 #define TACHYON_OBFS_IPID_RAND 0x02  /* Randomize IP Identification    */
 #define TACHYON_OBFS_DF_VARY 0x04    /* Probabilistic DF bit clearing  */
@@ -160,12 +160,12 @@ typedef int32_t __s32;
 /* Combine all obfuscation flags for maximum traffic analysis resistance */
 #define TACHYON_OBFS_ALL 0x3F
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Cipher Suite Identifiers
  *
  * Used in tachyon_key_init.cipher_type to select the AEAD algorithm for the
  * kernel crypto module. Kernel module support: kmod/mod.c bpf_ghost_set_cipher().
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_CIPHER_CHACHA20 0  /* ChaCha20-Poly1305 (default, universal) */
 #define TACHYON_CIPHER_AES128GCM 1 /* AES-128-GCM (AES-NI accelerated)      */
 #define TACHYON_CIPHER_AES256GCM 2 /* AES-256-GCM (AES-NI accelerated)      */
@@ -180,12 +180,12 @@ typedef int32_t __s32;
 #define TACHYON_FLAG_IPV6 0x04 /* IPv6 inner/outer support */
 #define TACHYON_IPV6_HDR_LEN 40
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Packet Types
  *
  * Identified by the high nibble 0xC0 in the quic_flags field.
  * The XDP RX path uses (flags & 0xF0) == 0xC0 to route to userspace.
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_PKT_INIT 0xC0       /* Handshake initiation           */
 #define TACHYON_PKT_COOKIE 0xC1     /* Stateless cookie response      */
 #define TACHYON_PKT_AUTH 0xC2       /* Authenticated key exchange      */
@@ -200,9 +200,9 @@ typedef int32_t __s32;
 /* QUIC Initial minimum size (RFC 9000, Section 14.1) */
 #define TACHYON_QUIC_INIT_MIN_LEN 1200
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * KDF Labels (used in HKDF-SHA256 derivation)
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_KDF_EARLY_SECRET "Tachyon-EarlySecret"
 #define TACHYON_KDF_CP_AEAD "Tachyon-CP-AEAD"
 #define TACHYON_KDF_SESSION_MASTER "Tachyon-Session-Master"
@@ -212,9 +212,9 @@ typedef int32_t __s32;
 #define TACHYON_KDF_KEY_RATCHET "Tachyon-Key-Ratchet" /* Forward secrecy chain */
 #define TACHYON_KDF_DECOY_SEED "Tachyon-Decoy-Seed"   /* Decoy traffic keying  */
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Event Types (perf event reporting from eBPF to userspace)
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 enum tachyon_event_type {
     TACHYON_EVT_REPLAY_DROP = 0,
     TACHYON_EVT_CRYPTO_ERROR = 1,
@@ -224,12 +224,12 @@ enum tachyon_event_type {
     TACHYON_EVT_PEER_ROAM = 5,
 };
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Wire-Format Structures
  *
  * These structures define the on-wire layout and MUST remain packed and
  * consistent across all three compilation contexts.
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 
 /*
  * Ghost Header - Tunnel encapsulation header (20 bytes)
@@ -249,9 +249,9 @@ struct tachyon_ghost_hdr {
     __u32 nonce_salt; /* Per-packet random IV component */
 } __attribute__((packed));
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * BPF Map Value Structures
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 
 /* Global tunnel configuration (single-entry array map) */
 struct tachyon_config {
@@ -328,12 +328,12 @@ struct tachyon_event {
     __u64 timestamp_ns;
 };
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Message Structures
  *
  * All messages use the ghost_hdr quic_flags field for type identification.
  * Messages are padded with random bytes for QUIC mimicry before transmission.
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 
 /* PKT_INIT: Handshake initiation (Initiator -> Responder) */
 struct tachyon_msg_init {
@@ -422,7 +422,7 @@ struct tachyon_msg_cipher_ack {
     __u8 mac[4]; /* Truncated HMAC-SHA256          */
 } __attribute__((packed));
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * v5 "Ghost-PQ" Wire-Format Structures
  *
  * These extend the v4 control-plane messages with post-quantum hybrid
@@ -438,7 +438,7 @@ struct tachyon_msg_cipher_ack {
  *                                transport1 + cookie16 + hmac32)
  *   MsgDataV5   = 28 bytes hdr (flags1 + transport1 + session_id4 + seq8 +
  *                                nonce_salt4 + ratchet_ctr8 + pad2)
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_V5_MAGIC 0x54434835 /* "TCH5" in big-endian       */
 #define TACHYON_V4_MAGIC 0x54434834 /* "TCH4" for compat detect   */
 
@@ -499,18 +499,18 @@ struct tachyon_data_hdr_v5 {
     __u64 ratchet_ctr; /* Forward-secrecy ratchet counter  */
 } __attribute__((packed));
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * BPF Map Index Constants
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_TXPORT_VETH 0 /* tx_port[0] = virtual interface */
 #define TACHYON_TXPORT_PHYS 1 /* tx_port[1] = physical NIC      */
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Filesystem Paths
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_BPF_PIN_BASE "/sys/fs/bpf/tachyon"
 
-/* ────────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────
  * Compile-Time Layout Verification
  *
  * Catch struct size / offset regressions before they cause silent
@@ -519,7 +519,7 @@ struct tachyon_data_hdr_v5 {
  *
  * In C contexts:    uses _Static_assert + __builtin_offsetof (clang/gcc)
  * In C++ contexts:  uses static_assert  + offsetof (C++11)
- * ──────────────────────────────────────────────────────────────────────────────── */
+ * ────────────────────────────────────────────────────────────────────────── */
 #ifndef __KERNEL__
 
 #ifdef __cplusplus
