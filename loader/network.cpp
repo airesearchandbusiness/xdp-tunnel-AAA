@@ -486,23 +486,22 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
              * current key + fresh chain material every 5 minutes. The old chain
              * value is erased immediately, so a compromised key reveals only
              * the traffic within one ratchet window. This is independent of
-             * the full ECDH rekey (which runs every 60s for the data plane). */
+             * the full ECDH rekey (which runs every 60s for the data plane).
+             * KeyBufs auto-cleanse at end of the if-block scope. */
             if (!handshake_active && (now - last_ratchet > TACHYON_KEY_RATCHET_INTERVAL)) {
-                uint8_t new_cp_key[32];
+                KeyBuf<32> new_cp_key;
                 if (derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_KEY_RATCHET,
                                new_cp_key)) {
                     OPENSSL_cleanse(cp_enc_key, 32);
                     memcpy(cp_enc_key, new_cp_key, 32);
-                    OPENSSL_cleanse(new_cp_key, 32);
 
                     /* Advance the ratchet chain so the old chain state is
                      * irrecoverable even if new_cp_key is later leaked. */
-                    uint8_t new_chain[32];
+                    KeyBuf<32> new_chain;
                     derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_DECOY_SEED,
                                new_chain);
                     OPENSSL_cleanse(ratchet_chain, 32);
                     memcpy(ratchet_chain, new_chain, 32);
-                    OPENSSL_cleanse(new_chain, 32);
 
                     last_ratchet = now;
                     LOG_CRYPTO("Control plane key ratcheted (forward secrecy)");

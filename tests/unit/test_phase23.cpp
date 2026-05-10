@@ -455,6 +455,60 @@ TEST(MetricsExporterTest, RenderEOFTerminated) {
     EXPECT_NE(out.find("# EOF"), std::string::npos);
 }
 
+TEST(MetricsExporterTest, StartZeroPortFails) {
+    /* Port 0 is "any port" but the API explicitly rejects it. */
+    MetricsExporter mx;
+    EXPECT_FALSE(mx.start(0));
+    EXPECT_FALSE(mx.is_running());
+    EXPECT_EQ(mx.port(), 0);
+}
+
+TEST(MetricsExporterTest, StartHighPortBindsAndStops) {
+    /* Use ephemeral high port to avoid conflicts. localhost-only bind
+     * doesn't require root. */
+    MetricsExporter mx;
+    bool started = mx.start(45678);
+    if (started) {
+        EXPECT_TRUE(mx.is_running());
+        EXPECT_EQ(mx.port(), 45678);
+        mx.stop();
+        EXPECT_FALSE(mx.is_running());
+    } else {
+        /* Port might be in use in some environments; that's tolerable. */
+        SUCCEED() << "Port 45678 unavailable; skipping bind test";
+    }
+}
+
+TEST(MetricsExporterTest, StartStopIsIdempotent) {
+    MetricsExporter mx;
+    mx.stop();        /* stop on never-started — must not crash */
+    mx.stop();        /* double-stop — must not crash */
+    EXPECT_FALSE(mx.is_running());
+}
+
+TEST(MetricsExporterTest, PollWhenNotRunningIsSafe) {
+    /* Calling poll() before start() must be a no-op, not a crash. */
+    MetricsExporter mx;
+    mx.poll(8);   /* should return immediately */
+    EXPECT_FALSE(mx.is_running());
+}
+
+TEST(MetricsExporterTest, RenderHandlesLargeCounters) {
+    /* Validate uint64_t maximum values render correctly (no overflow,
+     * no truncation) — defends against the INT_MAX bounds-check fix. */
+    MetricsExporter mx;
+    userspace_stats stats{};
+    stats.rx_packets = UINT64_MAX;
+    stats.tx_bytes   = UINT64_MAX - 1;
+    stats.rx_replay_drops = (1ULL << 63);
+    mx.update(stats, "max");
+    std::string out = mx.render();
+    /* UINT64_MAX = 18446744073709551615 */
+    EXPECT_NE(out.find("18446744073709551615"), std::string::npos);
+    EXPECT_NE(out.find("18446744073709551614"), std::string::npos);
+    EXPECT_NE(out.find("9223372036854775808"), std::string::npos);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * CipherRenegotiator Tests
  * ══════════════════════════════════════════════════════════════════════════ */
