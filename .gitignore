@@ -24,6 +24,7 @@ build/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
+Testing/
 
 # Coverage
 *.gcov
