@@ -129,6 +129,8 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/stun_mimic.cpp
     ${PROJECT_ROOT}/loader/metrics.cpp
     ${PROJECT_ROOT}/loader/rate_limiter.cpp
+    ${PROJECT_ROOT}/loader/ip_rate_limiter.cpp
+    ${PROJECT_ROOT}/loader/circuit_breaker.cpp
     ${PROJECT_ROOT}/loader/multipath.cpp
     ${PROJECT_ROOT}/loader/autoconf.cpp
 )
@@ -189,6 +191,11 @@ add_tachyon_test(test_integration_v5 unit/test_integration_v5.cpp)
 add_tachyon_test(test_phase23    unit/test_phase23.cpp)
 add_tachyon_test(test_autoconf   unit/test_autoconf.cpp)
 add_tachyon_test(test_advanced   unit/test_advanced.cpp)
+add_tachyon_test(test_log        unit/test_log.cpp)
+add_tachyon_test(test_ip_rate_limiter unit/test_ip_rate_limiter.cpp)
+add_tachyon_test(test_circuit_breaker unit/test_circuit_breaker.cpp)
+add_tachyon_test(test_x448         unit/test_x448.cpp)
+add_tachyon_test(test_smart_obfs   unit/test_smart_obfs.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)
@@ -244,6 +251,14 @@ if(BUILD_BENCHMARKS)
         TACHYON_NO_BPF
     )
     target_compile_options(bench_crypto PRIVATE -O3 -Wall)
+
+    foreach(bench_name bench_transport bench_padding bench_ratchet bench_fingerprint)
+        add_executable(${bench_name} benchmarks/${bench_name}.cpp)
+        target_link_libraries(${bench_name} PRIVATE tachyon_core benchmark::benchmark_main)
+        target_include_directories(${bench_name} PRIVATE ${PROJECT_ROOT}/loader ${PROJECT_ROOT}/src)
+        target_compile_definitions(${bench_name} PRIVATE TACHYON_VERSION="bench" TACHYON_NO_BPF)
+        target_compile_options(${bench_name} PRIVATE -O3 -Wall)
+    endforeach()
 endif()
 
 # ── Fuzz Tests (requires clang + libFuzzer) ──
