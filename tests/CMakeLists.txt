@@ -188,6 +188,7 @@ add_tachyon_test(test_rate_limiter unit/test_rate_limiter.cpp)
 add_tachyon_test(test_integration_v5 unit/test_integration_v5.cpp)
 add_tachyon_test(test_phase23    unit/test_phase23.cpp)
 add_tachyon_test(test_autoconf   unit/test_autoconf.cpp)
+add_tachyon_test(test_advanced   unit/test_advanced.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)
