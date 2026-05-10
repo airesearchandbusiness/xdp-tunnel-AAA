@@ -52,11 +52,17 @@ jobs:
 
       - name: cppcheck
         run: |
+          # Suppressions:
+          #   unknownMacro:src/xdp_core.c — eBPF SEC() macro is BPF-toolchain-specific
+          #   preprocessorErrorDirective:loader/crypto.cpp — OpenSSL version #error
+          #     fires because cppcheck doesn't define OPENSSL_VERSION_NUMBER
           cppcheck \
             --enable=warning,performance,portability \
             --error-exitcode=1 \
             --suppress=missingInclude \
             --suppress=missingIncludeSystem \
+            --suppress=unknownMacro:src/xdp_core.c \
+            --suppress=preprocessorErrorDirective:loader/crypto.cpp \
             --inline-suppr \
             --std=c11 \
             src/ loader/ \
