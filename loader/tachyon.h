@@ -53,18 +53,21 @@
 /* ── Protocol Constants (from shared header) ── */
 #include "../src/common.h"
 
-/* ═════════════════════════════════════════════════════════════════════════
- * Logging (structured, JSON-capable — see loader/log.h)
- * ═════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+ * Logging
+ * ══════════════════════════════════════════════════════════════════════════ */
 
-#include "log.h"
+#define LOG_INFO(fmt, ...) fprintf(stderr, "[INFO]  " fmt "\n", ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) fprintf(stderr, "[WARN]  " fmt "\n", ##__VA_ARGS__)
+#define LOG_ERR(fmt, ...) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
+#define LOG_CRYPTO(fmt, ...) fprintf(stderr, "[CRYPTO] " fmt "\n", ##__VA_ARGS__)
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Userspace Mirror Structures
  *
  * These mirror the BPF map value types from common.h but use standard
  * C types (no bpf_spin_lock). Layout MUST match tachyon_session etc.
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 struct userspace_config {
     uint16_t listen_port_net;
@@ -114,9 +117,9 @@ struct userspace_stats {
     uint64_t rx_roam_events;
 };
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Control Plane Message Structures (packed, wire format)
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 #pragma pack(push, 1)
 
@@ -186,9 +189,9 @@ struct MsgCipherAck {
 
 #pragma pack(pop)
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Parsed Tunnel Configuration
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 struct TunnelConfig {
     std::string name;
@@ -206,7 +209,7 @@ struct TunnelConfig {
     bool encryption = true;
     uint8_t obfs_flags = TACHYON_OBFS_ALL; /* Traffic obfuscation bitmask    */
 
-    /* ── v5 "Ghost-PQ" policy ────────────────────────────────────────────────
+    /* ── v5 "Ghost-PQ" policy ───────────────────────────────────────────────
      * These are off by default so v4 configs keep working unchanged. They are
      * parsed from the INI by config.cpp and consumed by network.cpp. Strings
      * are stored raw; network.cpp maps them to the typed enums in
@@ -223,7 +226,7 @@ struct TunnelConfig {
     /* Resolved at runtime by tunnel.cpp — not parsed from config */
     uint8_t resolved_transport_id = 0;
 
-    /* ── Phase 23 advanced extensions ────────────────────────────────────────── */
+    /* ── Phase 23 advanced extensions ──────────────────────────────────── */
     uint32_t replay_window_size = 4096;
     bool metrics_enabled = false;
     uint16_t metrics_port = 9090;
@@ -232,18 +235,18 @@ struct TunnelConfig {
     bool multipath_enabled = false;
     std::vector<std::string> multipath_interfaces;
 
-    /* ── Phase 25 extensions ───────────────────────────────────── */
+    /* ── Phase 25 extensions ────────────────────────────────────────── */
     uint8_t kex_type = 0; /* TACHYON_KEX_X25519 (default) or TACHYON_KEX_X448 */
     bool afxdp_enabled = false;
     bool ipv6_enabled = false;
 };
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Nonce Deduplication Cache
  *
  * Uses an LRU list + hash map for O(1) insert and O(1) eviction.
  * Replaces the old linear-scan approach that had O(n) cleanup.
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 class NonceCache {
   public:
@@ -275,9 +278,9 @@ class NonceCache {
     std::list<std::pair<uint64_t, uint64_t>> order_; /* front=oldest */
 };
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Cipher Renegotiator (Phase 23)
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 class CipherRenegotiator {
   public:
@@ -374,17 +377,17 @@ class CipherRenegotiator {
     uint64_t pending_nonce_ = 0;
 };
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Global State
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 extern volatile sig_atomic_t g_exiting;
 extern EVP_MAC *g_mac;
 extern EVP_KDF *g_kdf;
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Function Declarations - crypto.cpp
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 void init_crypto_globals();
 void free_crypto_globals();
@@ -411,9 +414,9 @@ bool get_public_key(const uint8_t *priv, uint8_t *pub_out);
 bool generate_x448_keypair(uint8_t *priv_out, uint8_t *pub_out);
 bool do_x448_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_ss);
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Function Declarations - tunnel.cpp
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 TunnelConfig parse_config(const std::string &filename);
 bool validate_config(const TunnelConfig &cfg);
@@ -423,16 +426,16 @@ void command_up(const std::string &conf_file);
 void command_down(const std::string &conf_file);
 void command_show(const std::string &conf_file);
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Function Declarations - network.cpp
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t session_id,
                        uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac);
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Utility Helpers
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 /* Convert one hex character to its 4-bit value. Returns -1 on non-hex input. */
 inline int hex_nibble(unsigned char c) {
@@ -542,12 +545,12 @@ inline bool run_cmd(const std::string &cmd, bool quiet = false) {
     return ok;
 }
 
-/* ═════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
  * Compile-Time Cross-Structure Verification
  *
  * Ensure userspace mirror structs remain identical in size to their
  * common.h counterparts so BPF map reads/writes never silently corrupt.
- * ═════════════════════════════════════════════════════════════════════════ */
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 static_assert(sizeof(userspace_config) == sizeof(struct tachyon_config),
               "userspace_config layout must match tachyon_config");
