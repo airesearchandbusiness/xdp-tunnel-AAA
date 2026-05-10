@@ -7,8 +7,6 @@
  */
 
 #include <gtest/gtest.h>
-
-#define TACHYON_NO_BPF
 #include "../src/common.h"
 
 #include <cstddef>
