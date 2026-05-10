@@ -131,6 +131,8 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/rate_limiter.cpp
     ${PROJECT_ROOT}/loader/ip_rate_limiter.cpp
     ${PROJECT_ROOT}/loader/circuit_breaker.cpp
+    ${PROJECT_ROOT}/loader/audit.cpp
+    ${PROJECT_ROOT}/loader/shutdown.cpp
     ${PROJECT_ROOT}/loader/multipath.cpp
     ${PROJECT_ROOT}/loader/autoconf.cpp
 )
@@ -194,6 +196,9 @@ add_tachyon_test(test_advanced   unit/test_advanced.cpp)
 add_tachyon_test(test_log        unit/test_log.cpp)
 add_tachyon_test(test_ip_rate_limiter unit/test_ip_rate_limiter.cpp)
 add_tachyon_test(test_circuit_breaker unit/test_circuit_breaker.cpp)
+add_tachyon_test(test_audit unit/test_audit.cpp)
+add_tachyon_test(test_secret_resolution unit/test_secret_resolution.cpp)
+add_tachyon_test(test_shutdown   unit/test_shutdown.cpp)
 
 # ── XDP Test Runner (requires libbpf + privileges) ──
 if(BUILD_XDP_TESTS)
