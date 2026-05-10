@@ -34,7 +34,7 @@ jobs:
       contents: read
       actions: read   # required by gitleaks-action
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # full history for gitleaks
 
@@ -69,7 +69,7 @@ jobs:
 
       - name: Upload cppcheck report
         if: always()
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v4
         with:
           name: cppcheck-report
           path: cppcheck-report.txt
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: lint
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-deps
         with:
@@ -115,7 +115,7 @@ jobs:
           cmake --build build -j$(nproc)
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: build/
@@ -142,7 +142,7 @@ jobs:
             cxx: clang++-18
             packages: 'clang-18 libssl-dev'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-deps
         with:
@@ -173,14 +173,14 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-deps
         with:
           packages: 'libssl-dev'
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           path: build/
@@ -198,7 +198,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-unit
           path: build/test-results/unit.xml
@@ -216,10 +216,10 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@v3
         with:
           languages: cpp
           queries: security-and-quality
@@ -232,7 +232,7 @@ jobs:
         run: make loader 2>&1 || true
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:cpp"
 
@@ -249,7 +249,7 @@ jobs:
       contents: read
       security-events: write  # upload SARIF to GitHub Code Scanning
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@0.28.0
@@ -262,7 +262,7 @@ jobs:
           exit-code: '0'        # never fail CI — results appear in Security tab
 
       - name: Upload Trivy SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -290,7 +290,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-deps
         with:
@@ -313,7 +313,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-coverage
           path: build/cov/test-results/coverage.xml
@@ -345,7 +345,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: lint
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-deps
         with:
@@ -373,7 +373,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-sanitize
           path: build/san/test-results/sanitize.xml
@@ -389,7 +389,7 @@ jobs:
     needs: lint
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-deps
         with:
@@ -421,7 +421,7 @@ jobs:
 
       - name: Upload clang-tidy report
         if: always()
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v4
         with:
           name: clang-tidy-report
           path: clang-tidy-report.txt
@@ -436,7 +436,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: lint
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-deps
         with:
@@ -463,7 +463,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-tsan
           path: build/tsan/test-results/tsan.xml
