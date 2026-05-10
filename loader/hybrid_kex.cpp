@@ -34,18 +34,16 @@ static bool x25519_keygen(uint8_t pk[X25519_PK_LEN], uint8_t sk[X25519_SK_LEN]) 
 
     size_t pk_len = X25519_PK_LEN, sk_len = X25519_SK_LEN;
     ok = EVP_PKEY_get_raw_public_key(key, pk, &pk_len) == 1 &&
-         EVP_PKEY_get_raw_private_key(key, sk, &sk_len) == 1 &&
-         pk_len == X25519_PK_LEN && sk_len == X25519_SK_LEN;
+         EVP_PKEY_get_raw_private_key(key, sk, &sk_len) == 1 && pk_len == X25519_PK_LEN &&
+         sk_len == X25519_SK_LEN;
     EVP_PKEY_free(key);
     return ok;
 }
 
-static bool x25519_derive(const uint8_t sk[X25519_SK_LEN],
-                          const uint8_t peer_pk[X25519_PK_LEN],
+static bool x25519_derive(const uint8_t sk[X25519_SK_LEN], const uint8_t peer_pk[X25519_PK_LEN],
                           uint8_t ss[X25519_SS_LEN]) {
     EVP_PKEY *my = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, nullptr, sk, X25519_SK_LEN);
-    EVP_PKEY *peer =
-        EVP_PKEY_new_raw_public_key(EVP_PKEY_X25519, nullptr, peer_pk, X25519_PK_LEN);
+    EVP_PKEY *peer = EVP_PKEY_new_raw_public_key(EVP_PKEY_X25519, nullptr, peer_pk, X25519_PK_LEN);
     if (!my || !peer) {
         EVP_PKEY_free(my);
         EVP_PKEY_free(peer);
@@ -53,9 +51,8 @@ static bool x25519_derive(const uint8_t sk[X25519_SK_LEN],
     }
     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(my, nullptr);
     size_t len = X25519_SS_LEN;
-    bool ok = ctx && EVP_PKEY_derive_init(ctx) == 1 &&
-              EVP_PKEY_derive_set_peer(ctx, peer) == 1 && EVP_PKEY_derive(ctx, ss, &len) == 1 &&
-              len == X25519_SS_LEN;
+    bool ok = ctx && EVP_PKEY_derive_init(ctx) == 1 && EVP_PKEY_derive_set_peer(ctx, peer) == 1 &&
+              EVP_PKEY_derive(ctx, ss, &len) == 1 && len == X25519_SS_LEN;
     EVP_PKEY_CTX_free(ctx);
     EVP_PKEY_free(my);
     EVP_PKEY_free(peer);
@@ -71,8 +68,8 @@ static bool x25519_derive(const uint8_t sk[X25519_SK_LEN],
  * already encapsulates the OpenSSL EVP_KDF dance.
  */
 static bool combine(const uint8_t ss_x25519[X25519_SS_LEN],
-                    const uint8_t ss_mlkem[MLKEM768_SHARED_SECRET],
-                    const uint8_t *salt, size_t salt_len, uint8_t out[HYBRID_SS_LEN]) {
+                    const uint8_t ss_mlkem[MLKEM768_SHARED_SECRET], const uint8_t *salt,
+                    size_t salt_len, uint8_t out[HYBRID_SS_LEN]) {
     uint8_t ikm[X25519_SS_LEN + MLKEM768_SHARED_SECRET];
     std::memcpy(ikm, ss_x25519, X25519_SS_LEN);
     std::memcpy(ikm + X25519_SS_LEN, ss_mlkem, MLKEM768_SHARED_SECRET);
@@ -84,7 +81,9 @@ static bool combine(const uint8_t ss_x25519[X25519_SS_LEN],
 
 /* ── Public API ───────────────────────────────────────────────────────── */
 
-bool hybrid_available() { return pqc_available(); }
+bool hybrid_available() {
+    return pqc_available();
+}
 
 bool hybrid_keygen(uint8_t pk[HYBRID_PK_LEN], uint8_t sk[HYBRID_SK_LEN]) {
     if (!pqc_available()) {
@@ -113,8 +112,7 @@ bool hybrid_keygen(uint8_t pk[HYBRID_PK_LEN], uint8_t sk[HYBRID_SK_LEN]) {
 }
 
 bool hybrid_encapsulate(const uint8_t peer_pk[HYBRID_PK_LEN], const uint8_t *context,
-                        size_t context_len, uint8_t ct[HYBRID_CT_LEN],
-                        uint8_t ss[HYBRID_SS_LEN]) {
+                        size_t context_len, uint8_t ct[HYBRID_CT_LEN], uint8_t ss[HYBRID_SS_LEN]) {
     if (!pqc_available()) {
         errno = ENOTSUP;
         return false;
@@ -149,8 +147,7 @@ bool hybrid_encapsulate(const uint8_t peer_pk[HYBRID_PK_LEN], const uint8_t *con
 }
 
 bool hybrid_decapsulate(const uint8_t sk[HYBRID_SK_LEN], const uint8_t ct[HYBRID_CT_LEN],
-                        const uint8_t *context, size_t context_len,
-                        uint8_t ss[HYBRID_SS_LEN]) {
+                        const uint8_t *context, size_t context_len, uint8_t ss[HYBRID_SS_LEN]) {
     if (!pqc_available()) {
         errno = ENOTSUP;
         return false;

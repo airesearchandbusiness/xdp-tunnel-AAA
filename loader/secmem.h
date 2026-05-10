@@ -42,7 +42,7 @@ int const_time_eq(const void *a, const void *b, size_t n);
 
 /* Constant-time selection: returns a if cond == 0, b if cond == 1. cond
  * MUST be exactly 0 or 1 — larger values yield undefined output but no UB. */
-uint8_t  const_time_select_u8 (uint8_t cond, uint8_t  a, uint8_t  b);
+uint8_t const_time_select_u8(uint8_t cond, uint8_t a, uint8_t b);
 uint32_t const_time_select_u32(uint8_t cond, uint32_t a, uint32_t b);
 
 /* Constant-time conditional copy of n bytes from src into dst. */
@@ -73,23 +73,22 @@ void unlock_region(void *p, size_t n);
  * the buffer is inline (move would require copying then cleansing the source).
  * Use SecureBytes if you need heap allocation, mlock, or move semantics.
  */
-template <size_t N>
-class KeyBuf {
+template <size_t N> class KeyBuf {
   public:
     KeyBuf() noexcept { std::memset(buf_, 0, N); }
     ~KeyBuf() noexcept { secure_zero(buf_, N); }
 
-    KeyBuf(const KeyBuf &)            = delete;
+    KeyBuf(const KeyBuf &) = delete;
     KeyBuf &operator=(const KeyBuf &) = delete;
-    KeyBuf(KeyBuf &&)                 = delete;
-    KeyBuf &operator=(KeyBuf &&)      = delete;
+    KeyBuf(KeyBuf &&) = delete;
+    KeyBuf &operator=(KeyBuf &&) = delete;
 
-    uint8_t       *data() noexcept       { return buf_; }
+    uint8_t *data() noexcept { return buf_; }
     const uint8_t *data() const noexcept { return buf_; }
     constexpr size_t size() const noexcept { return N; }
 
     /* Implicit conversion to uint8_t* for direct use with C APIs */
-    operator uint8_t *() noexcept             { return buf_; }
+    operator uint8_t *() noexcept { return buf_; }
     operator const uint8_t *() const noexcept { return buf_; }
 
   private:
@@ -116,16 +115,16 @@ class SecureBytes {
 
     ~SecureBytes();
 
-    SecureBytes(const SecureBytes &)            = delete;
+    SecureBytes(const SecureBytes &) = delete;
     SecureBytes &operator=(const SecureBytes &) = delete;
 
     SecureBytes(SecureBytes &&other) noexcept;
     SecureBytes &operator=(SecureBytes &&other) noexcept;
 
-    uint8_t       *data() noexcept { return data_; }
+    uint8_t *data() noexcept { return data_; }
     const uint8_t *data() const noexcept { return data_; }
-    size_t         size() const noexcept { return size_; }
-    bool           empty() const noexcept { return size_ == 0; }
+    size_t size() const noexcept { return size_; }
+    bool empty() const noexcept { return size_ == 0; }
 
     /* Drop in-place: zero-wipe + release immediately, without waiting for
      * scope exit. Safe to call multiple times. */
@@ -135,9 +134,9 @@ class SecureBytes {
     void resize(size_t n);
 
   private:
-    uint8_t *data_   = nullptr;
-    size_t   size_   = 0;
-    bool     locked_ = false;
+    uint8_t *data_ = nullptr;
+    size_t size_ = 0;
+    bool locked_ = false;
 };
 
 } /* namespace tachyon::secmem */

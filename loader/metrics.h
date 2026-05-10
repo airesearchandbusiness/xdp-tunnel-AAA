@@ -92,8 +92,8 @@ struct userspace_stats;
 namespace tachyon {
 
 class MetricsExporter {
-public:
-    MetricsExporter()  = default;
+  public:
+    MetricsExporter() = default;
     ~MetricsExporter() { stop(); }
     MetricsExporter(const MetricsExporter &) = delete;
     MetricsExporter &operator=(const MetricsExporter &) = delete;
@@ -103,13 +103,13 @@ public:
     void update(const ::userspace_stats &stats, const std::string &tunnel_name);
     void poll(int max_clients = 4);
     std::string render() const;
-    bool     is_running() const { return listen_fd_ >= 0; }
-    uint16_t port()       const { return port_; }
+    bool is_running() const { return listen_fd_ >= 0; }
+    uint16_t port() const { return port_; }
 
-private:
+  private:
     void serve_client(int client_fd) const;
-    int         listen_fd_ = -1;
-    uint16_t    port_      = 0;
+    int listen_fd_ = -1;
+    uint16_t port_ = 0;
     std::string tunnel_name_;
     uint64_t snap_rx_packets = 0, snap_rx_bytes = 0;
     uint64_t snap_tx_packets = 0, snap_tx_bytes = 0;

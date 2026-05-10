@@ -25,11 +25,10 @@
 
 using namespace tachyon::pqc;
 
-#define SKIP_IF_UNAVAILABLE()                                      \
-    do {                                                           \
-        if (!pqc_available())                                      \
-            GTEST_SKIP() << "PQC backend unavailable: "            \
-                         << pqc_backend();                         \
+#define SKIP_IF_UNAVAILABLE()                                                                      \
+    do {                                                                                           \
+        if (!pqc_available())                                                                      \
+            GTEST_SKIP() << "PQC backend unavailable: " << pqc_backend();                          \
     } while (0)
 
 TEST(Pqc, BackendStringNonNull) {

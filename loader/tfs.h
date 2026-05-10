@@ -42,10 +42,10 @@
 namespace tachyon {
 
 class TFSController {
-public:
-    static constexpr uint16_t kMinPktLen  = 64;
-    static constexpr uint16_t kMaxPktLen  = 1500;
-    static constexpr uint32_t kMaxPps     = 100'000; /* safety cap */
+  public:
+    static constexpr uint16_t kMinPktLen = 64;
+    static constexpr uint16_t kMaxPktLen = 1500;
+    static constexpr uint32_t kMaxPps = 100'000; /* safety cap */
 
     /* pps: packets per second (0 = disabled). pkt_len: fixed output size. */
     explicit TFSController(uint32_t pps = 0, uint16_t pkt_len = 1400) {
@@ -59,8 +59,7 @@ public:
      * into multiple fixed-size slots transparently. */
     void enqueue(const uint8_t *data, size_t len) {
         while (len > 0) {
-            const size_t chunk =
-                std::min(len, static_cast<size_t>(pkt_len_));
+            const size_t chunk = std::min(len, static_cast<size_t>(pkt_len_));
 
             Slot s;
             s.data.assign(data, data + chunk);
@@ -68,13 +67,11 @@ public:
             queue_.push(std::move(s));
 
             data += chunk;
-            len  -= chunk;
+            len -= chunk;
         }
     }
 
-    void enqueue(const std::vector<uint8_t> &data) {
-        enqueue(data.data(), data.size());
-    }
+    void enqueue(const std::vector<uint8_t> &data) { enqueue(data.data(), data.size()); }
 
     /* ── Emit ────────────────────────────────────────────────────────── */
 
@@ -122,32 +119,34 @@ public:
     void set_rate(uint32_t pps) {
         if (pps > kMaxPps)
             pps = kMaxPps;
-        target_pps_  = pps;
+        target_pps_ = pps;
         interval_us_ = (pps > 0) ? (1'000'000ULL / pps) : 0;
         next_send_us_ = 0; /* re-anchor schedule on rate change */
     }
 
     void set_pkt_len(uint16_t len) {
-        if (len < kMinPktLen)  len = kMinPktLen;
-        if (len > kMaxPktLen)  len = kMaxPktLen;
+        if (len < kMinPktLen)
+            len = kMinPktLen;
+        if (len > kMaxPktLen)
+            len = kMaxPktLen;
         pkt_len_ = len;
     }
 
     /* ── Introspection ───────────────────────────────────────────────── */
 
-    uint32_t target_pps()   const { return target_pps_; }
-    uint16_t pkt_len()      const { return pkt_len_; }
-    uint64_t interval_us()  const { return interval_us_; }
-    size_t   queue_depth()  const { return queue_.size(); }
-    uint64_t total_sent()   const { return total_sent_; }
-    uint64_t dummy_count()  const { return dummy_count_; }
-    bool     enabled()      const { return interval_us_ > 0; }
+    uint32_t target_pps() const { return target_pps_; }
+    uint16_t pkt_len() const { return pkt_len_; }
+    uint64_t interval_us() const { return interval_us_; }
+    size_t queue_depth() const { return queue_.size(); }
+    uint64_t total_sent() const { return total_sent_; }
+    uint64_t dummy_count() const { return dummy_count_; }
+    bool enabled() const { return interval_us_ > 0; }
 
     /* Fraction of sent packets that were dummies (0.0–1.0). */
     double dummy_ratio() const {
-        if (total_sent_ == 0) return 0.0;
-        return static_cast<double>(dummy_count_) /
-               static_cast<double>(total_sent_);
+        if (total_sent_ == 0)
+            return 0.0;
+        return static_cast<double>(dummy_count_) / static_cast<double>(total_sent_);
     }
 
     /* Drop all queued real data (e.g., on shutdown or path change). */
@@ -156,7 +155,7 @@ public:
         queue_.swap(empty);
     }
 
-private:
+  private:
     struct Slot {
         std::vector<uint8_t> data;
         bool is_dummy = false;
@@ -165,19 +164,18 @@ private:
     /* Pad or truncate `data` to exactly pkt_len_ bytes. */
     std::vector<uint8_t> pad_to_len(const std::vector<uint8_t> &data) const {
         std::vector<uint8_t> out(pkt_len_, 0x00);
-        const size_t copy_len =
-            std::min(data.size(), static_cast<size_t>(pkt_len_));
+        const size_t copy_len = std::min(data.size(), static_cast<size_t>(pkt_len_));
         if (copy_len > 0)
             std::memcpy(out.data(), data.data(), copy_len);
         return out;
     }
 
-    uint16_t pkt_len_      = 1400;
-    uint32_t target_pps_   = 0;
-    uint64_t interval_us_  = 0;   /* µs per packet (1e6 / pps) */
-    uint64_t next_send_us_ = 0;   /* next scheduled emit time  */
-    uint64_t total_sent_   = 0;
-    uint64_t dummy_count_  = 0;
+    uint16_t pkt_len_ = 1400;
+    uint32_t target_pps_ = 0;
+    uint64_t interval_us_ = 0;  /* µs per packet (1e6 / pps) */
+    uint64_t next_send_us_ = 0; /* next scheduled emit time  */
+    uint64_t total_sent_ = 0;
+    uint64_t dummy_count_ = 0;
 
     std::queue<Slot> queue_;
 };

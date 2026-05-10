@@ -37,31 +37,30 @@
 
 namespace tachyon::quic_mimic {
 
-constexpr uint32_t QUIC_V1           = 0x00000001;
-constexpr size_t   QUIC_MIN_INITIAL  = 1200;
-constexpr size_t   QUIC_HEADER_MAX   = 54;  /* worst-case header before payload */
-constexpr size_t   QUIC_MAX_PAYLOAD  = 1350; /* safe for most MTUs */
+constexpr uint32_t QUIC_V1 = 0x00000001;
+constexpr size_t QUIC_MIN_INITIAL = 1200;
+constexpr size_t QUIC_HEADER_MAX = 54;    /* worst-case header before payload */
+constexpr size_t QUIC_MAX_PAYLOAD = 1350; /* safe for most MTUs */
 
 /* Register with the transport framework. Called once at startup. */
 void register_transport();
 
 /* Low-level — build a QUIC Initial long header into `out`.
  * Returns bytes written (header only, before payload). */
-size_t build_initial_header(uint8_t *out, size_t cap,
-                            const uint8_t *dcid, uint8_t dcid_len,
-                            const uint8_t *scid, uint8_t scid_len,
-                            uint32_t pkt_num, size_t payload_len);
+size_t build_initial_header(uint8_t *out, size_t cap, const uint8_t *dcid, uint8_t dcid_len,
+                            const uint8_t *scid, uint8_t scid_len, uint32_t pkt_num,
+                            size_t payload_len);
 
 /* Parse just the DCID/SCID and payload offset from a received frame. */
 struct ParseResult {
-    bool     ok;
-    uint8_t  dcid[20];
-    uint8_t  dcid_len;
-    uint8_t  scid[20];
-    uint8_t  scid_len;
+    bool ok;
+    uint8_t dcid[20];
+    uint8_t dcid_len;
+    uint8_t scid[20];
+    uint8_t scid_len;
     uint32_t pkt_num;
-    size_t   payload_offset;
-    size_t   payload_len;
+    size_t payload_offset;
+    size_t payload_len;
 };
 ParseResult parse_initial_header(const uint8_t *buf, size_t len);
 

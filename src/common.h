@@ -42,7 +42,7 @@ typedef int32_t __s32;
 /* ──────────────────────────────────────────────────────────────────────────
  * Protocol Version & Identity
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_PROTO_VERSION 5 /* AKE v5.0 "Ghost-PQ"           */
+#define TACHYON_PROTO_VERSION 5    /* AKE v5.0 "Ghost-PQ"           */
 #define TACHYON_PROTO_VERSION_V4 4 /* Legacy v4 for compat flag   */
 #define TACHYON_MODULE_NAME "tachyon-crypto"
 
@@ -166,10 +166,10 @@ typedef int32_t __s32;
  * Used in tachyon_key_init.cipher_type to select the AEAD algorithm for the
  * kernel crypto module. Kernel module support: kmod/mod.c bpf_ghost_set_cipher().
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_CIPHER_CHACHA20  0 /* ChaCha20-Poly1305 (default, universal) */
+#define TACHYON_CIPHER_CHACHA20 0  /* ChaCha20-Poly1305 (default, universal) */
 #define TACHYON_CIPHER_AES128GCM 1 /* AES-128-GCM (AES-NI accelerated)      */
 #define TACHYON_CIPHER_AES256GCM 2 /* AES-256-GCM (AES-NI accelerated)      */
-#define TACHYON_CIPHER_MAX       2 /* Highest valid cipher type             */
+#define TACHYON_CIPHER_MAX 2       /* Highest valid cipher type             */
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Control Plane Packet Types
@@ -177,11 +177,11 @@ typedef int32_t __s32;
  * Identified by the high nibble 0xC0 in the quic_flags field.
  * The XDP RX path uses (flags & 0xF0) == 0xC0 to route to userspace.
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_PKT_INIT 0xC0      /* Handshake initiation           */
-#define TACHYON_PKT_COOKIE 0xC1    /* Stateless cookie response      */
-#define TACHYON_PKT_AUTH 0xC2      /* Authenticated key exchange      */
-#define TACHYON_PKT_FINISH 0xC3    /* Handshake completion           */
-#define TACHYON_PKT_KEEPALIVE 0xC4 /* Encrypted keepalive            */
+#define TACHYON_PKT_INIT 0xC0       /* Handshake initiation           */
+#define TACHYON_PKT_COOKIE 0xC1     /* Stateless cookie response      */
+#define TACHYON_PKT_AUTH 0xC2       /* Authenticated key exchange      */
+#define TACHYON_PKT_FINISH 0xC3     /* Handshake completion           */
+#define TACHYON_PKT_KEEPALIVE 0xC4  /* Encrypted keepalive            */
 #define TACHYON_PKT_CIPHER_NEG 0xC5 /* Mid-session cipher renegotiation proposal  */
 #define TACHYON_PKT_CIPHER_ACK 0xC6 /* Cipher renegotiation acknowledgment        */
 
@@ -273,10 +273,10 @@ struct tachyon_session {
 /* Staging structure for key injection via BPF syscall program */
 struct tachyon_key_init {
     __u32 session_id;
-    __u8  tx_key[TACHYON_AEAD_KEY_LEN];
-    __u8  rx_key[TACHYON_AEAD_KEY_LEN];
-    __u8  cipher_type;   /* TACHYON_CIPHER_* to activate via bpf_ghost_set_cipher() */
-    __u8  _reserved[3];
+    __u8 tx_key[TACHYON_AEAD_KEY_LEN];
+    __u8 rx_key[TACHYON_AEAD_KEY_LEN];
+    __u8 cipher_type; /* TACHYON_CIPHER_* to activate via bpf_ghost_set_cipher() */
+    __u8 _reserved[3];
 };
 
 /* Per-CPU packet statistics */
@@ -386,13 +386,13 @@ struct tachyon_msg_keepalive {
  * replayed proposals. The responding peer echoes it in PKT_CIPHER_ACK.
  */
 struct tachyon_msg_cipher_neg {
-    __u8  flags;           /* TACHYON_PKT_CIPHER_NEG         */
-    __u8  proposed_cipher; /* TACHYON_CIPHER_*               */
-    __u8  epoch;           /* Monotone proposal counter      */
-    __u8  _pad;
+    __u8 flags;           /* TACHYON_PKT_CIPHER_NEG         */
+    __u8 proposed_cipher; /* TACHYON_CIPHER_*               */
+    __u8 epoch;           /* Monotone proposal counter      */
+    __u8 _pad;
     __u32 session_id;
-    __u64 nonce;           /* Random nonce, echoed in ACK    */
-    __u8  mac[4];          /* Truncated HMAC-SHA256          */
+    __u64 nonce; /* Random nonce, echoed in ACK    */
+    __u8 mac[4]; /* Truncated HMAC-SHA256          */
 } __attribute__((packed));
 
 /*
@@ -404,13 +404,13 @@ struct tachyon_msg_cipher_neg {
  * after the next successful data packet following the ACK.
  */
 struct tachyon_msg_cipher_ack {
-    __u8  flags;           /* TACHYON_PKT_CIPHER_ACK         */
-    __u8  selected_cipher; /* Final agreed cipher            */
-    __u8  epoch;           /* Echo of proposal epoch         */
-    __u8  _pad;
+    __u8 flags;           /* TACHYON_PKT_CIPHER_ACK         */
+    __u8 selected_cipher; /* Final agreed cipher            */
+    __u8 epoch;           /* Echo of proposal epoch         */
+    __u8 _pad;
     __u32 session_id;
-    __u64 nonce;           /* Echo of proposal nonce         */
-    __u8  mac[4];          /* Truncated HMAC-SHA256          */
+    __u64 nonce; /* Echo of proposal nonce         */
+    __u8 mac[4]; /* Truncated HMAC-SHA256          */
 } __attribute__((packed));
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -430,64 +430,64 @@ struct tachyon_msg_cipher_ack {
  *   MsgDataV5   = 28 bytes hdr (flags1 + transport1 + session_id4 + seq8 +
  *                                nonce_salt4 + ratchet_ctr8 + pad2)
  * ────────────────────────────────────────────────────────────────────────── */
-#define TACHYON_V5_MAGIC     0x54434835 /* "TCH5" in big-endian       */
-#define TACHYON_V4_MAGIC     0x54434834 /* "TCH4" for compat detect   */
+#define TACHYON_V5_MAGIC 0x54434835 /* "TCH5" in big-endian       */
+#define TACHYON_V4_MAGIC 0x54434834 /* "TCH4" for compat detect   */
 
 /* v5 handshake flags (bit field in MsgInitV5.flags) */
-#define TACHYON_V5_FLAG_PQ_HYBRID   0x01 /* ML-KEM-768 present in pk  */
-#define TACHYON_V5_FLAG_CLASSICAL   0x02 /* X25519-only (fallback)    */
-#define TACHYON_V5_FLAG_REKEY       0x04 /* Rekey of existing session */
-#define TACHYON_V5_FLAG_TRANSPORT   0x08 /* Transport ID negotiation  */
+#define TACHYON_V5_FLAG_PQ_HYBRID 0x01 /* ML-KEM-768 present in pk  */
+#define TACHYON_V5_FLAG_CLASSICAL 0x02 /* X25519-only (fallback)    */
+#define TACHYON_V5_FLAG_REKEY 0x04     /* Rekey of existing session */
+#define TACHYON_V5_FLAG_TRANSPORT 0x08 /* Transport ID negotiation  */
 
 /* ML-KEM-768 sizes (FIPS 203) */
-#define TACHYON_MLKEM768_PK_LEN   1184
-#define TACHYON_MLKEM768_SK_LEN   2400
-#define TACHYON_MLKEM768_CT_LEN   1088
-#define TACHYON_MLKEM768_SS_LEN   32
+#define TACHYON_MLKEM768_PK_LEN 1184
+#define TACHYON_MLKEM768_SK_LEN 2400
+#define TACHYON_MLKEM768_CT_LEN 1088
+#define TACHYON_MLKEM768_SS_LEN 32
 
 /* HKDF-SHA384 PRK width for the v5 combiner */
-#define TACHYON_V5_PRK_LEN        48
+#define TACHYON_V5_PRK_LEN 48
 
 /* v5 KDF labels */
 #define TACHYON_V5_KDF_LABEL_MASTER "tch5 master v5"
 #define TACHYON_V5_KDF_LABEL_TX_KEY "tch5 tx-key"
 #define TACHYON_V5_KDF_LABEL_RX_KEY "tch5 rx-key"
-#define TACHYON_V5_KDF_LABEL_MAC    "tch5 mac-key"
+#define TACHYON_V5_KDF_LABEL_MAC "tch5 mac-key"
 
 /* PKT_INIT v5: Hybrid handshake initiation (1260 bytes) */
 struct tachyon_msg_init_v5 {
-    __u32 magic;           /* TACHYON_V5_MAGIC               */
-    __u8  version;         /* 5                              */
-    __u8  flags;           /* TACHYON_V5_FLAG_*              */
-    __u8  transport_id;    /* Preferred transport (TransportId) */
-    __u8  _reserved;
-    __u8  client_x25519_pk[32];
-    __u8  client_mlkem768_pk[1184];
-    __u8  nonce[16];
-    __u8  timestamp_be[8]; /* Milliseconds since epoch, BE   */
-    __u8  cookie[16];      /* 0 for initial, echoed on retry */
+    __u32 magic;       /* TACHYON_V5_MAGIC               */
+    __u8 version;      /* 5                              */
+    __u8 flags;        /* TACHYON_V5_FLAG_*              */
+    __u8 transport_id; /* Preferred transport (TransportId) */
+    __u8 _reserved;
+    __u8 client_x25519_pk[32];
+    __u8 client_mlkem768_pk[1184];
+    __u8 nonce[16];
+    __u8 timestamp_be[8]; /* Milliseconds since epoch, BE   */
+    __u8 cookie[16];      /* 0 for initial, echoed on retry */
 } __attribute__((packed));
 
 /* PKT_COOKIE v5: Server's KEM ciphertext + cookie (1168 bytes) */
 struct tachyon_msg_cookie_v5 {
-    __u32 magic;            /* TACHYON_V5_MAGIC              */
-    __u8  server_x25519_pk[32];
-    __u8  mlkem768_ct[1088]; /* Server encaps to client's KEM pk */
-    __u8  transport_id;     /* Server's accepted transport    */
-    __u8  _reserved[3];
-    __u8  cookie[16];       /* HMAC(cookie_secret, ...)       */
-    __u8  hmac[32];         /* HMAC-SHA256 over preceding     */
+    __u32 magic; /* TACHYON_V5_MAGIC              */
+    __u8 server_x25519_pk[32];
+    __u8 mlkem768_ct[1088]; /* Server encaps to client's KEM pk */
+    __u8 transport_id;      /* Server's accepted transport    */
+    __u8 _reserved[3];
+    __u8 cookie[16]; /* HMAC(cookie_secret, ...)       */
+    __u8 hmac[32];   /* HMAC-SHA256 over preceding     */
 } __attribute__((packed));
 
 /* Data-plane header for v5 (28 bytes, replaces ghost_hdr for v5 sessions) */
 struct tachyon_data_hdr_v5 {
-    __u8  flags;           /* High nibble = type; low = transport */
-    __u8  transport_id;    /* Active transport (for outer framing) */
+    __u8 flags;        /* High nibble = type; low = transport */
+    __u8 transport_id; /* Active transport (for outer framing) */
     __u16 _reserved;
-    __u32 session_id;      /* Network byte order              */
-    __u64 seq;             /* Per-CPU partitioned sequence     */
-    __u32 nonce_salt;      /* Per-packet IV component          */
-    __u64 ratchet_ctr;     /* Forward-secrecy ratchet counter  */
+    __u32 session_id;  /* Network byte order              */
+    __u64 seq;         /* Per-CPU partitioned sequence     */
+    __u32 nonce_salt;  /* Per-packet IV component          */
+    __u64 ratchet_ctr; /* Forward-secrecy ratchet counter  */
 } __attribute__((packed));
 
 /* ──────────────────────────────────────────────────────────────────────────

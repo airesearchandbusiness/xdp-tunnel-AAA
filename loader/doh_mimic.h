@@ -33,23 +33,22 @@
 
 namespace tachyon::doh_mimic {
 
-constexpr size_t DNS_HEADER_LEN     = 12;
-constexpr size_t DOH_MAX_PAYLOAD    = 4096; /* keep under typical MTU × 3 */
-constexpr size_t DOH_OVERHEAD       = 64;   /* header + question + answer header */
+constexpr size_t DNS_HEADER_LEN = 12;
+constexpr size_t DOH_MAX_PAYLOAD = 4096; /* keep under typical MTU × 3 */
+constexpr size_t DOH_OVERHEAD = 64;      /* header + question + answer header */
 
 void register_transport();
 
 /* Build a DNS query message wrapping `payload` as a TXT record
  * in the answer section. `qname` is the query domain (label-encoded).
  * Returns total bytes written. */
-size_t build_dns_message(uint8_t *out, size_t cap, uint16_t txn_id,
-                         const char *qname,
+size_t build_dns_message(uint8_t *out, size_t cap, uint16_t txn_id, const char *qname,
                          const uint8_t *payload, size_t payload_len);
 
 /* Parse a DNS message, extract the TXT record payload.
  * Returns the length of the extracted payload. */
 struct DnsParseResult {
-    bool   ok;
+    bool ok;
     size_t payload_offset;
     size_t payload_len;
 };

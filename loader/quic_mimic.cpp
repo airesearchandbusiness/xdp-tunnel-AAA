@@ -35,7 +35,7 @@ static size_t varint_decode(const uint8_t *buf, size_t len, uint64_t *out) {
     if (len == 0)
         return 0;
     const uint8_t prefix = buf[0] >> 6;
-    const size_t  width  = 1u << prefix;
+    const size_t width = 1u << prefix;
     if (len < width)
         return 0;
     uint64_t val = buf[0] & 0x3F;
@@ -45,22 +45,30 @@ static size_t varint_decode(const uint8_t *buf, size_t len, uint64_t *out) {
     return width;
 }
 
-/* ── Header builder ───────────────────────────────────────────────── */
+/* ── Header builder ───────────────────────────────────────────── */
 
-size_t build_initial_header(uint8_t *out, size_t cap,
-                            const uint8_t *dcid, uint8_t dcid_len,
-                            const uint8_t *scid, uint8_t scid_len,
-                            uint32_t pkt_num, size_t payload_len) {
+size_t build_initial_header(uint8_t *out, size_t cap, const uint8_t *dcid, uint8_t dcid_len,
+                            const uint8_t *scid, uint8_t scid_len, uint32_t pkt_num,
+                            size_t payload_len) {
     if (dcid_len > 20 || scid_len > 20)
         return 0;
 
     /* Determine packet-number length (1–4 bytes) */
     uint8_t pn_len_field;
-    size_t  pn_bytes;
-    if (pkt_num <= 0xFF)           { pn_len_field = 0; pn_bytes = 1; }
-    else if (pkt_num <= 0xFFFF)    { pn_len_field = 1; pn_bytes = 2; }
-    else if (pkt_num <= 0xFFFFFF)  { pn_len_field = 2; pn_bytes = 3; }
-    else                           { pn_len_field = 3; pn_bytes = 4; }
+    size_t pn_bytes;
+    if (pkt_num <= 0xFF) {
+        pn_len_field = 0;
+        pn_bytes = 1;
+    } else if (pkt_num <= 0xFFFF) {
+        pn_len_field = 1;
+        pn_bytes = 2;
+    } else if (pkt_num <= 0xFFFFFF) {
+        pn_len_field = 2;
+        pn_bytes = 3;
+    } else {
+        pn_len_field = 3;
+        pn_bytes = 4;
+    }
 
     /* Token Length = 0 for client Initial */
     uint8_t token_vi[1] = {0};
@@ -70,8 +78,8 @@ size_t build_initial_header(uint8_t *out, size_t cap,
     uint8_t pl_vi[8];
     const size_t pl_vi_len = varint_encode(pl_vi, pn_bytes + payload_len);
 
-    const size_t hdr_len = 1 + 4 + 1 + dcid_len + 1 + scid_len + token_vi_len +
-                           pl_vi_len + pn_bytes;
+    const size_t hdr_len =
+        1 + 4 + 1 + dcid_len + 1 + scid_len + token_vi_len + pl_vi_len + pn_bytes;
     if (hdr_len > cap)
         return 0;
 
@@ -131,38 +139,44 @@ ParseResult parse_initial_header(const uint8_t *buf, size_t len) {
     if (buf[1] != 0x00 || buf[2] != 0x00 || buf[3] != 0x00 || buf[4] != 0x01)
         return r;
 
-    size_t off = 5;
+    size_t off = 5; /* len >= 7 guaranteed by the guard above */
 
     /* DCID */
-    if (off >= len) return r;
     r.dcid_len = buf[off++];
-    if (r.dcid_len > 20 || off + r.dcid_len > len) return r;
+    if (r.dcid_len > 20 || off + r.dcid_len > len)
+        return r;
     std::memcpy(r.dcid, buf + off, r.dcid_len);
     off += r.dcid_len;
 
     /* SCID */
-    if (off >= len) return r;
+    if (off >= len)
+        return r;
     r.scid_len = buf[off++];
-    if (r.scid_len > 20 || off + r.scid_len > len) return r;
+    if (r.scid_len > 20 || off + r.scid_len > len)
+        return r;
     std::memcpy(r.scid, buf + off, r.scid_len);
     off += r.scid_len;
 
     /* Token Length */
     uint64_t token_len;
     const size_t tl = varint_decode(buf + off, len - off, &token_len);
-    if (tl == 0) return r;
+    if (tl == 0)
+        return r;
     off += tl;
-    if (off + token_len > len) return r;
+    if (off + token_len > len)
+        return r;
     off += static_cast<size_t>(token_len);
 
     /* Payload Length */
     uint64_t payload_with_pn;
     const size_t pl = varint_decode(buf + off, len - off, &payload_with_pn);
-    if (pl == 0) return r;
+    if (pl == 0)
+        return r;
     off += pl;
 
     /* Packet Number */
-    if (off + pn_bytes > len) return r;
+    if (off + pn_bytes > len)
+        return r;
     r.pkt_num = 0;
     for (size_t i = 0; i < pn_bytes; ++i)
         r.pkt_num = (r.pkt_num << 8) | buf[off + i];
@@ -180,18 +194,17 @@ ParseResult parse_initial_header(const uint8_t *buf, size_t len) {
     return r;
 }
 
-/* ── Transport engine ─────────────────────────────────────────────── */
+/* ── Transport engine ─────────────────────────────────────────── */
 
-static tachyon::transport::FrameResult
-quic_wrap(const uint8_t *payload, size_t payload_len,
-          uint8_t *out, size_t out_cap,
-          const tachyon::transport::FrameContext *ctx) {
+static tachyon::transport::FrameResult quic_wrap(const uint8_t *payload, size_t payload_len,
+                                                 uint8_t *out, size_t out_cap,
+                                                 const tachyon::transport::FrameContext *ctx) {
     using tachyon::transport::FrameResult;
     if (!payload || !out || !ctx)
         return {0, false};
 
-    const size_t hdr = build_initial_header(out, out_cap, ctx->conn_id, ctx->conn_id_len,
-                                            nullptr, 0, ctx->seq, payload_len);
+    const size_t hdr = build_initial_header(out, out_cap, ctx->conn_id, ctx->conn_id_len, nullptr,
+                                            0, ctx->seq, payload_len);
     if (hdr == 0)
         return {0, false};
 
@@ -210,8 +223,8 @@ quic_wrap(const uint8_t *payload, size_t payload_len,
     return {total, true};
 }
 
-static tachyon::transport::FrameResult
-quic_unwrap(const uint8_t *frame, size_t frame_len, uint8_t *out, size_t out_cap) {
+static tachyon::transport::FrameResult quic_unwrap(const uint8_t *frame, size_t frame_len,
+                                                   uint8_t *out, size_t out_cap) {
     using tachyon::transport::FrameResult;
     const auto r = parse_initial_header(frame, frame_len);
     if (!r.ok)
@@ -223,11 +236,15 @@ quic_unwrap(const uint8_t *frame, size_t frame_len, uint8_t *out, size_t out_cap
 }
 
 static int quic_score(const tachyon::transport::EnvProfile &env) {
-    if (!env.udp) return 0; /* QUIC is UDP only */
+    if (!env.udp)
+        return 0; /* QUIC is UDP only */
     int s = 60;
-    if (env.port == 443) s += 20;
-    if (env.region == tachyon::transport::RegionHint::RESTRICTIVE) s -= 15;
-    if (env.bandwidth == tachyon::transport::BandwidthTier::LOW) s -= 10;
+    if (env.port == 443)
+        s += 20;
+    if (env.region == tachyon::transport::RegionHint::RESTRICTIVE)
+        s -= 15;
+    if (env.bandwidth == tachyon::transport::BandwidthTier::LOW)
+        s -= 10;
     return s > 0 ? s : 1;
 }
 
@@ -241,6 +258,8 @@ static const tachyon::transport::TransportOps quic_ops = {
     quic_score,
 };
 
-void register_transport() { tachyon::transport::transport_register(&quic_ops); }
+void register_transport() {
+    tachyon::transport::transport_register(&quic_ops);
+}
 
 } /* namespace tachyon::quic_mimic */

@@ -76,10 +76,10 @@ TEST_F(TransportSetup, ListReturnsAll) {
 
 TEST_F(TransportSetup, AutoSelectPicksSomething) {
     EnvProfile env;
-    env.port      = 443;
-    env.udp       = true;
+    env.port = 443;
+    env.udp = true;
     env.bandwidth = BandwidthTier::MEDIUM;
-    env.region    = RegionHint::OPEN;
+    env.region = RegionHint::OPEN;
     const TransportId id = transport_auto_select(env);
     EXPECT_NE(id, TransportId::NONE);
     EXPECT_NE(id, TransportId::AUTO);
@@ -87,20 +87,20 @@ TEST_F(TransportSetup, AutoSelectPicksSomething) {
 
 TEST_F(TransportSetup, AutoSelectPrefersHttp2ForTcpRestrictive) {
     EnvProfile env;
-    env.port      = 443;
-    env.udp       = false; /* TCP-only */
+    env.port = 443;
+    env.udp = false; /* TCP-only */
     env.bandwidth = BandwidthTier::HIGH;
-    env.region    = RegionHint::RESTRICTIVE;
+    env.region = RegionHint::RESTRICTIVE;
     const TransportId id = transport_auto_select(env);
     EXPECT_EQ(id, TransportId::HTTP2);
 }
 
 TEST_F(TransportSetup, AutoSelectPrefersStunOnStunPort) {
     EnvProfile env;
-    env.port      = 3478;
-    env.udp       = true;
+    env.port = 3478;
+    env.udp = true;
     env.bandwidth = BandwidthTier::MEDIUM;
-    env.region    = RegionHint::MODERATE;
+    env.region = RegionHint::MODERATE;
     const TransportId id = transport_auto_select(env);
     EXPECT_EQ(id, TransportId::STUN);
 }
@@ -132,8 +132,8 @@ TEST_F(TransportSetup, QuicDcidScidRoundTrip) {
     uint8_t buf[256];
     const uint8_t dcid[8] = {0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33, 0x44};
     const uint8_t scid[4] = {0x55, 0x66, 0x77, 0x88};
-    const size_t n = tachyon::quic_mimic::build_initial_header(buf, sizeof(buf), dcid, 8, scid, 4,
-                                                               42, 200);
+    const size_t n =
+        tachyon::quic_mimic::build_initial_header(buf, sizeof(buf), dcid, 8, scid, 4, 42, 200);
     ASSERT_GT(n, 0u);
     const auto r = tachyon::quic_mimic::parse_initial_header(buf, n + 200);
     ASSERT_TRUE(r.ok);
@@ -151,18 +151,18 @@ TEST_F(TransportSetup, QuicWrapUnwrapRoundTrip) {
 
     uint8_t frame[2048] = {};
     FrameContext ctx{};
-    ctx.conn_id[0]  = 0xDE;
+    ctx.conn_id[0] = 0xDE;
     ctx.conn_id_len = 1;
-    ctx.seq         = 7;
+    ctx.seq = 7;
 
-    const auto wr = transport_wrap(TransportId::QUIC, payload, sizeof(payload),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::QUIC, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
     EXPECT_GE(wr.bytes, tachyon::quic_mimic::QUIC_MIN_INITIAL);
 
     uint8_t recovered[2048] = {};
-    const auto ur = transport_unwrap(TransportId::QUIC, frame, wr.bytes,
-                                     recovered, sizeof(recovered));
+    const auto ur =
+        transport_unwrap(TransportId::QUIC, frame, wr.bytes, recovered, sizeof(recovered));
     ASSERT_TRUE(ur.ok);
     EXPECT_EQ(ur.bytes, sizeof(payload));
     EXPECT_EQ(std::memcmp(recovered, payload, sizeof(payload)), 0);
@@ -174,8 +174,8 @@ TEST_F(TransportSetup, QuicMinimum1200Bytes) {
     FrameContext ctx{};
     ctx.conn_id_len = 0;
     ctx.seq = 0;
-    const auto wr = transport_wrap(TransportId::QUIC, small, sizeof(small),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::QUIC, small, sizeof(small), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
     EXPECT_GE(wr.bytes, tachyon::quic_mimic::QUIC_MIN_INITIAL);
 }
@@ -209,16 +209,15 @@ TEST_F(TransportSetup, Http2DataFrameRoundTrip) {
     for (size_t i = 0; i < sizeof(payload); ++i)
         payload[i] = static_cast<uint8_t>(i);
     uint8_t frame[128];
-    const size_t n = tachyon::http2_mimic::build_data_frame(frame, sizeof(frame), payload,
-                                                            sizeof(payload), 1);
+    const size_t n =
+        tachyon::http2_mimic::build_data_frame(frame, sizeof(frame), payload, sizeof(payload), 1);
     ASSERT_EQ(n, tachyon::http2_mimic::H2_FRAME_HEADER + sizeof(payload));
 
     const auto h = tachyon::http2_mimic::parse_frame_header(frame, n);
     ASSERT_TRUE(h.ok);
     EXPECT_EQ(h.type, tachyon::http2_mimic::H2_DATA);
     EXPECT_EQ(h.length, sizeof(payload));
-    EXPECT_EQ(std::memcmp(frame + tachyon::http2_mimic::H2_FRAME_HEADER, payload,
-                          sizeof(payload)),
+    EXPECT_EQ(std::memcmp(frame + tachyon::http2_mimic::H2_FRAME_HEADER, payload, sizeof(payload)),
               0);
 }
 
@@ -230,17 +229,17 @@ TEST_F(TransportSetup, Http2WrapUnwrapRoundTrip) {
     uint8_t frame[2048] = {};
     FrameContext ctx{};
     ctx.stream_id = 1;
-    ctx.seq       = 0; /* first frame: preface + headers + data */
-    ctx.sni       = "cdn.example.com";
+    ctx.seq = 0; /* first frame: preface + headers + data */
+    ctx.sni = "cdn.example.com";
 
-    const auto wr = transport_wrap(TransportId::HTTP2, payload, sizeof(payload),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::HTTP2, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
     EXPECT_GT(wr.bytes, sizeof(payload) + 50u); /* preface + headers + frame header */
 
     uint8_t recovered[2048] = {};
-    const auto ur = transport_unwrap(TransportId::HTTP2, frame, wr.bytes,
-                                     recovered, sizeof(recovered));
+    const auto ur =
+        transport_unwrap(TransportId::HTTP2, frame, wr.bytes, recovered, sizeof(recovered));
     ASSERT_TRUE(ur.ok);
     EXPECT_EQ(ur.bytes, sizeof(payload));
     EXPECT_EQ(std::memcmp(recovered, payload, sizeof(payload)), 0);
@@ -251,10 +250,10 @@ TEST_F(TransportSetup, Http2SubsequentFrameIsDataOnly) {
     uint8_t frame[256] = {};
     FrameContext ctx{};
     ctx.stream_id = 1;
-    ctx.seq       = 5; /* not first frame */
+    ctx.seq = 5; /* not first frame */
 
-    const auto wr = transport_wrap(TransportId::HTTP2, payload, sizeof(payload),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::HTTP2, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
     /* Subsequent frame = exactly 9-byte header + payload */
     EXPECT_EQ(wr.bytes, tachyon::http2_mimic::H2_FRAME_HEADER + sizeof(payload));
@@ -299,14 +298,14 @@ TEST_F(TransportSetup, DohWrapUnwrapRoundTrip) {
     ctx.seq = 42;
     ctx.sni = "cloudflare-dns.com";
 
-    const auto wr = transport_wrap(TransportId::DOH, payload, sizeof(payload),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::DOH, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
     EXPECT_GT(wr.bytes, sizeof(payload));
 
     uint8_t recovered[2048] = {};
-    const auto ur = transport_unwrap(TransportId::DOH, frame, wr.bytes,
-                                     recovered, sizeof(recovered));
+    const auto ur =
+        transport_unwrap(TransportId::DOH, frame, wr.bytes, recovered, sizeof(recovered));
     ASSERT_TRUE(ur.ok);
     EXPECT_EQ(ur.bytes, sizeof(payload));
     EXPECT_EQ(std::memcmp(recovered, payload, sizeof(payload)), 0);
@@ -325,13 +324,13 @@ TEST_F(TransportSetup, DohLargePayloadSegmentation) {
     ctx.seq = 1;
     ctx.sni = "dns.google";
 
-    const auto wr = transport_wrap(TransportId::DOH, payload, sizeof(payload),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::DOH, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
 
     uint8_t recovered[2048] = {};
-    const auto ur = transport_unwrap(TransportId::DOH, frame, wr.bytes,
-                                     recovered, sizeof(recovered));
+    const auto ur =
+        transport_unwrap(TransportId::DOH, frame, wr.bytes, recovered, sizeof(recovered));
     ASSERT_TRUE(ur.ok);
     EXPECT_EQ(ur.bytes, sizeof(payload));
     EXPECT_EQ(std::memcmp(recovered, payload, sizeof(payload)), 0);
@@ -378,17 +377,17 @@ TEST_F(TransportSetup, StunWrapUnwrapRoundTrip) {
 
     uint8_t frame[2048] = {};
     FrameContext ctx{};
-    ctx.conn_id[0]  = 0x01;
+    ctx.conn_id[0] = 0x01;
     ctx.conn_id_len = 1;
-    ctx.seq         = 0;
+    ctx.seq = 0;
 
-    const auto wr = transport_wrap(TransportId::STUN, payload, sizeof(payload),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::STUN, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
 
     uint8_t recovered[2048] = {};
-    const auto ur = transport_unwrap(TransportId::STUN, frame, wr.bytes,
-                                     recovered, sizeof(recovered));
+    const auto ur =
+        transport_unwrap(TransportId::STUN, frame, wr.bytes, recovered, sizeof(recovered));
     ASSERT_TRUE(ur.ok);
     EXPECT_EQ(ur.bytes, sizeof(payload));
     EXPECT_EQ(std::memcmp(recovered, payload, sizeof(payload)), 0);
@@ -401,16 +400,16 @@ TEST_F(TransportSetup, StunBindingReqVsDataIndication) {
     ctx.conn_id_len = 0;
 
     ctx.seq = 0; /* first → Binding Request */
-    const auto wr0 = transport_wrap(TransportId::STUN, payload, sizeof(payload),
-                                    frame, sizeof(frame), &ctx);
+    const auto wr0 =
+        transport_wrap(TransportId::STUN, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr0.ok);
     auto r0 = tachyon::stun_mimic::parse_stun_message(frame, wr0.bytes);
     ASSERT_TRUE(r0.ok);
     EXPECT_EQ(r0.msg_type, tachyon::stun_mimic::STUN_BINDING_REQ);
 
     ctx.seq = 5; /* subsequent → Data Indication */
-    const auto wr5 = transport_wrap(TransportId::STUN, payload, sizeof(payload),
-                                    frame, sizeof(frame), &ctx);
+    const auto wr5 =
+        transport_wrap(TransportId::STUN, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr5.ok);
     auto r5 = tachyon::stun_mimic::parse_stun_message(frame, wr5.bytes);
     ASSERT_TRUE(r5.ok);
@@ -424,15 +423,15 @@ TEST_F(TransportSetup, StunAttributePadding) {
     uint8_t frame[256] = {};
     FrameContext ctx{};
     ctx.conn_id_len = 0;
-    ctx.seq         = 1;
+    ctx.seq = 1;
 
-    const auto wr = transport_wrap(TransportId::STUN, payload, sizeof(payload),
-                                   frame, sizeof(frame), &ctx);
+    const auto wr =
+        transport_wrap(TransportId::STUN, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     ASSERT_TRUE(wr.ok);
 
     uint8_t recovered[256] = {};
-    const auto ur = transport_unwrap(TransportId::STUN, frame, wr.bytes,
-                                     recovered, sizeof(recovered));
+    const auto ur =
+        transport_unwrap(TransportId::STUN, frame, wr.bytes, recovered, sizeof(recovered));
     ASSERT_TRUE(ur.ok);
     EXPECT_EQ(ur.bytes, 5u);
     EXPECT_EQ(std::memcmp(recovered, payload, 5), 0);
@@ -442,9 +441,9 @@ TEST_F(TransportSetup, StunAttributePadding) {
 
 TEST_F(TransportSetup, WrapUnregisteredIdFails) {
     uint8_t payload[8] = {};
-    uint8_t frame[64]  = {};
+    uint8_t frame[64] = {};
     FrameContext ctx{};
-    const auto r = transport_wrap(TransportId::NONE, payload, sizeof(payload),
-                                  frame, sizeof(frame), &ctx);
+    const auto r =
+        transport_wrap(TransportId::NONE, payload, sizeof(payload), frame, sizeof(frame), &ctx);
     EXPECT_FALSE(r.ok);
 }

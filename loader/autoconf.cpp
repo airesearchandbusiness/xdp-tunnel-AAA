@@ -71,16 +71,12 @@ AutoDetectedConfig probe_hardware(const std::string &phys_iface) {
     AutoDetectedConfig result{};
 
     result.has_aesni = cpu_has_aesni();
-    result.cipher_type = result.has_aesni
-                             ? TACHYON_CIPHER_AES256GCM
-                             : TACHYON_CIPHER_CHACHA20;
+    result.cipher_type = result.has_aesni ? TACHYON_CIPHER_AES256GCM : TACHYON_CIPHER_CHACHA20;
 
     result.interface_mtu = iface_mtu(phys_iface);
 
-    LOG_INFO("AutoConf: AES-NI=%s  cipher=%s  iface_mtu=%u",
-             result.has_aesni ? "yes" : "no",
-             result.has_aesni ? "AES-256-GCM" : "ChaCha20-Poly1305",
-             result.interface_mtu);
+    LOG_INFO("AutoConf: AES-NI=%s  cipher=%s  iface_mtu=%u", result.has_aesni ? "yes" : "no",
+             result.has_aesni ? "AES-256-GCM" : "ChaCha20-Poly1305", result.interface_mtu);
 
     return result;
 }
