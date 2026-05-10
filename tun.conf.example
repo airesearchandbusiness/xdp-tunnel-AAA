@@ -134,3 +134,9 @@ InnerIP = 10.8.0.2
 # is always PhysicalInterface above.
 # MultiPathEnabled = false
 # MultiPathInterfaces = eth1,wlan0
+
+# ── Enterprise / Operational Knobs (v1.2.0) ──
+# LogFormat = json | text  (default: text)
+# LogLevel = debug | info | warn | error  (default: info)
+# AuditLog = /var/log/tachyon-audit.log  (empty = syslog only)
+# ShutdownDrainSeconds = 5  (max 30)

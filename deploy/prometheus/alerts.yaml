@@ -1,0 +1,68 @@
+# Prometheus AlertManager rules for Tachyon.
+#
+# Drop into your Prometheus rule directory and reference from prometheus.yml:
+#   rule_files:
+#     - /etc/prometheus/rules/tachyon.yaml
+#
+# All metrics are exposed by the control plane on the /metrics endpoint
+# (default 127.0.0.1:9090).  See docs/OPERATIONS.md §3 for the metric
+# catalogue and docs/grafana/tachyon-dashboard.json for the matching
+# dashboard.
+
+groups:
+  - name: tachyon
+    interval: 30s
+    rules:
+      - alert: TachyonHandshakeFailureRate
+        expr: rate(tachyon_handshake_failed_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High handshake failure rate on {{ $labels.tunnel }}"
+          description: "{{ $value }} handshake failures/sec for >2m. Possible attack or peer outage."
+
+      - alert: TachyonReplayDrops
+        expr: increase(tachyon_rx_replay_drops_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Replay attack detected on {{ $labels.tunnel }}"
+          description: "Replay window rejected packets. Investigate immediately."
+
+      - alert: TachyonCryptoErrors
+        expr: rate(tachyon_rx_crypto_errors_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AEAD failures on {{ $labels.tunnel }}"
+          description: "{{ $value }} crypto errors/sec. Possible key mismatch or tampering."
+
+      - alert: TachyonNoTrafficRx
+        expr: rate(tachyon_rx_packets_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No incoming traffic on {{ $labels.tunnel }}"
+          description: "Peer may be down or unreachable."
+
+      - alert: TachyonRateLimitDrops
+        expr: rate(tachyon_rx_ratelimit_drops_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained rate-limit drops on {{ $labels.tunnel }}"
+          description: "{{ $value }} packets/sec rejected by the per-IP rate limiter."
+
+      - alert: TachyonProcessDown
+        expr: up{job="tachyon"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tachyon control plane is down"
+          description: "Prometheus has been unable to scrape {{ $labels.instance }} for >1m."
