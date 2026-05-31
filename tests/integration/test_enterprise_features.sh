@@ -60,7 +60,7 @@ pass "test_secret_resolution: 8 cases"
 # 7. test_metrics health/ready/version endpoints
 [[ -x ./test_metrics ]] || fail "test_metrics not built"
 ./test_metrics --gtest_color=no >/dev/null 2>&1 || fail "metrics failed"
-pass "test_metrics: ${PIPESTATUS[0]:-many} cases (health/ready/version included)"
+pass "test_metrics: health/ready/version endpoints"
 
 # 8. Helm chart lints (if helm is on path)
 if command -v helm >/dev/null 2>&1; then
