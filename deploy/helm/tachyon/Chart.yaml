@@ -1,0 +1,17 @@
+apiVersion: v2
+name: tachyon
+description: A Helm chart for the Tachyon XDP Tunnel
+type: application
+version: 1.2.0
+appVersion: "1.2.0"
+keywords:
+  - vpn
+  - xdp
+  - ebpf
+  - post-quantum
+  - tunnel
+home: https://github.com/airesearchandbusiness/xdp-tunnel-AAA
+sources:
+  - https://github.com/airesearchandbusiness/xdp-tunnel-AAA
+maintainers:
+  - name: Tachyon Maintainers

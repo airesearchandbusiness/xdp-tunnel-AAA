@@ -4,16 +4,38 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+# WatchdogSec is intentionally NOT enabled until network.cpp's main loop
+# emits periodic WATCHDOG=1 via tachyon::sd::notify_status(). Re-enabling
+# WatchdogSec without that ping would cause systemd to kill the service
+# after the watchdog interval. Track via a follow-up that wires
+# tachyon::sd::notify("WATCHDOG=1") into the keepalive tick.
 ExecStart=/usr/bin/tachyon up /etc/tachyon/%i.conf
 ExecStop=/usr/bin/tachyon down /etc/tachyon/%i.conf
 Restart=on-failure
 RestartSec=5
 
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tachyon@%i
+Environment=TACHYON_LOG_FORMAT=json
+Environment=TACHYON_LOG_LEVEL=info
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=200%
+TasksMax=64
+
 # Security hardening
 ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/sys/fs/bpf
+ProtectKernelTunables=true
+ProtectKernelModules=false
+ProtectClock=true
+PrivateTmp=true
 NoNewPrivileges=false
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW
 AmbientCapabilities=CAP_NET_ADMIN CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW

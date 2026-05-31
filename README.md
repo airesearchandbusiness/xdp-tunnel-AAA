@@ -158,6 +158,47 @@ tests/
   fixtures/       Test configuration files
 ```
 
+## Production Deployment
+
+Tachyon ships ready-to-run packaging for the three most common
+delivery models:
+
+- **Helm chart** -- `deploy/helm/tachyon/` deploys a privileged
+  DaemonSet with `hostNetwork: true`, BPF filesystem mount, and
+  secret-based key delivery.  Quick install:
+  ```bash
+  helm install tachyon deploy/helm/tachyon
+  ```
+- **Production Docker image** -- `docker/Dockerfile.prod` builds a
+  multi-stage distroless runtime image suitable for both Kubernetes
+  and standalone Docker hosts.
+- **systemd unit** -- `systemd/tachyon@.service` is a hardened
+  template (`Type=notify`, watchdog, resource limits, sandboxing).
+  One instance per tunnel: `systemctl start tachyon@wg0`.
+
+### Operations documentation
+
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) -- runbook: lifecycle,
+  health endpoints, key rotation, troubleshooting, incident response.
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) -- tuning guide:
+  CPU affinity, NUMA, ring sizes, replay window, hardware
+  recommendations.
+- [`docs/MIGRATION_v4_to_v5.md`](docs/MIGRATION_v4_to_v5.md) --
+  step-by-step upgrade path with rolling-restart procedure.
+- [`docs/SECURITY_CONTROLS.md`](docs/SECURITY_CONTROLS.md) --
+  defence-in-depth catalogue mapping each anticipated attack to
+  the source-code control that mitigates it.
+
+### Observability
+
+- [`docs/grafana/tachyon-dashboard.json`](docs/grafana/tachyon-dashboard.json)
+  -- import-ready Grafana 10+ dashboard with eight panels (active
+  sessions, throughput, replay drops, crypto errors, ...).
+- [`deploy/prometheus/alerts.yaml`](deploy/prometheus/alerts.yaml)
+  -- AlertManager rules for handshake failures, replay attacks,
+  crypto errors, traffic stalls, rate-limit pressure, and process
+  down.
+
 ## License
 
 Dual-licensed under GPL-2.0 and MIT. See individual file headers for details.

@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "tachyon.fullname" . }}
+  labels:
+    {{- include "tachyon.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "tachyon.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tachyon.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if .Values.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.metrics.port | quote }}
+        {{- end }}
+    spec:
+      hostNetwork: true
+      hostPID: false
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: {{ add .Values.config.shutdownDrainSeconds 5 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tachyon
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - up
+            - /etc/tachyon/tachyon.conf
+          ports:
+            - name: tunnel
+              containerPort: {{ .Values.config.listenPort }}
+              protocol: UDP
+              hostPort: {{ .Values.config.listenPort }}
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          env:
+            - name: TACHYON_LOG_FORMAT
+              value: {{ .Values.config.logFormat | quote }}
+            - name: TACHYON_LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            - name: TACHYON_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tachyon.fullname" . }}-keys
+                  key: private-key
+            - name: TACHYON_PEER_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tachyon.fullname" . }}-keys
+                  key: peer-public-key
+            - name: TACHYON_PSK
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tachyon.fullname" . }}-keys
+                  key: psk
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- with .Values.probes.liveness }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.probes.readiness }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: bpf-fs
+              mountPath: /sys/fs/bpf
+              mountPropagation: Bidirectional
+            - name: config
+              mountPath: /etc/tachyon
+              readOnly: true
+      volumes:
+        - name: bpf-fs
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
+        - name: config
+          configMap:
+            name: {{ include "tachyon.fullname" . }}-config

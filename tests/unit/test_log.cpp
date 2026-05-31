@@ -30,15 +30,14 @@ static std::string capture_stderr(std::function<void()> fn) {
 }
 
 TEST(LogTest, TextModeEmitsLevel) {
-    tachyon::log::init(
-        {.json = false, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::INFO});
     auto out = capture_stderr([] { LOG_INFO("hello %s", "world"); });
     EXPECT_NE(out.find("[INFO ]"), std::string::npos);
     EXPECT_NE(out.find("hello world"), std::string::npos);
 }
 
 TEST(LogTest, JsonModeEmitsValidJson) {
-    tachyon::log::init({.json = true, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{true, false, tachyon::log::Level::INFO});
     auto out = capture_stderr([] { LOG_WARN("bad thing %d", 42); });
     EXPECT_NE(out.find("{\"ts\":\""), std::string::npos);
     EXPECT_NE(out.find("\"level\":\"WARN\""), std::string::npos);
@@ -47,21 +46,19 @@ TEST(LogTest, JsonModeEmitsValidJson) {
 }
 
 TEST(LogTest, LevelFilteringSuppressesLowerLevels) {
-    tachyon::log::init(
-        {.json = false, .use_syslog = false, .min_level = tachyon::log::Level::WARN});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::WARN});
     auto out = capture_stderr([] { LOG_INFO("should not appear"); });
     EXPECT_EQ(out.find("should not appear"), std::string::npos);
 }
 
 TEST(LogTest, LevelFilteringPassesHigherLevels) {
-    tachyon::log::init(
-        {.json = false, .use_syslog = false, .min_level = tachyon::log::Level::WARN});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::WARN});
     auto out = capture_stderr([] { LOG_ERR("should appear"); });
     EXPECT_NE(out.find("should appear"), std::string::npos);
 }
 
 TEST(LogTest, ContextFieldsAppearInJson) {
-    tachyon::log::init({.json = true, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{true, false, tachyon::log::Level::INFO});
     tachyon::log::set_context("session_id", "42");
     tachyon::log::set_context("peer_ip", "10.0.0.1");
     auto out = capture_stderr([] { LOG_INFO("connected"); });
@@ -71,7 +68,7 @@ TEST(LogTest, ContextFieldsAppearInJson) {
 }
 
 TEST(LogTest, ClearContextRemovesFields) {
-    tachyon::log::init({.json = true, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{true, false, tachyon::log::Level::INFO});
     tachyon::log::set_context("session_id", "99");
     tachyon::log::clear_context();
     auto out = capture_stderr([] { LOG_INFO("after clear"); });
@@ -79,16 +76,14 @@ TEST(LogTest, ClearContextRemovesFields) {
 }
 
 TEST(LogTest, TimestampPresent) {
-    tachyon::log::init(
-        {.json = false, .use_syslog = false, .min_level = tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::INFO});
     auto out = capture_stderr([] { LOG_INFO("ts test"); });
     EXPECT_NE(out.find("202"), std::string::npos); /* year prefix */
     EXPECT_NE(out.find("T"), std::string::npos);   /* ISO separator */
 }
 
 TEST(LogTest, SetLevelDynamically) {
-    tachyon::log::init(
-        {.json = false, .use_syslog = false, .min_level = tachyon::log::Level::ERROR});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::ERROR});
     auto out1 = capture_stderr([] { LOG_WARN("hidden"); });
     EXPECT_EQ(out1.find("hidden"), std::string::npos);
 

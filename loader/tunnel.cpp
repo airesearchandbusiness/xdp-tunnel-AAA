@@ -9,15 +9,17 @@
 #include "tachyon.h"
 #include <cerrno>
 
-#include "transport.h"
-#include "quic_mimic.h"
-#include "http2_mimic.h"
+#include "audit.h"
 #include "doh_mimic.h"
-#include "stun_mimic.h"
+#include "fingerprint.h"
+#include "http2_mimic.h"
+#include "metrics.h"
 #include "obfs.h"
 #include "padding.h"
-#include "fingerprint.h"
-#include "metrics.h"
+#include "quic_mimic.h"
+#include "sd_notify.h"
+#include "stun_mimic.h"
+#include "transport.h"
 
 static void sig_handler(int) {
     g_exiting = 1;
@@ -212,6 +214,37 @@ void command_up(const std::string &conf_file) {
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
+    /* ── Enterprise hardening: structured logging, audit, sd_notify ── */
+    {
+        const char *log_fmt = std::getenv("TACHYON_LOG_FORMAT");
+        const char *log_lvl = std::getenv("TACHYON_LOG_LEVEL");
+        tachyon::log::Level lvl = tachyon::log::Level::INFO;
+        if (log_lvl) {
+            if (!std::strcmp(log_lvl, "debug"))
+                lvl = tachyon::log::Level::DEBUG;
+            else if (!std::strcmp(log_lvl, "warn"))
+                lvl = tachyon::log::Level::WARN;
+            else if (!std::strcmp(log_lvl, "error"))
+                lvl = tachyon::log::Level::ERROR;
+        }
+        bool json = (log_fmt && !std::strcmp(log_fmt, "json"));
+        tachyon::log::init({.json = json, .use_syslog = false, .min_level = lvl});
+    }
+
+    {
+        const char *audit_path = std::getenv("TACHYON_AUDIT_LOG");
+        std::string ap = audit_path ? audit_path : "";
+        tachyon::audit::init(ap);
+        tachyon::audit::EventInfo ev{};
+        ev.event = tachyon::audit::Event::SERVICE_START;
+        ev.outcome = "success";
+        ev.details = cfg.name.c_str();
+        tachyon::audit::emit(ev);
+    }
+
+    tachyon::sd::init();
+    tachyon::sd::notify("READY=1\nSTATUS=Tunnel up");
+
     /* ── v5: register transport engines and resolve from config ────── */
     tachyon::quic_mimic::register_transport();
     tachyon::http2_mimic::register_transport();
@@ -256,6 +289,17 @@ void command_up(const std::string &conf_file) {
     memcpy(p_mac, sess.peer_mac, 6);
 
     run_control_plane(obj, cfg, session_id, peer_ip_net, local_ip_net, p_mac);
+
+    /* ── Enterprise hardening: emit shutdown audit + sd_notify STOPPING ── */
+    {
+        tachyon::audit::EventInfo ev{};
+        ev.event = tachyon::audit::Event::SERVICE_STOP;
+        ev.outcome = "success";
+        ev.details = cfg.name.c_str();
+        tachyon::audit::emit(ev);
+        tachyon::audit::shutdown();
+    }
+    tachyon::sd::shutdown();
 
     LOG_INFO("Daemon stopped. XDP datapath remains active.");
 }
