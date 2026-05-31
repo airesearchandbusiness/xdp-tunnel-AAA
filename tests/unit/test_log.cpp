@@ -30,8 +30,7 @@ static std::string capture_stderr(std::function<void()> fn) {
 }
 
 TEST(LogTest, TextModeEmitsLevel) {
-    tachyon::log::init(
-        tachyon::log::Config{false, false, tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::INFO});
     auto out = capture_stderr([] { LOG_INFO("hello %s", "world"); });
     EXPECT_NE(out.find("[INFO ]"), std::string::npos);
     EXPECT_NE(out.find("hello world"), std::string::npos);
@@ -47,15 +46,13 @@ TEST(LogTest, JsonModeEmitsValidJson) {
 }
 
 TEST(LogTest, LevelFilteringSuppressesLowerLevels) {
-    tachyon::log::init(
-        tachyon::log::Config{false, false, tachyon::log::Level::WARN});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::WARN});
     auto out = capture_stderr([] { LOG_INFO("should not appear"); });
     EXPECT_EQ(out.find("should not appear"), std::string::npos);
 }
 
 TEST(LogTest, LevelFilteringPassesHigherLevels) {
-    tachyon::log::init(
-        tachyon::log::Config{false, false, tachyon::log::Level::WARN});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::WARN});
     auto out = capture_stderr([] { LOG_ERR("should appear"); });
     EXPECT_NE(out.find("should appear"), std::string::npos);
 }
@@ -79,16 +76,14 @@ TEST(LogTest, ClearContextRemovesFields) {
 }
 
 TEST(LogTest, TimestampPresent) {
-    tachyon::log::init(
-        tachyon::log::Config{false, false, tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::INFO});
     auto out = capture_stderr([] { LOG_INFO("ts test"); });
     EXPECT_NE(out.find("202"), std::string::npos); /* year prefix */
     EXPECT_NE(out.find("T"), std::string::npos);   /* ISO separator */
 }
 
 TEST(LogTest, SetLevelDynamically) {
-    tachyon::log::init(
-        tachyon::log::Config{false, false, tachyon::log::Level::ERROR});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::ERROR});
     auto out1 = capture_stderr([] { LOG_WARN("hidden"); });
     EXPECT_EQ(out1.find("hidden"), std::string::npos);
 

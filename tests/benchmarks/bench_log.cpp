@@ -37,8 +37,7 @@ struct StderrSink {
 
 static void BM_LogTextSimple(benchmark::State &state) {
     StderrSink sink;
-    tachyon::log::init(
-        tachyon::log::Config{false, false, tachyon::log::Level::INFO});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::INFO});
     for (auto _ : state)
         LOG_INFO("hello world from benchmark iteration %d", 42);
 }
@@ -65,8 +64,7 @@ BENCHMARK(BM_LogJsonWithContext);
 
 static void BM_LogFiltered(benchmark::State &state) {
     /* Min level WARN, emitting INFO → fast-path no-op. */
-    tachyon::log::init(
-        tachyon::log::Config{false, false, tachyon::log::Level::WARN});
+    tachyon::log::init(tachyon::log::Config{false, false, tachyon::log::Level::WARN});
     for (auto _ : state)
         LOG_INFO("filtered out, should be near-zero cost");
 }

@@ -149,8 +149,10 @@ __attribute__((format(printf, 4, 5))) inline void emit(Level lvl, const char *fi
 /* Variadic-first form: forwards every argument (including the format string)
  * straight to emit(). This avoids the GNU `##__VA_ARGS__` extension which
  * trips `-Wgnu-zero-variadic-macro-arguments` under strict clang builds. */
-#define LOG_DEBUG(...) tachyon::log::emit(tachyon::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_INFO(...)  tachyon::log::emit(tachyon::log::Level::INFO,  __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_WARN(...)  tachyon::log::emit(tachyon::log::Level::WARN,  __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_ERR(...)   tachyon::log::emit(tachyon::log::Level::ERROR, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_CRYPTO(...) tachyon::log::emit(tachyon::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_DEBUG(...)                                                                             \
+    tachyon::log::emit(tachyon::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_INFO(...) tachyon::log::emit(tachyon::log::Level::INFO, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_WARN(...) tachyon::log::emit(tachyon::log::Level::WARN, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_ERR(...) tachyon::log::emit(tachyon::log::Level::ERROR, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_CRYPTO(...)                                                                            \
+    tachyon::log::emit(tachyon::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
