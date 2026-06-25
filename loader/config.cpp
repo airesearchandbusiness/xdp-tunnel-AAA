@@ -269,6 +269,12 @@ TunnelConfig parse_config(const std::string &filename) {
         }
     }
 
+    /* Enterprise runtime extensions: JSON-RPC control socket and the
+     * key-rotation / graceful-drain budgets (0 = built-in defaults). */
+    cfg.mgmt_socket = get_val(kv, "ManagementSocket");
+    set_uint_if(cfg.key_rotation_seconds, "KeyRotationSeconds");
+    set_uint_if(cfg.drain_seconds, "DrainSeconds");
+
     std::string tpps_str = get_val(kv, "TrafficShapingPPS");
     if (!tpps_str.empty()) {
         try {

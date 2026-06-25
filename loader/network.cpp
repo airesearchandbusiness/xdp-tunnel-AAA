@@ -28,6 +28,7 @@
 #include "transcript.h"
 #include "hybrid_kex.h"
 #include "secmem.h"
+#include "mgmt.h"
 
 template <size_t N> using KeyBuf = tachyon::secmem::KeyBuf<N>;
 
@@ -201,6 +202,11 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub) {
     }
     return gt ? 1 : 0;
 }
+
+/* Reload request flag, shared with the SIGHUP handler (tunnel.cpp) and the mgmt
+ * "reload" RPC. The control-plane loop hot-reloads the safe config subset when
+ * it is set, then clears it. */
+volatile sig_atomic_t g_reload_requested = 0;
 
 /* Read the per-CPU kernel datapath stats map through `obj` and aggregate it
  * into a single userspace_stats. Used to feed the Prometheus exporter from the
@@ -411,21 +417,62 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 LOG_WARN("Metrics exporter failed to bind port %u (continuing without it)",
                          cfg.metrics_port);
         }
-        uint64_t last_metrics_sec = 0;
+        /* JSON-RPC control socket (status / stats / reload) over a 0600 Unix
+         * socket. Handlers close over this loop's state and run synchronously
+         * inside mgmt::poll(), so the captured references are always valid. */
+        const bool mgmt_enabled = !cfg.mgmt_socket.empty();
+        if (mgmt_enabled) {
+            tachyon::mgmt::Handlers h;
+            h.status = [&]() {
+                return std::string("{\"tunnel\":\"") + cfg.name + "\",\"role\":\"" +
+                       (is_initiator ? "initiator" : "responder") +
+                       "\",\"session_id\":" + std::to_string(session_id) +
+                       ",\"handshake_active\":" + (handshake_active ? "true" : "false") +
+                       ",\"transport\":\"" +
+                       tachyon::transport::transport_id_to_string(
+                           static_cast<tachyon::transport::TransportId>(
+                               cfg.resolved_transport_id)) +
+                       "\"}";
+            };
+            h.stats = [&]() {
+                auto s = tachyon::metrics::snapshot();
+                return std::string("{\"tx_packets\":") + std::to_string(s.tx_packets) +
+                       ",\"rx_packets\":" + std::to_string(s.rx_packets) +
+                       ",\"tx_bytes\":" + std::to_string(s.tx_bytes) +
+                       ",\"rx_bytes\":" + std::to_string(s.rx_bytes) +
+                       ",\"hs_completed\":" + std::to_string(s.hs_completed) +
+                       ",\"hs_failed\":" + std::to_string(s.hs_failed) +
+                       ",\"replay_dropped\":" + std::to_string(s.replay_dropped) +
+                       ",\"cover_frames_sent\":" + std::to_string(s.cover_frames_sent) + "}";
+            };
+            h.reload = [&]() {
+                g_reload_requested = 1;
+                return true;
+            };
+            if (tachyon::mgmt::init(cfg.mgmt_socket, h))
+                LOG_INFO("Management socket on %s (JSON-RPC: status/stats/reload)",
+                         cfg.mgmt_socket.c_str());
+        }
+
+        uint64_t last_services_sec = 0;
 
         while (!g_exiting) {
             uint64_t now = monotonic_sec();
 
-            /* Service the metrics endpoint ~1Hz: refresh the snapshot from the
-             * kernel stats map, publish readiness (ready once a session is up),
-             * and accept any pending scrape/health connections (non-blocking). */
-            if (exporter.is_running() && now != last_metrics_sec) {
-                userspace_stats st{};
-                if (read_stats_total(obj, st))
-                    exporter.update(st, cfg.name);
-                exporter.set_ready(!handshake_active);
-                exporter.poll();
-                last_metrics_sec = now;
+            /* Service the metrics and management endpoints ~1Hz: refresh the
+             * Prometheus snapshot, publish readiness, and accept any pending
+             * scrape / health / control connections (all non-blocking). */
+            if (now != last_services_sec) {
+                if (exporter.is_running()) {
+                    userspace_stats st{};
+                    if (read_stats_total(obj, st))
+                        exporter.update(st, cfg.name);
+                    exporter.set_ready(!handshake_active);
+                    exporter.poll();
+                }
+                if (mgmt_enabled)
+                    tachyon::mgmt::poll();
+                last_services_sec = now;
             }
 
             /* Rotate cookie secret periodically. Failure retains the old secret.
@@ -871,6 +918,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     close(sock);
 
 cleanup_keys:
+    tachyon::mgmt::shutdown();
     OPENSSL_cleanse(early_secret, 32);
     OPENSSL_cleanse(cp_tx_key, 32);
     OPENSSL_cleanse(cp_rx_key, 32);
