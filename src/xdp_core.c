@@ -191,6 +191,11 @@ static __always_inline void tcp_mss_clamp(struct iphdr *iph, void *data_end) {
     if (iph->protocol != IPPROTO_TCP)
         return;
 
+    /* Reject a bogus IHL before using it as an offset: ihl < 5 would place the
+     * TCP header inside the IP header and parse options over IP-header bytes. */
+    if (iph->ihl < 5)
+        return;
+
     tcph = (void *)iph + (iph->ihl * 4);
     if ((void *)(tcph + 1) > data_end)
         return;
