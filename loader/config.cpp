@@ -335,6 +335,8 @@ TunnelConfig parse_config(const std::string &filename) {
     std::string kex_str = get_val(kv, "KeyExchange");
     if (kex_str == "x448" || kex_str == "X448")
         cfg.kex_type = 1;
+    else if (kex_str == "hybrid" || kex_str == "Hybrid")
+        cfg.kex_type = 2;
 
     set_bool_if(cfg.afxdp_enabled, "AfXdpEnabled");
     set_bool_if(cfg.ipv6_enabled, "IPv6Enabled");
@@ -392,6 +394,13 @@ bool validate_config(const TunnelConfig &cfg) {
           "ManagementSocket path too long (max 107 chars)");
     check(cfg.key_rotation_seconds == 0 || cfg.key_rotation_seconds >= 30,
           "KeyRotationSeconds must be >= 30 (or 0 for the built-in default)");
+    /* Fail loudly instead of silently downgrading: the live handshake wires
+     * only X25519. x448/hybrid need the larger-message PQ handshake variant
+     * (integration-test-gated), so reject them rather than mislead operators
+     * into believing a stronger KEX is active. */
+    check(cfg.kex_type == TACHYON_KEX_X25519,
+          "KeyExchange: this build negotiates only x25519; x448/hybrid require "
+          "the PQ handshake (not yet enabled) — refusing to silently fall back");
     check(!cfg.virtual_ip.empty(), "VirtualIP is required (e.g. 10.8.0.1/24)");
     check(!cfg.local_physical_ip.empty(), "LocalPhysicalIP is required");
     check(!cfg.physical_interface.empty(), "PhysicalInterface is required (e.g. eth0)");
