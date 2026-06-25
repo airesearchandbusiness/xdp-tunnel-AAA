@@ -3,6 +3,7 @@
 
 #include "audit.h"
 
+#include <algorithm>
 #include <arpa/inet.h>
 #include <atomic>
 #include <cstdio>
