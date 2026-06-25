@@ -202,6 +202,44 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub) {
     return gt ? 1 : 0;
 }
 
+/* Read the per-CPU kernel datapath stats map through `obj` and aggregate it
+ * into a single userspace_stats. Used to feed the Prometheus exporter from the
+ * control-plane loop without re-opening pinned paths. Returns false if the map
+ * is unavailable. */
+static bool read_stats_total(struct bpf_object *obj, userspace_stats &total) {
+    struct bpf_map *m = bpf_object__find_map_by_name(obj, "stats_map");
+    if (!m)
+        return false;
+    int fd = bpf_map__fd(m);
+    if (fd < 0)
+        return false;
+    int ncpus = libbpf_num_possible_cpus();
+    if (ncpus <= 0)
+        return false;
+    std::vector<userspace_stats> per_cpu(static_cast<size_t>(ncpus));
+    uint32_t zero = 0;
+    if (bpf_map_lookup_elem(fd, &zero, per_cpu.data()) != 0)
+        return false;
+    total = userspace_stats{};
+    for (int i = 0; i < ncpus; i++) {
+        total.rx_packets += per_cpu[i].rx_packets;
+        total.rx_bytes += per_cpu[i].rx_bytes;
+        total.tx_packets += per_cpu[i].tx_packets;
+        total.tx_bytes += per_cpu[i].tx_bytes;
+        total.rx_replay_drops += per_cpu[i].rx_replay_drops;
+        total.rx_crypto_errors += per_cpu[i].rx_crypto_errors;
+        total.rx_invalid_session += per_cpu[i].rx_invalid_session;
+        total.rx_malformed += per_cpu[i].rx_malformed;
+        total.rx_ratelimit_drops += per_cpu[i].rx_ratelimit_drops;
+        total.tx_crypto_errors += per_cpu[i].tx_crypto_errors;
+        total.tx_headroom_errors += per_cpu[i].tx_headroom_errors;
+        total.tx_ratelimit_drops += per_cpu[i].tx_ratelimit_drops;
+        total.rx_ratelimit_data_drops += per_cpu[i].rx_ratelimit_data_drops;
+        total.rx_roam_events += per_cpu[i].rx_roam_events;
+    }
+    return true;
+}
+
 void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t session_id,
                        uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac) {
     LOG_INFO("Booting Tachyon AKE v%d.0...", TACHYON_PROTO_VERSION);
@@ -360,8 +398,35 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                      static_cast<tachyon::transport::TransportId>(cfg.resolved_transport_id)),
                  cfg.padding.c_str(), cfg.cover_rate_hz, cfg.obfs_flags);
 
+        /* Prometheus/OpenMetrics exporter (/metrics, /health, /ready). Bound to
+         * the configured port only when enabled; serviced once per second from
+         * this loop so it never blocks the data path. Destroyed (socket closed)
+         * when run_control_plane returns. */
+        tachyon::MetricsExporter exporter;
+        if (cfg.metrics_enabled) {
+            if (exporter.start(cfg.metrics_port))
+                LOG_INFO("Metrics exporter listening on :%u (/metrics /health /ready)",
+                         cfg.metrics_port);
+            else
+                LOG_WARN("Metrics exporter failed to bind port %u (continuing without it)",
+                         cfg.metrics_port);
+        }
+        uint64_t last_metrics_sec = 0;
+
         while (!g_exiting) {
             uint64_t now = monotonic_sec();
+
+            /* Service the metrics endpoint ~1Hz: refresh the snapshot from the
+             * kernel stats map, publish readiness (ready once a session is up),
+             * and accept any pending scrape/health connections (non-blocking). */
+            if (exporter.is_running() && now != last_metrics_sec) {
+                userspace_stats st{};
+                if (read_stats_total(obj, st))
+                    exporter.update(st, cfg.name);
+                exporter.set_ready(!handshake_active);
+                exporter.poll();
+                last_metrics_sec = now;
+            }
 
             /* Rotate cookie secret periodically. Failure retains the old secret.
              * After 5 consecutive failures, treat the entropy source as
