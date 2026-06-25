@@ -52,6 +52,23 @@ static std::string resolve_secret(const std::string &config_val, const char *env
         }
     }
 
+    /* "env://VARNAME" resolves from an operator-named environment variable
+     * (then clears it), complementing the fixed per-field fallback above so a
+     * config can point any secret at any env var. */
+    static const std::string kEnvScheme = "env://";
+    if (config_val.size() > kEnvScheme.size() &&
+        config_val.compare(0, kEnvScheme.size(), kEnvScheme) == 0) {
+        std::string var = config_val.substr(kEnvScheme.size());
+        const char *env_val = std::getenv(var.c_str());
+        if (env_val != nullptr) {
+            std::string result(env_val);
+            unsetenv(var.c_str());
+            return result;
+        }
+        LOG_WARN("resolve_secret: env var '%s' is not set; returning empty", var.c_str());
+        return std::string();
+    }
+
     static const std::string kFileScheme = "file://";
     if (config_val.size() > kFileScheme.size() &&
         config_val.compare(0, kFileScheme.size(), kFileScheme) == 0) {
@@ -371,6 +388,10 @@ bool validate_config(const TunnelConfig &cfg) {
           "Peer.EndpointIP must be a valid IPv4 address");
     check(cfg.peer_inner_ip.empty() || is_ipv4(cfg.peer_inner_ip),
           "Peer.InnerIP must be a valid IPv4 address");
+    check(cfg.mgmt_socket.empty() || cfg.mgmt_socket.size() < 108,
+          "ManagementSocket path too long (max 107 chars)");
+    check(cfg.key_rotation_seconds == 0 || cfg.key_rotation_seconds >= 30,
+          "KeyRotationSeconds must be >= 30 (or 0 for the built-in default)");
     check(!cfg.virtual_ip.empty(), "VirtualIP is required (e.g. 10.8.0.1/24)");
     check(!cfg.local_physical_ip.empty(), "LocalPhysicalIP is required");
     check(!cfg.physical_interface.empty(), "PhysicalInterface is required (e.g. eth0)");

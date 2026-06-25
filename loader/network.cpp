@@ -629,7 +629,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 }
             }
 
-            if (!handshake_active && (now - last_ratchet > TACHYON_KEY_RATCHET_INTERVAL)) {
+            uint64_t ratchet_interval = cfg.key_rotation_seconds > 0 ? cfg.key_rotation_seconds
+                                                                     : TACHYON_KEY_RATCHET_INTERVAL;
+            if (!handshake_active && (now - last_ratchet > ratchet_interval)) {
                 KeyBuf<32> new_tx, new_rx;
                 if (derive_kdf(ratchet_chain, 32, cp_tx_key, 32, TACHYON_KDF_KEY_RATCHET, new_tx) &&
                     derive_kdf(ratchet_chain, 32, cp_rx_key, 32, TACHYON_KDF_KEY_RATCHET, new_rx)) {
