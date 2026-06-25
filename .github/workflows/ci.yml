@@ -197,7 +197,7 @@ jobs:
             echo "::error::Line coverage ${COVERAGE}% is below 80% threshold"
             exit 1
           fi
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           files: build/cov/coverage-filtered.info
           flags: unit
