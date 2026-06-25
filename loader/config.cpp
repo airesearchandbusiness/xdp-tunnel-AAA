@@ -322,6 +322,20 @@ TunnelConfig parse_config(const std::string &filename) {
  * Config Validation
  * ====================================================================== */
 
+static bool is_hex_string(const std::string &s) {
+    if (s.empty())
+        return false;
+    for (char c : s)
+        if (!std::isxdigit(static_cast<unsigned char>(c)))
+            return false;
+    return true;
+}
+
+static bool is_ipv4(const std::string &s) {
+    struct in_addr a;
+    return inet_pton(AF_INET, s.c_str(), &a) == 1;
+}
+
 bool validate_config(const TunnelConfig &cfg) {
     bool ok = true;
     auto check = [&](bool cond, const char *msg) {
@@ -337,6 +351,19 @@ bool validate_config(const TunnelConfig &cfg) {
     check(!cfg.peer_public_key.empty(), "PeerPublicKey is required (64 hex chars)");
     check(cfg.peer_public_key.size() == 64 || cfg.peer_public_key.empty(),
           "PeerPublicKey must be exactly 64 hex characters");
+    /* Reject malformed keys/addresses up front, before any datapath (veth, XDP
+     * attach, pinned maps) is created — otherwise a non-hex key or bad IP only
+     * fails deep inside run_control_plane, leaving a half-provisioned tunnel. */
+    check(cfg.private_key.empty() || is_hex_string(cfg.private_key),
+          "PrivateKey must contain only hex characters (0-9a-fA-F)");
+    check(cfg.peer_public_key.empty() || is_hex_string(cfg.peer_public_key),
+          "PeerPublicKey must contain only hex characters (0-9a-fA-F)");
+    check(cfg.local_physical_ip.empty() || is_ipv4(cfg.local_physical_ip),
+          "LocalPhysicalIP must be a valid IPv4 address");
+    check(cfg.peer_endpoint_ip.empty() || is_ipv4(cfg.peer_endpoint_ip),
+          "Peer.EndpointIP must be a valid IPv4 address");
+    check(cfg.peer_inner_ip.empty() || is_ipv4(cfg.peer_inner_ip),
+          "Peer.InnerIP must be a valid IPv4 address");
     check(!cfg.virtual_ip.empty(), "VirtualIP is required (e.g. 10.8.0.1/24)");
     check(!cfg.local_physical_ip.empty(), "LocalPhysicalIP is required");
     check(!cfg.physical_interface.empty(), "PhysicalInterface is required (e.g. eth0)");

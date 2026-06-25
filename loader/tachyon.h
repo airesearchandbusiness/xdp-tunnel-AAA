@@ -392,7 +392,7 @@ void free_crypto_globals();
 bool calc_hmac(const uint8_t *key, size_t key_len, const uint8_t *data, size_t data_len,
                uint8_t *out_mac);
 
-void generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, uint64_t window,
+bool generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, uint64_t window,
                      uint8_t *out_cookie);
 
 bool do_ecdh(const uint8_t *my_priv, const uint8_t *peer_pub, uint8_t *out_shared_secret);
@@ -555,6 +555,8 @@ static_assert(sizeof(userspace_key_init) == sizeof(struct tachyon_key_init),
               "userspace_key_init layout must match tachyon_key_init");
 static_assert(sizeof(userspace_stats) == sizeof(struct tachyon_stats),
               "userspace_stats layout must match tachyon_stats");
+static_assert(sizeof(userspace_session) == sizeof(struct tachyon_session),
+              "userspace_session layout must match tachyon_session");
 
 /* Control-plane message structs: userspace #pragma pack(1) vs common.h __attribute__((packed)) */
 static_assert(sizeof(MsgInit) == sizeof(struct tachyon_msg_init),

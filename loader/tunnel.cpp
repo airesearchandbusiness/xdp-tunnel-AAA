@@ -310,6 +310,13 @@ void command_up(const std::string &conf_file) {
 
 void command_down(const std::string &conf_file) {
     std::string name = tunnel_name_from_conf(conf_file);
+    if (name.empty()) {
+        /* Refuse to run destructive teardown with an empty name, which would
+         * expand to `rm -rf <PIN_BASE>/` and wipe every tunnel's pinned state. */
+        LOG_ERR("Cannot tear down: invalid or unparseable tunnel name from '%s'",
+                conf_file.c_str());
+        return;
+    }
     std::string bpf_dir = std::string(TACHYON_BPF_PIN_BASE) + "/" + name;
 
     run_cmd("ip link del t_" + name + "_in", /*quiet=*/true);

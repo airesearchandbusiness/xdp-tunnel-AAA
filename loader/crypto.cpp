@@ -82,13 +82,15 @@ bool calc_hmac(const uint8_t *key, size_t key_len, const uint8_t *data, size_t d
     return ok;
 }
 
-void generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, uint64_t window,
+bool generate_cookie(const uint8_t *secret, uint32_t client_ip, uint64_t nonce, uint64_t window,
                      uint8_t *out_cookie) {
     uint8_t buf[20];
     memcpy(buf, &client_ip, 4);
     memcpy(buf + 4, &nonce, 8);
     memcpy(buf + 12, &window, 8);
-    calc_hmac(secret, TACHYON_HMAC_LEN, buf, sizeof(buf), out_cookie);
+    /* Propagate HMAC failure so callers never emit or compare an
+     * uninitialized cookie (stack-data leak / inconsistent accept). */
+    return calc_hmac(secret, TACHYON_HMAC_LEN, buf, sizeof(buf), out_cookie);
 }
 
 /* ======================================================================

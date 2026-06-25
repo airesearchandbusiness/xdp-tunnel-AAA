@@ -70,8 +70,10 @@ static void send_framed(int sock, const void *msg, size_t msg_len, const struct 
 
     if (policy_from_string(cfg.padding.c_str()) != Policy::NONE) {
         uint32_t padded = padme_round(static_cast<uint32_t>(payload_len));
-        if (padded > payload_len && padded <= sizeof(payload)) {
-            RAND_bytes(payload + payload_len, padded - static_cast<uint32_t>(payload_len));
+        /* Only extend the frame if the padding was actually randomized; on RNG
+         * failure, send unpadded rather than leak uninitialized stack bytes. */
+        if (padded > payload_len && padded <= sizeof(payload) &&
+            RAND_bytes(payload + payload_len, padded - static_cast<uint32_t>(payload_len)) == 1) {
             met.padme_bytes_overhead.fetch_add(padded - payload_len, std::memory_order_relaxed);
             payload_len = padded;
         }
@@ -84,7 +86,8 @@ static void send_framed(int sock, const void *msg, size_t msg_len, const struct 
         ctx.seq = g_frame_seq++;
         ctx.sni = cfg.obfuscation_sni.c_str();
         ctx.conn_id_len = 8;
-        RAND_bytes(ctx.conn_id, 8);
+        if (RAND_bytes(ctx.conn_id, 8) != 1)
+            memset(ctx.conn_id, 0, 8);
 
         auto r = transport_wrap(tid, payload, payload_len, framed, sizeof(framed), &ctx);
         if (r.ok) {
@@ -237,9 +240,18 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     }
 
     std::string safe_psk = cfg.psk.empty() ? TACHYON_KDF_DEFAULT_PSK : cfg.psk;
-    derive_kdf(reinterpret_cast<const uint8_t *>(safe_psk.data()), safe_psk.size(), static_ss, 32,
-               TACHYON_KDF_EARLY_SECRET, early_secret);
-    derive_kdf(early_secret, 32, ZERO_IKM, 32, TACHYON_KDF_CP_AEAD, cp_enc_key);
+    if (!derive_kdf(reinterpret_cast<const uint8_t *>(safe_psk.data()), safe_psk.size(), static_ss,
+                    32, TACHYON_KDF_EARLY_SECRET, early_secret) ||
+        !derive_kdf(early_secret, 32, ZERO_IKM, 32, TACHYON_KDF_CP_AEAD, cp_enc_key)) {
+        /* Fail closed: never key the control plane with uninitialized/stale bytes. */
+        LOG_ERR("Control-plane key derivation failed");
+        OPENSSL_cleanse(static_ss, 32);
+        OPENSSL_cleanse(early_secret, 32);
+        OPENSSL_cleanse(cp_enc_key, 32);
+        OPENSSL_cleanse(static_priv, 32);
+        free_crypto_globals();
+        return;
+    }
 
     OPENSSL_cleanse(static_ss, 32);
     OPENSSL_cleanse(static_priv, 32);
@@ -504,10 +516,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint32_t cover_sz = tachyon::padding::shaper_poll_cover(shaper, now_ns, 64, 1400);
                 if (cover_sz > 0) {
                     uint8_t cover[1500];
-                    RAND_bytes(cover, cover_sz);
-                    cover[0] = TACHYON_PKT_KEEPALIVE;
-                    send_framed(sock, cover, cover_sz, &p_addr, cfg);
-                    met.cover_frames_sent.fetch_add(1, std::memory_order_relaxed);
+                    /* Skip the cover frame on RNG failure rather than transmit
+                     * uninitialized stack contents as the cover body. */
+                    if (RAND_bytes(cover, cover_sz) == 1) {
+                        cover[0] = TACHYON_PKT_KEEPALIVE;
+                        send_framed(sock, cover, cover_sz, &p_addr, cfg);
+                        met.cover_frames_sent.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
             }
 
@@ -606,8 +621,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 cmsg.flags = TACHYON_PKT_COOKIE;
                 cmsg.session_id = htonl(session_id);
                 cmsg.client_nonce = msg->client_nonce;
-                generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
-                                current_window, cmsg.cookie);
+                if (!generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
+                                     current_window, cmsg.cookie))
+                    continue;
                 send_framed(sock, &cmsg, sizeof(cmsg), &src, cfg);
                 last_tx_time = now;
             } else if (flag == TACHYON_PKT_COOKIE && n >= (int)sizeof(MsgCookie)) {
@@ -653,10 +669,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 }
 
                 uint8_t c1[32], c2[32];
-                generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
-                                current_window, c1);
-                generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
-                                current_window - 1, c2);
+                if (!generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
+                                     current_window, c1) ||
+                    !generate_cookie(cookie_secret, src.sin_addr.s_addr, msg->client_nonce,
+                                     current_window - 1, c2))
+                    continue;
 
                 if (CRYPTO_memcmp(c1, msg->cookie, TACHYON_HMAC_LEN) != 0 &&
                     CRYPTO_memcmp(c2, msg->cookie, TACHYON_HMAC_LEN) != 0)
