@@ -231,7 +231,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     }
     bool is_initiator = (role == 1);
 
-    uint8_t static_ss[32], early_secret[32], cp_enc_key[32];
+    uint8_t static_ss[32], early_secret[32], cp_tx_key[32], cp_rx_key[32];
     if (!do_ecdh(static_priv, peer_static_pub, static_ss)) {
         LOG_ERR("Static ECDH failed");
         OPENSSL_cleanse(static_priv, 32);
@@ -242,12 +242,16 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     std::string safe_psk = cfg.psk.empty() ? TACHYON_KDF_DEFAULT_PSK : cfg.psk;
     if (!derive_kdf(reinterpret_cast<const uint8_t *>(safe_psk.data()), safe_psk.size(), static_ss,
                     32, TACHYON_KDF_EARLY_SECRET, early_secret) ||
-        !derive_kdf(early_secret, 32, ZERO_IKM, 32, TACHYON_KDF_CP_AEAD, cp_enc_key)) {
+        !derive_kdf(early_secret, 32, ZERO_IKM, 32,
+                    is_initiator ? TACHYON_KDF_CP_I2R : TACHYON_KDF_CP_R2I, cp_tx_key) ||
+        !derive_kdf(early_secret, 32, ZERO_IKM, 32,
+                    is_initiator ? TACHYON_KDF_CP_R2I : TACHYON_KDF_CP_I2R, cp_rx_key)) {
         /* Fail closed: never key the control plane with uninitialized/stale bytes. */
         LOG_ERR("Control-plane key derivation failed");
         OPENSSL_cleanse(static_ss, 32);
         OPENSSL_cleanse(early_secret, 32);
-        OPENSSL_cleanse(cp_enc_key, 32);
+        OPENSSL_cleanse(cp_tx_key, 32);
+        OPENSSL_cleanse(cp_rx_key, 32);
         OPENSSL_cleanse(static_priv, 32);
         free_crypto_globals();
         return;
@@ -299,7 +303,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         p_addr.sin_port = htons(cfg.listen_port);
         inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &p_addr.sin_addr);
 
-        tachyon::replay::Window replay_window(1024);
+        /* Control-plane replay window. Width is operator-tunable via
+         * ReplayWindowSize; Window clamps to a multiple of 64 in [64,65536]. */
+        tachyon::replay::Window replay_window(cfg.replay_window_size);
         bool handshake_active = true;
         bool first_boot = true;
 
@@ -334,11 +340,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint64_t last_decoy = monotonic_sec();
         uint64_t decoy_interval = TACHYON_DECOY_BASE;
 
-        /* Unified control-plane AEAD nonce counter: shared across keepalives
-         * AND decoys so no two control packets under the same cp_enc_key can
-         * produce the same (key, nonce) pair.  The lower 3 bytes are carried
-         * in MsgKeepalive.pad[3] so the receiver can reconstruct the nonce.
-         * Resets on every handshake (new cp_enc_key).  CWE-323. */
+        /* Unified control-plane AEAD nonce counter: shared across keepalives AND
+         * decoys so no two control packets under the same per-direction CP key
+         * can produce the same (key, nonce) pair. The lower 3 bytes are carried
+         * in MsgKeepalive.pad[3] so the receiver can reconstruct the nonce. The
+         * counter is monotonic for a CP key's lifetime (it resets only on an
+         * actual key ratchet, where the key changes too), so reuse is
+         * impossible even across a re-handshake. CWE-323. */
         uint32_t ctrl_nonce_ctr = 0;
 
         /* Cookie rotation failure tracking — escalate after persistent RNG failure (CWE-755) */
@@ -404,7 +412,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     LOG_WARN("RAND_bytes failed for keepalive - skipping");
                     continue;
                 }
-                if (!cp_aead_encrypt(cp_enc_key, dummy, 16, k_ad, 12, k_nonce, kmsg.ciphertext,
+                if (!cp_aead_encrypt(cp_tx_key, dummy, 16, k_ad, 12, k_nonce, kmsg.ciphertext,
                                      kmsg.ciphertext + 16)) {
                     LOG_WARN("Keepalive encrypt failed - skipping");
                     continue;
@@ -437,7 +445,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 memcpy(decoy_msg.pad, &ctr_le, 3);
 
                 if (RAND_bytes(d_pt, 16) == 1 &&
-                    cp_aead_encrypt(cp_enc_key, d_pt, 16, d_ad, 12, d_nonce, decoy_msg.ciphertext,
+                    cp_aead_encrypt(cp_tx_key, d_pt, 16, d_ad, 12, d_nonce, decoy_msg.ciphertext,
                                     decoy_msg.ciphertext + 16)) {
                     send_framed(sock, &decoy_msg, sizeof(decoy_msg), &p_addr, cfg);
                 }
@@ -451,21 +459,22 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
             }
 
             if (!handshake_active && (now - last_ratchet > TACHYON_KEY_RATCHET_INTERVAL)) {
-                KeyBuf<32> new_cp_key;
-                if (derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_KEY_RATCHET,
-                               new_cp_key)) {
-                    OPENSSL_cleanse(cp_enc_key, 32);
-                    memcpy(cp_enc_key, new_cp_key, 32);
+                KeyBuf<32> new_tx, new_rx;
+                if (derive_kdf(ratchet_chain, 32, cp_tx_key, 32, TACHYON_KDF_KEY_RATCHET, new_tx) &&
+                    derive_kdf(ratchet_chain, 32, cp_rx_key, 32, TACHYON_KDF_KEY_RATCHET, new_rx)) {
+                    OPENSSL_cleanse(cp_tx_key, 32);
+                    memcpy(cp_tx_key, new_tx, 32);
+                    OPENSSL_cleanse(cp_rx_key, 32);
+                    memcpy(cp_rx_key, new_rx, 32);
                     ctrl_nonce_ctr = 0;
 
                     KeyBuf<32> new_chain;
-                    derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_DECOY_SEED,
-                               new_chain);
+                    derive_kdf(ratchet_chain, 32, cp_tx_key, 32, TACHYON_KDF_DECOY_SEED, new_chain);
                     OPENSSL_cleanse(ratchet_chain, 32);
                     memcpy(ratchet_chain, new_chain, 32);
 
                     last_ratchet = now;
-                    LOG_CRYPTO("Control plane key ratcheted (forward secrecy)");
+                    LOG_CRYPTO("Control plane keys ratcheted (forward secrecy)");
                 }
             }
 
@@ -603,7 +612,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 memcpy(&rx_ctr, msg->pad, 3);
                 memcpy(k_nonce + 8, &rx_ctr, 4);
                 uint8_t decrypted[16];
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
+                if (!cp_aead_decrypt(cp_rx_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
                                      msg->ciphertext + 16, decrypted)) {
                     LOG_WARN("Keepalive authentication failed - dropping");
                     continue;
@@ -649,7 +658,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &my_nonce, 8);
-                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
+                if (!cp_aead_encrypt(cp_tx_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
                                      amsg.ciphertext, amsg.ciphertext + 32)) {
                     LOG_ERR("PKT_AUTH encrypt failed");
                     continue;
@@ -686,7 +695,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &msg->client_nonce, 8);
 
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, transcript_ad, 44, cp_nonce,
+                if (!cp_aead_decrypt(cp_rx_key, msg->ciphertext, 32, transcript_ad, 44, cp_nonce,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
@@ -725,7 +734,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &srv_nonce, 8);
 
-                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
+                if (!cp_aead_encrypt(cp_tx_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
                                      fmsg.ciphertext + 32)) {
                     LOG_ERR("PKT_FINISH encrypt failed");
                     OPENSSL_cleanse(my_eph_priv, 32);
@@ -755,7 +764,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &msg->server_nonce, 8);
 
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, f_ad, 12, f_nonce,
+                if (!cp_aead_decrypt(cp_rx_key, msg->ciphertext, 32, f_ad, 12, f_nonce,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
@@ -773,7 +782,10 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 handshake_active = false;
                 first_boot = false;
                 last_rekey_success = now;
-                ctrl_nonce_ctr = 0;
+                /* Do NOT reset ctrl_nonce_ctr here: the per-direction CP keys are
+                 * unchanged across a re-handshake (they derive from the static
+                 * ECDH), so resetting the counter could repeat a (key, nonce).
+                 * The counter resets only on an actual key ratchet. CWE-323. */
 
                 tachyon::ratchet::ratchet_init(send_ratchet, tx_key);
                 tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
@@ -795,7 +807,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
 cleanup_keys:
     OPENSSL_cleanse(early_secret, 32);
-    OPENSSL_cleanse(cp_enc_key, 32);
+    OPENSSL_cleanse(cp_tx_key, 32);
+    OPENSSL_cleanse(cp_rx_key, 32);
     OPENSSL_cleanse(cookie_secret, 32);
     free_crypto_globals();
     LOG_INFO("Control plane shut down. Keys cleansed.");

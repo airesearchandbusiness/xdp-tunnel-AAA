@@ -549,6 +549,17 @@ int xdp_rx_path(struct xdp_md *ctx) {
     if (sender_cpu >= TACHYON_MAX_TX_CPUS)
         return XDP_DROP;
 
+    /* Anti-replay is intentionally a three-phase pattern: (1) a cheap
+     * pre-check under the lock rejects obvious replays before spending a
+     * decrypt, (2) bpf_ghost_decrypt authenticates the packet, (3) the commit
+     * section below re-validates AND advances the window under the lock. Step 3
+     * is the authoritative gate: two concurrent duplicates that both pass the
+     * pre-check are serialized at commit — the first advances rx_highest_seq
+     * and sets the bit, the second then observes the set bit and is dropped.
+     * Do NOT collapse this into a single locked check+commit around the
+     * decrypt: holding replay_lock across bpf_ghost_decrypt is illegal in the
+     * BPF verifier and would also let a forged packet poison the window before
+     * authentication. */
     bpf_spin_lock(&sess->replay_lock);
     __u64 drop_flag = 0;
 

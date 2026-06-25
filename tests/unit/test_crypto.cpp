@@ -561,6 +561,52 @@ TEST_F(CryptoTest, FullKeyDerivationChain) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Per-Direction Control-Plane Keys (CWE-323 fix)
+ *
+ * The control plane must key each direction independently so a (key, nonce)
+ * pair can never collide across the two directions. Verify that:
+ *   - the I2R and R2I keys differ, and
+ *   - the initiator's TX key equals the responder's RX key (and vice versa),
+ *     so the two peers agree on a shared key per direction.
+ * ══════════════════════════════════════════════════════════════════════════ */
+TEST_F(CryptoTest, PerDirectionControlPlaneKeys) {
+    /* Both peers reach the same early_secret from the symmetric static ECDH. */
+    uint8_t early[32];
+    for (int i = 0; i < 32; i++)
+        early[i] = static_cast<uint8_t>(i * 7 + 1);
+    uint8_t zero_ikm[32] = {0};
+
+    auto derive = [&](const char *label, uint8_t out[32]) {
+        ASSERT_TRUE(derive_kdf(early, 32, zero_ikm, 32, label, out));
+    };
+
+    /* Initiator: tx = I2R, rx = R2I.  Responder: tx = R2I, rx = I2R. */
+    uint8_t init_tx[32], init_rx[32], resp_tx[32], resp_rx[32];
+    derive(TACHYON_KDF_CP_I2R, init_tx);
+    derive(TACHYON_KDF_CP_R2I, init_rx);
+    derive(TACHYON_KDF_CP_R2I, resp_tx);
+    derive(TACHYON_KDF_CP_I2R, resp_rx);
+
+    /* The two directions must use distinct keys. */
+    EXPECT_NE(memcmp(init_tx, init_rx, 32), 0);
+
+    /* Per-direction agreement: initiator-TX == responder-RX, and vice versa. */
+    EXPECT_EQ(memcmp(init_tx, resp_rx, 32), 0);
+    EXPECT_EQ(memcmp(init_rx, resp_tx, 32), 0);
+
+    /* End-to-end: initiator seals with its TX, responder opens with its RX. */
+    uint8_t nonce[12] = {1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0};
+    const uint8_t pt[] = "i2r control frame";
+    uint8_t ct[256], tag[16], dec[256];
+    ASSERT_TRUE(cp_aead_encrypt(init_tx, pt, sizeof(pt) - 1, nullptr, 0, nonce, ct, tag));
+    ASSERT_TRUE(cp_aead_decrypt(resp_rx, ct, sizeof(pt) - 1, nullptr, 0, nonce, tag, dec));
+    EXPECT_EQ(memcmp(pt, dec, sizeof(pt) - 1), 0);
+
+    /* The opposite direction key must NOT open it (distinct keystreams). */
+    EXPECT_FALSE(cp_aead_decrypt(resp_tx, ct, sizeof(pt) - 1, nullptr, 0, nonce, tag, dec));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Session Key Derivation Symmetry Test
  *
  * Verifies that initiator's TX key == responder's RX key and vice versa.
