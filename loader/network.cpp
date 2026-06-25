@@ -29,6 +29,9 @@
 #include "hybrid_kex.h"
 #include "secmem.h"
 #include "mgmt.h"
+#include "ip_rate_limiter.h"
+#include "circuit_breaker.h"
+#include "audit.h"
 
 template <size_t N> using KeyBuf = tachyon::secmem::KeyBuf<N>;
 
@@ -417,6 +420,12 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 LOG_WARN("Metrics exporter failed to bind port %u (continuing without it)",
                          cfg.metrics_port);
         }
+        /* Anti-abuse: a per-source-IP handshake rate limiter (responder side)
+         * blocks flood/brute-force sources, and a circuit breaker backs off
+         * INIT retries to a peer that is not answering (initiator side). */
+        tachyon::rl::IpRateLimiter ip_limiter;
+        tachyon::CircuitBreaker breaker;
+
         /* JSON-RPC control socket (status / stats / reload) over a 0600 Unix
          * socket. Handlers close over this loop's state and run synchronously
          * inside mgmt::poll(), so the captured references are always valid. */
@@ -648,6 +657,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
             }
 
             if (is_initiator && handshake_active && (now - last_init_send >= retry_interval)) {
+                /* Each retry firing while still handshaking means the previous
+                 * INIT went unanswered; feed that to the breaker so a dead peer
+                 * trips it OPEN and we stop hammering until its cooldown. */
+                if (last_init_send != 0)
+                    breaker.record_failure(now);
+                bool may_send = breaker.allow_request(now);
+
                 if (my_nonce == 0) {
                     if (RAND_bytes(reinterpret_cast<uint8_t *>(&my_nonce), 8) != 1) {
                         LOG_ERR("Failed to generate handshake nonce");
@@ -662,10 +678,12 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 msg.client_nonce = my_nonce;
                 msg.is_rekey = first_boot ? 0 : 1;
 
-                send_framed(sock, &msg, sizeof(msg), &p_addr, cfg);
-                tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
+                if (may_send) {
+                    send_framed(sock, &msg, sizeof(msg), &p_addr, cfg);
+                    tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
+                    last_tx_time = now;
+                }
                 last_init_send = now;
-                last_tx_time = now;
                 {
                     uint32_t _j;
                     if (RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j)) != 1)
@@ -737,6 +755,14 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (ntohl(msg->session_id) != session_id)
                     continue;
 
+                /* Anti-flood: drop handshake attempts from a source that has
+                 * been backed off or blocked for repeated bad handshakes. */
+                if (ip_limiter.check(src.sin_addr.s_addr, now) !=
+                    tachyon::rl::IpRateLimiter::Verdict::ALLOW) {
+                    met.rl_rx_drops.fetch_add(1, std::memory_order_relaxed);
+                    continue;
+                }
+
                 LOG_INFO("Received PKT_INIT, sending COOKIE...");
                 MsgCookie cmsg = {};
                 cmsg.flags = TACHYON_PKT_COOKIE;
@@ -797,8 +823,16 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
 
                 if (CRYPTO_memcmp(c1, msg->cookie, TACHYON_HMAC_LEN) != 0 &&
-                    CRYPTO_memcmp(c2, msg->cookie, TACHYON_HMAC_LEN) != 0)
+                    CRYPTO_memcmp(c2, msg->cookie, TACHYON_HMAC_LEN) != 0) {
+                    ip_limiter.record_failure(src.sin_addr.s_addr, now);
+                    tachyon::audit::EventInfo ev{};
+                    ev.event = tachyon::audit::Event::COOKIE_INVALID;
+                    ev.peer_ip = src.sin_addr.s_addr;
+                    ev.session_id = session_id;
+                    ev.outcome = "cookie-mismatch";
+                    tachyon::audit::emit(ev);
                     continue;
+                }
 
                 uint8_t peer_eph_pub[32];
                 uint8_t transcript_ad[44];
@@ -808,8 +842,16 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 memcpy(cp_nonce, &msg->client_nonce, 8);
 
                 if (!cp_aead_decrypt(cp_rx_key, msg->ciphertext, 32, transcript_ad, 44, cp_nonce,
-                                     msg->ciphertext + 32, peer_eph_pub))
+                                     msg->ciphertext + 32, peer_eph_pub)) {
+                    ip_limiter.record_failure(src.sin_addr.s_addr, now);
+                    tachyon::audit::EventInfo ev{};
+                    ev.event = tachyon::audit::Event::AUTH_FAIL;
+                    ev.peer_ip = src.sin_addr.s_addr;
+                    ev.session_id = session_id;
+                    ev.outcome = "auth-decrypt-failed";
+                    tachyon::audit::emit(ev);
                     continue;
+                }
 
                 replay_window.check_and_commit(msg->client_nonce);
                 last_rx_time = now;
@@ -861,6 +903,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 OPENSSL_cleanse(my_eph_priv, 32);
                 met.hs_completed.fetch_add(1, std::memory_order_relaxed);
+                ip_limiter.record_success(src.sin_addr.s_addr);
                 LOG_INFO("Handshake complete (responder). Datapath armed.");
             } else if (flag == TACHYON_PKT_FINISH && n >= (int)sizeof(MsgFinish)) {
                 if (!is_initiator || !handshake_active)
@@ -905,6 +948,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 OPENSSL_cleanse(my_eph_priv, 32);
                 met.hs_completed.fetch_add(1, std::memory_order_relaxed);
+                breaker.record_success(now);
+                ip_limiter.record_success(src.sin_addr.s_addr);
                 if (!first_boot)
                     met.hs_rekeys.fetch_add(1, std::memory_order_relaxed);
                 LOG_INFO("Handshake complete (initiator). Datapath armed.");

@@ -21,7 +21,9 @@ IpRateLimiter::Verdict IpRateLimiter::check(uint32_t ip, uint64_t now_sec) {
     Entry &entry = it->second.second;
 
     // Window expiry: reset if the window has elapsed since first failure.
-    if (now_sec - entry.first_failure_ts > window_sec_) {
+    // Guard against a non-monotonic clock going backwards (now < first_failure):
+    // an unsigned underflow here would silently lift a block (CWE-191).
+    if (now_sec >= entry.first_failure_ts && now_sec - entry.first_failure_ts > window_sec_) {
         // Remove the entry entirely — clean slate.
         lru_.erase(it->second.first);
         map_.erase(it);
@@ -48,7 +50,9 @@ void IpRateLimiter::record_failure(uint32_t ip, uint64_t now_sec) {
     // Compute exponential backoff once we reach the fail threshold.
     if (entry.failure_count >= fail_threshold_) {
         uint32_t exponent = entry.failure_count - fail_threshold_;
-        uint64_t backoff = kBackoffBaseSec << exponent;
+        // Clamp the shift: 2 << 6 already exceeds kBackoffMaxSec, and a shift
+        // >= 64 is undefined behaviour (CWE-758). Saturate instead.
+        uint64_t backoff = (exponent >= 6) ? kBackoffMaxSec : (kBackoffBaseSec << exponent);
         backoff = std::min(backoff, kBackoffMaxSec);
         entry.backoff_until = now_sec + backoff;
     }
