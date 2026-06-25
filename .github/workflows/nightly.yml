@@ -59,7 +59,7 @@ jobs:
           cmake --build build -j$(nproc)
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-build
           path: |
@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload crash artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-crashes-config
           path: fuzz_artifacts/
@@ -149,7 +149,7 @@ jobs:
 
       - name: Upload crash artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-crashes-crypto
           path: fuzz_artifacts/
@@ -246,7 +246,7 @@ jobs:
             benchmark_result.json >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results
           path: benchmark_result.json
@@ -304,7 +304,7 @@ jobs:
 
       - name: Upload sanitizer test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sanitize-extended-results
           path: build/san/test-results/sanitize-nightly.xml
@@ -358,7 +358,7 @@ jobs:
 
       - name: Upload valgrind reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: valgrind-reports
           path: build/valgrind/test-results/

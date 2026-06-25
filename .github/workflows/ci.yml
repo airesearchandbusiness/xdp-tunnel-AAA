@@ -62,7 +62,7 @@ jobs:
           echo "cppcheck: clean"
       - name: Upload cppcheck report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cppcheck-report
           path: cppcheck-report.txt
@@ -86,7 +86,7 @@ jobs:
         run: |
           cmake -B build -S tests -DCMAKE_BUILD_TYPE=Debug -DBUILD_XDP_TESTS=OFF -DBUILD_FUZZ_TESTS=OFF
           cmake --build build -j$(nproc)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: build-artifacts
           path: build/
