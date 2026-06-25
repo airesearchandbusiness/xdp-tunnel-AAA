@@ -244,6 +244,7 @@ struct TunnelConfig {
     std::string mgmt_socket;
     uint32_t key_rotation_seconds = 0;
     uint32_t drain_seconds = 0;
+    std::string config_path; /* source file path, for SIGHUP / mgmt hot-reload */
 };
 
 /* ══════════════════════════════════════════════════════════════════════════

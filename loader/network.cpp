@@ -32,6 +32,7 @@
 #include "ip_rate_limiter.h"
 #include "circuit_breaker.h"
 #include "audit.h"
+#include "shutdown.h"
 
 template <size_t N> using KeyBuf = tachyon::secmem::KeyBuf<N>;
 
@@ -210,6 +211,33 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub) {
  * "reload" RPC. The control-plane loop hot-reloads the safe config subset when
  * it is set, then clears it. */
 volatile sig_atomic_t g_reload_requested = 0;
+
+/* Re-parse the source config file and apply the runtime-safe subset to the
+ * live config. Keys, ports, transport, and sockets need a restart and are
+ * intentionally NOT touched; an invalid new config is rejected and the running
+ * one is kept. Invoked on SIGHUP or the mgmt "reload" RPC. */
+static void hot_reload_config(TunnelConfig &cfg) {
+    if (cfg.config_path.empty())
+        return;
+    TunnelConfig fresh = parse_config(cfg.config_path);
+    if (!validate_config(fresh)) {
+        LOG_WARN("Reload: new config failed validation; keeping current config");
+        return;
+    }
+    cfg.cover_rate_hz = fresh.cover_rate_hz;
+    cfg.padding = fresh.padding;
+    cfg.obfuscation_sni = fresh.obfuscation_sni;
+    cfg.port_hop_seconds = fresh.port_hop_seconds;
+    cfg.ttl_random = fresh.ttl_random;
+    cfg.mac_random = fresh.mac_random;
+    cfg.key_rotation_seconds = fresh.key_rotation_seconds;
+    cfg.drain_seconds = fresh.drain_seconds;
+    LOG_INFO("Configuration hot-reloaded (runtime-safe subset applied)");
+    tachyon::audit::EventInfo ev{};
+    ev.event = tachyon::audit::Event::CONFIG_RELOAD;
+    ev.outcome = "applied";
+    tachyon::audit::emit(ev);
+}
 
 /* Read the per-CPU kernel datapath stats map through `obj` and aggregate it
  * into a single userspace_stats. Used to feed the Prometheus exporter from the
@@ -464,9 +492,31 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         }
 
         uint64_t last_services_sec = 0;
+        tachyon::shutdown::DrainState drain;
 
-        while (!g_exiting) {
+        while (true) {
             uint64_t now = monotonic_sec();
+
+            /* Graceful drain: on SIGTERM keep servicing the session (keepalives,
+             * metrics, in-flight control traffic) for DrainSeconds before
+             * exiting, so peers and scrapers settle. 0 = exit immediately. */
+            if (g_exiting) {
+                if (cfg.drain_seconds == 0)
+                    break;
+                if (!drain.active) {
+                    tachyon::shutdown::enter_drain(drain, cfg.drain_seconds, now);
+                    LOG_INFO("Draining for %us before shutdown...", cfg.drain_seconds);
+                }
+                if (tachyon::shutdown::drain_expired(drain, now))
+                    break;
+            }
+
+            /* Hot config reload (SIGHUP or mgmt "reload"): apply the safe subset. */
+            if (g_reload_requested) {
+                g_reload_requested = 0;
+                hot_reload_config(cfg);
+                tachyon::padding::shaper_init(shaper, cfg.cover_rate_hz);
+            }
 
             /* Service the metrics and management endpoints ~1Hz: refresh the
              * Prometheus snapshot, publish readiness, and accept any pending

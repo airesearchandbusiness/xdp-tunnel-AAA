@@ -152,6 +152,7 @@ TunnelConfig parse_config(const std::string &filename) {
     TunnelConfig cfg;
 
     cfg.name = tunnel_name_from_conf(filename);
+    cfg.config_path = filename; /* remembered for SIGHUP / mgmt hot-reload */
     cfg.private_key = resolve_secret(get_val(kv, "PrivateKey"), "TACHYON_PRIVATE_KEY");
     cfg.peer_public_key = resolve_secret(get_val(kv, "PeerPublicKey"), "TACHYON_PEER_PUBLIC_KEY");
     cfg.psk = resolve_secret(get_val(kv, "PresharedKey", "Secret"), "TACHYON_PSK");
