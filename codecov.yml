@@ -30,6 +30,8 @@ ignore:
   - "docker/**"
   - "kmod/**"
   - "src/xdp_core.c"
+  # ML-KEM-backend-gated; handshake paths can't run in the stub CI (see ci.yml).
+  - "loader/pq_handshake.cpp"
 
 comment:
   layout: "reach,diff,flags,files"
