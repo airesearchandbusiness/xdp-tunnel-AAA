@@ -77,8 +77,15 @@ InnerIP = 10.8.0.2
 
 # Post-quantum key exchange.
 #   classical — X25519 only (v4 behaviour, default)
-#   hybrid    — X25519 ‖ ML-KEM-768, HKDF-SHA384 combined secret (FIPS 203)
-# Hybrid requires OpenSSL ≥ 3.5 or liboqs at build time.
+#   hybrid    — ephemeral X25519 ‖ ML-KEM-768 KEM keys the session, with a
+#               static-static X25519 authentication DH (Noise-IK / WireGuard
+#               known-peer model) and PSK binding. Defeats harvest-now /
+#               decrypt-later: a recorded handshake stays secret even against a
+#               future quantum adversary.
+# Hybrid requires OpenSSL ≥ 3.5 or liboqs at build time, and BOTH peers must be
+# set to hybrid — a hybrid peer will not complete a handshake with a classical
+# one (and vice versa). With no ML-KEM backend linked it logs a warning and the
+# tunnel stays down rather than silently downgrading.
 # Pqc = hybrid
 
 # Outer-packet obfuscation to defeat DPI.

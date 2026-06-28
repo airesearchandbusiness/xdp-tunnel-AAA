@@ -32,6 +32,7 @@ ignore:
   - "src/xdp_core.c"
   # ML-KEM-backend-gated; handshake paths can't run in the stub CI (see ci.yml).
   - "loader/pq_handshake.cpp"
+  - "loader/pq_session.cpp"
 
 comment:
   layout: "reach,diff,flags,files"

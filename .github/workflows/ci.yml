@@ -190,12 +190,13 @@ jobs:
       - name: Collect + enforce coverage
         run: |
           lcov --capture --directory build/cov --output-file build/cov/coverage.info --ignore-errors mismatch 2>/dev/null
-          # pq_handshake.cpp is gated on an ML-KEM backend (OpenSSL>=3.5 / liboqs);
-          # its handshake paths can't be exercised in the stub CI, so it is
-          # excluded from the line-coverage threshold (cf. src/xdp_core.c, which
-          # needs a kernel). It is validated by tests/unit/test_pq_handshake.cpp
-          # wherever a backend is linked.
-          lcov --remove build/cov/coverage.info '/usr/*' '*/tests/*' '*/googletest/*' '*/pq_handshake.cpp' --output-file build/cov/coverage-filtered.info 2>/dev/null
+          # pq_handshake.cpp and pq_session.cpp are gated on an ML-KEM backend
+          # (OpenSSL>=3.5 / liboqs); their handshake paths can't be exercised in
+          # the stub CI, so they are excluded from the line-coverage threshold
+          # (cf. src/xdp_core.c, which needs a kernel). They are validated by
+          # tests/unit/test_pq_{handshake,session}.cpp wherever a backend is
+          # linked (and the two-peer socketpair test covers the wire framing).
+          lcov --remove build/cov/coverage.info '/usr/*' '*/tests/*' '*/googletest/*' '*/pq_handshake.cpp' '*/pq_session.cpp' --output-file build/cov/coverage-filtered.info 2>/dev/null
           COVERAGE=$(lcov --summary build/cov/coverage-filtered.info 2>/dev/null | grep 'lines' | sed 's/.*: //' | sed 's/%.*//')
           echo "Line coverage: ${COVERAGE}%"
           if [ "$(echo "$COVERAGE < 80" | bc -l)" -eq 1 ]; then

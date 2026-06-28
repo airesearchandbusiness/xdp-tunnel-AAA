@@ -13,6 +13,11 @@
  *   - Per-message AEAD nonce counters (CWE-323)
  *   - Branch-free constant-time public key comparison (CWE-208)
  *   - Cookie rotation failure escalation after 5 RAND_bytes errors (CWE-755)
+ *   - Optional post-quantum hybrid handshake (pqc_mode=hybrid): the classical
+ *     ephemeral X25519 AUTH/FINISH exchange is replaced by the cookie-gated
+ *     PQ-AKE (tachyon::pqsession) — ephemeral X25519+ML-KEM-768 for forward
+ *     secrecy against a quantum adversary, static-static X25519 for mutual
+ *     authentication. The classical path is unchanged when hybrid is off.
  */
 
 #include "tachyon.h"
@@ -33,6 +38,9 @@
 #include "circuit_breaker.h"
 #include "audit.h"
 #include "shutdown.h"
+#include "pq_session.h"
+
+#include <memory>
 
 template <size_t N> using KeyBuf = tachyon::secmem::KeyBuf<N>;
 
@@ -282,6 +290,18 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     LOG_INFO("Booting Tachyon AKE v%d.0...", TACHYON_PROTO_VERSION);
     init_crypto_globals();
 
+    /* Post-quantum hybrid mode (pqc_mode=hybrid). The long-term identity and PSK
+     * are captured here, before the classical path wipes static_priv/cfg.psk,
+     * because the PQ-AKE needs the raw static key on every (re)handshake. Both
+     * are zeroized at cleanup. When classical (default), none of this is used. */
+    const bool pq_hybrid = (cfg.pqc_mode == "hybrid");
+    std::vector<uint8_t> pq_psk;
+    tachyon::pqhs::StaticIdentity pq_id;
+    memset(&pq_id, 0, sizeof(pq_id));
+    if (pq_hybrid && !tachyon::pqsession::available())
+        LOG_WARN("pqc_mode=hybrid requested but no ML-KEM backend is linked; "
+                 "the handshake will not complete until a PQ build is deployed");
+
     uint8_t static_priv[32], peer_static_pub[32], my_static_pub[32];
     if (!hex2bin(cfg.private_key, static_priv, 32) ||
         !hex2bin(cfg.peer_public_key, peer_static_pub, 32)) {
@@ -330,6 +350,16 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         OPENSSL_cleanse(static_priv, 32);
         free_crypto_globals();
         return;
+    }
+
+    /* Capture the long-term identity (and PSK) for the PQ-AKE before they are
+     * wiped. pqhs performs the static-static authentication DH internally. */
+    if (pq_hybrid) {
+        memcpy(pq_id.priv, static_priv, 32);
+        memcpy(pq_id.my_pub, my_static_pub, 32);
+        memcpy(pq_id.peer_pub, peer_static_pub, 32);
+        if (!cfg.psk.empty())
+            pq_psk.assign(cfg.psk.begin(), cfg.psk.end());
     }
 
     OPENSSL_cleanse(static_ss, 32);
@@ -387,6 +417,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint8_t my_eph_priv[32] = {0}, my_eph_pub[32] = {0};
         uint64_t my_nonce = 0;
         uint64_t last_init_send = 0;
+
+        /* Hybrid-mode handshake drivers. One in-flight handshake at a time
+         * (point-to-point tunnel); rebuilt fresh on each attempt so the ephemera
+         * always match the latest exchange. Null in classical mode. */
+        std::unique_ptr<tachyon::pqsession::Client> pq_client;
+        std::unique_ptr<tachyon::pqsession::Server> pq_server;
+        bool pq_responder_armed = false;
         uint64_t last_rekey_success = monotonic_sec();
         uint64_t last_rx_time = monotonic_sec();
         uint64_t last_tx_time = monotonic_sec();
@@ -744,7 +781,11 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 }
             }
 
-            uint8_t buf[2000];
+            /* 4 KiB holds the largest framed control packet — the hybrid PQ-AKE
+             * INIT/RESPONSE are ~1.3 KiB before transport wrapping and padding;
+             * classical messages are far smaller. Sized to match the unwrap
+             * scratch buffer so a decoded payload can never overflow it. */
+            uint8_t buf[4096];
             struct sockaddr_in src;
             socklen_t slen = sizeof(src);
             int n = recvfrom(sock, buf, sizeof(buf), 0, reinterpret_cast<struct sockaddr *>(&src),
@@ -831,6 +872,25 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 auto *msg = reinterpret_cast<MsgCookie *>(buf);
                 if (ntohl(msg->session_id) != session_id || msg->client_nonce != my_nonce)
                     continue;
+
+                if (pq_hybrid) {
+                    /* Hybrid PQ-AKE: the stateless cookie round is unchanged; the
+                     * COOKIE now triggers a PQ_INIT (ephemeral hybrid KEM pubkey)
+                     * instead of the classical AUTH. A fresh Client is minted per
+                     * attempt so retries always carry fresh ephemera. */
+                    pq_client = std::make_unique<tachyon::pqsession::Client>(
+                        pq_id, session_id, pq_psk.empty() ? nullptr : pq_psk.data(), pq_psk.size());
+                    std::vector<uint8_t> pkt;
+                    if (!pq_client->make_init(msg->cookie, my_nonce, pkt)) {
+                        LOG_ERR("PQ_INIT construction failed (no ML-KEM backend?)");
+                        pq_client.reset();
+                        continue;
+                    }
+                    LOG_INFO("Received PKT_COOKIE, sending PQ_INIT...");
+                    send_framed(sock, pkt.data(), pkt.size(), &p_addr, cfg);
+                    last_tx_time = now;
+                    continue;
+                }
 
                 LOG_INFO("Received PKT_COOKIE, sending AUTH...");
                 if (!generate_x25519_keypair(my_eph_priv, my_eph_pub))
@@ -1005,6 +1065,140 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 if (!first_boot)
                     met.hs_rekeys.fetch_add(1, std::memory_order_relaxed);
                 LOG_INFO("Handshake complete (initiator). Datapath armed.");
+            } else if (flag == TACHYON_PKT_PQ_INIT && pq_hybrid &&
+                       n >= (int)tachyon::pqsession::PQ_INIT_LEN) {
+                /* ── Hybrid PQ-AKE, responder step 1 ───────────────────────────
+                 * Cookie-gated (inside Server::on_init) exactly like classical
+                 * AUTH, so no KEM work happens for an unauthenticated source. */
+                if (is_initiator)
+                    continue;
+                if (ip_limiter.check(src.sin_addr.s_addr, now) !=
+                    tachyon::rl::IpRateLimiter::Verdict::ALLOW) {
+                    met.rl_rx_drops.fetch_add(1, std::memory_order_relaxed);
+                    continue;
+                }
+                /* No userspace replay window here (unlike classical AUTH): the
+                 * PQ responder is stateful across two messages and cannot reset
+                 * the window until PQ_CONFIRM, so a committed nonce would block
+                 * the initiator's legitimate PQ_INIT retransmit (same nonce) and
+                 * deadlock a lost-RESPONSE recovery. Anti-DoS is already covered
+                 * by the source-IP filter, the per-IP rate limiter, and the
+                 * stateless cookie validated inside on_init; the handshake still
+                 * cannot complete without the initiator's authenticated CONFIRM. */
+
+                pq_server = std::make_unique<tachyon::pqsession::Server>(
+                    pq_id, session_id, pq_psk.empty() ? nullptr : pq_psk.data(), pq_psk.size());
+                std::vector<uint8_t> resp;
+                auto st = pq_server->on_init(buf, static_cast<size_t>(n), cookie_secret,
+                                             src.sin_addr.s_addr, current_window, resp);
+                if (st == tachyon::pqsession::Step::IGNORE) {
+                    pq_server.reset();
+                    continue;
+                }
+                if (st != tachyon::pqsession::Step::OK) {
+                    ip_limiter.record_failure(src.sin_addr.s_addr, now);
+                    tachyon::audit::EventInfo ev{};
+                    ev.event = tachyon::audit::Event::AUTH_FAIL;
+                    ev.peer_ip = src.sin_addr.s_addr;
+                    ev.session_id = session_id;
+                    ev.outcome = (st == tachyon::pqsession::Step::DOS_REJECT) ? "pq-cookie-mismatch"
+                                                                              : "pq-init-rejected";
+                    tachyon::audit::emit(ev);
+                    pq_server.reset();
+                    continue;
+                }
+                last_rx_time = now;
+                send_framed(sock, resp.data(), resp.size(), &src, cfg);
+                last_tx_time = now;
+                LOG_INFO("Received PQ_INIT, sent PQ_RESPONSE (awaiting confirm)...");
+            } else if (flag == TACHYON_PKT_PQ_RESPONSE && pq_hybrid &&
+                       n >= (int)tachyon::pqsession::PQ_RESPONSE_LEN) {
+                /* ── Hybrid PQ-AKE, initiator step 2 ───────────────────────────
+                 * Authenticate the responder, emit our confirmation, and arm. */
+                if (!is_initiator || !handshake_active || !pq_client)
+                    continue;
+                std::vector<uint8_t> confirm;
+                auto st = pq_client->on_response(buf, static_cast<size_t>(n), confirm);
+                if (st == tachyon::pqsession::Step::IGNORE)
+                    continue;
+                if (st != tachyon::pqsession::Step::COMPLETE) {
+                    tachyon::audit::EventInfo ev{};
+                    ev.event = tachyon::audit::Event::AUTH_FAIL;
+                    ev.peer_ip = src.sin_addr.s_addr;
+                    ev.session_id = session_id;
+                    ev.outcome = "pq-response-auth-failed";
+                    tachyon::audit::emit(ev);
+                    pq_client.reset();
+                    continue;
+                }
+                last_rx_time = now;
+                send_framed(sock, confirm.data(), confirm.size(), &p_addr, cfg);
+                last_tx_time = now;
+
+                KeyBuf<32> tx_key, rx_key;
+                if (!pq_client->export_keys(tx_key, rx_key)) {
+                    LOG_ERR("PQ key export failed (initiator)");
+                    pq_client.reset();
+                    continue;
+                }
+                tachyon::ratchet::ratchet_init(send_ratchet, tx_key);
+                tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
+                inject_keys_to_kernel(obj, session_id, tx_key, rx_key);
+
+                handshake_active = false;
+                first_boot = false;
+                last_rekey_success = now;
+                replay_window.reset();
+                met.hs_completed.fetch_add(1, std::memory_order_relaxed);
+                breaker.record_success(now);
+                ip_limiter.record_success(src.sin_addr.s_addr);
+                pq_client.reset();
+                LOG_INFO("Handshake complete (initiator, hybrid PQ). Datapath armed.");
+            } else if (flag == TACHYON_PKT_PQ_CONFIRM && pq_hybrid &&
+                       n >= (int)tachyon::pqsession::PQ_CONFIRM_LEN) {
+                /* ── Hybrid PQ-AKE, responder step 2 ───────────────────────────
+                 * Authenticate the initiator's confirmation, then arm. Mutual
+                 * authentication completes before any datapath key is injected. */
+                if (is_initiator || !pq_server)
+                    continue;
+                auto st = pq_server->on_confirm(buf, static_cast<size_t>(n));
+                if (st == tachyon::pqsession::Step::IGNORE)
+                    continue;
+                if (st != tachyon::pqsession::Step::COMPLETE) {
+                    ip_limiter.record_failure(src.sin_addr.s_addr, now);
+                    tachyon::audit::EventInfo ev{};
+                    ev.event = tachyon::audit::Event::AUTH_FAIL;
+                    ev.peer_ip = src.sin_addr.s_addr;
+                    ev.session_id = session_id;
+                    ev.outcome = "pq-confirm-auth-failed";
+                    tachyon::audit::emit(ev);
+                    pq_server.reset();
+                    continue;
+                }
+                last_rx_time = now;
+
+                KeyBuf<32> tx_key, rx_key;
+                if (!pq_server->export_keys(tx_key, rx_key)) {
+                    LOG_ERR("PQ key export failed (responder)");
+                    pq_server.reset();
+                    continue;
+                }
+                /* First hybrid handshake resets the kernel replay window (fresh
+                 * peer); subsequent rekeys keep it to avoid dropping in-flight
+                 * datapath packets — mirrors the classical is_rekey behaviour. */
+                if (!pq_responder_armed) {
+                    reset_bpf_replay_state(obj, session_id, peer_ip_net, local_ip_net, peer_mac);
+                    pq_responder_armed = true;
+                }
+                tachyon::ratchet::ratchet_init(send_ratchet, tx_key);
+                tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
+                inject_keys_to_kernel(obj, session_id, tx_key, rx_key);
+
+                replay_window.reset();
+                met.hs_completed.fetch_add(1, std::memory_order_relaxed);
+                ip_limiter.record_success(src.sin_addr.s_addr);
+                pq_server.reset();
+                LOG_INFO("Handshake complete (responder, hybrid PQ). Datapath armed.");
             }
         }
 
@@ -1020,6 +1214,9 @@ cleanup_keys:
     OPENSSL_cleanse(cp_tx_key, 32);
     OPENSSL_cleanse(cp_rx_key, 32);
     OPENSSL_cleanse(cookie_secret, 32);
+    OPENSSL_cleanse(&pq_id, sizeof(pq_id));
+    if (!pq_psk.empty())
+        OPENSSL_cleanse(pq_psk.data(), pq_psk.size());
     free_crypto_globals();
     LOG_INFO("Control plane shut down. Keys cleansed.");
 }
