@@ -11,6 +11,9 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <thread>
+
 namespace mgmt = tachyon::mgmt;
 
 namespace {
@@ -251,4 +254,37 @@ TEST_F(MgmtTest, ShutdownUnlinksSocket) {
     // The socket node must be gone.
     EXPECT_NE(::stat(path_.c_str(), &st), 0);
     EXPECT_EQ(errno, ENOENT);
+}
+
+TEST_F(MgmtTest, ClientCallRoundTrip) {
+    path_ = make_socket_path(dir_);
+    ASSERT_FALSE(path_.empty());
+
+    mgmt::Handlers h;
+    h.status = [] { return std::string("{\"ok\":true}"); };
+    ASSERT_TRUE(mgmt::init(path_, h));
+
+    // client_call() blocks on the reply, so drive it from a thread while this
+    // thread pumps the cooperative, single-threaded server until it answers.
+    std::string response;
+    bool ok = false;
+    std::atomic<bool> done{false};
+    std::thread client([&] {
+        ok = mgmt::client_call(path_, R"({"jsonrpc":"2.0","method":"status","id":7})", response);
+        done = true;
+    });
+    for (int i = 0; i < 400 && !done.load(); ++i) {
+        mgmt::poll();
+        usleep(5000); // 5 ms
+    }
+    client.join();
+
+    EXPECT_TRUE(ok);
+    EXPECT_NE(response.find("\"ok\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"id\":7"), std::string::npos);
+
+    // A connect to a non-existent socket must fail cleanly (no hang/crash).
+    std::string none;
+    EXPECT_FALSE(mgmt::client_call(dir_ + "/does_not_exist.sock",
+                                   R"({"jsonrpc":"2.0","method":"ping","id":1})", none));
 }

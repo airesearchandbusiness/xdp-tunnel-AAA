@@ -76,6 +76,14 @@ void shutdown();
 /* True while the listening socket is open (i.e. init() succeeded). */
 bool is_active();
 
+/*
+ * Client helper used by `tachyon ctl`: connect to a mgmt socket, send `request`
+ * (a single JSON-RPC line), half-close, and read the reply into `response`.
+ * The round-trip is bounded (2s) so a hung daemon cannot wedge the CLI.
+ * Returns false (logged) on connect/IO failure or an empty reply.
+ */
+bool client_call(const std::string &socket_path, const std::string &request, std::string &response);
+
 } // namespace tachyon::mgmt
 
 #endif /* TACHYON_MGMT_H */

@@ -10,6 +10,7 @@
 #include <cerrno>
 
 #include "audit.h"
+#include "mgmt.h"
 #include "doh_mimic.h"
 #include "fingerprint.h"
 #include "http2_mimic.h"
@@ -330,6 +331,37 @@ void command_down(const std::string &conf_file) {
     run_cmd("ip link del t_" + name + "_in", /*quiet=*/true);
     run_cmd("rm -rf " + bpf_dir, /*quiet=*/true);
     LOG_INFO("Tunnel '%s' torn down.", name.c_str());
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * command_ctl - Query the running daemon's management socket (JSON-RPC)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+int command_ctl(const std::string &socket_path, const std::string &method) {
+    static const char *kMethods[] = {"ping", "status", "stats", "reload", "version"};
+    bool known = false;
+    for (const char *m : kMethods)
+        if (method == m)
+            known = true;
+    if (!known) {
+        LOG_ERR("Unknown method '%s' (expected: ping|status|stats|reload|version)", method.c_str());
+        return 1;
+    }
+    if (socket_path.empty()) {
+        LOG_ERR("Management socket path is required");
+        return 1;
+    }
+
+    /* Connect straight to the control socket — no config file is opened, so the
+     * operator-supplied argument never reaches a filesystem path expression. */
+    std::string request = "{\"jsonrpc\":\"2.0\",\"method\":\"" + method + "\",\"id\":1}";
+    std::string response;
+    if (!tachyon::mgmt::client_call(socket_path, request, response)) {
+        LOG_ERR("Could not reach management socket %s (is the tunnel up?)", socket_path.c_str());
+        return 1;
+    }
+    printf("%s\n", response.c_str());
+    return 0;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
