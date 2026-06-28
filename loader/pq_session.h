@@ -92,8 +92,8 @@ class Client {
     /* Build the PQ_INIT packet once the COOKIE has been received. `cookie` is
      * the 32-byte value from the MsgCookie; `client_nonce` echoes the nonce the
      * cookie was minted for, so the responder can revalidate it. */
-    bool make_init(const uint8_t cookie[COOKIE_LEN], uint64_t client_nonce,
-                   std::vector<uint8_t> &out);
+    bool make_init(const uint8_t *cookie, uint64_t client_nonce,
+                   std::vector<uint8_t> &out); /* cookie is COOKIE_LEN bytes */
 
     /* Feed a received PQ_RESPONSE. On Step::COMPLETE the PQ_CONFIRM to send is
      * written to reply_out and export_keys() becomes valid. */
@@ -103,7 +103,7 @@ class Client {
 
     /* Final, PSK-folded per-direction keys, ready for inject_keys_to_kernel.
      * tx = this peer's send key (initiator -> responder). */
-    bool export_keys(uint8_t tx[SESSION_KEY_LEN], uint8_t rx[SESSION_KEY_LEN]) const;
+    bool export_keys(uint8_t *tx, uint8_t *rx) const; /* each SESSION_KEY_LEN bytes */
 
   private:
     tachyon::pqhs::Initiator hs_;
@@ -127,8 +127,8 @@ class Server {
      * one-minute windows (`window`, `window-1`) *before* any KEM work, exactly
      * like the classical AUTH gate. On Step::OK the PQ_RESPONSE is written to
      * response_out. */
-    Step on_init(const uint8_t *pkt, size_t len, const uint8_t cookie_secret[HMAC_SECRET_LEN],
-                 uint32_t src_ip_net, uint64_t window, std::vector<uint8_t> &response_out);
+    Step on_init(const uint8_t *pkt, size_t len, const uint8_t *cookie_secret, uint32_t src_ip_net,
+                 uint64_t window, std::vector<uint8_t> &response_out);
 
     /* Feed a received PQ_CONFIRM. On Step::COMPLETE export_keys() is valid. */
     Step on_confirm(const uint8_t *pkt, size_t len);
@@ -136,7 +136,7 @@ class Server {
     bool complete() const { return complete_; }
 
     /* tx = this peer's send key (responder -> initiator). */
-    bool export_keys(uint8_t tx[SESSION_KEY_LEN], uint8_t rx[SESSION_KEY_LEN]) const;
+    bool export_keys(uint8_t *tx, uint8_t *rx) const; /* each SESSION_KEY_LEN bytes */
 
   private:
     tachyon::pqhs::Responder hs_;

@@ -72,8 +72,9 @@ Step map_result(pqhs::Result r) {
 
 /* out = HKDF(salt = psk, ikm = pq_key, info = label). Binding the PSK as the
  * salt keeps hybrid mode's pre-shared-key authentication factor. */
-bool fold_psk(const std::vector<uint8_t> &psk, const uint8_t pq_key[SESSION_KEY_LEN],
-              const char *label, uint8_t out[SESSION_KEY_LEN]) {
+bool fold_psk(const std::vector<uint8_t> &psk, const uint8_t *pq_key, const char *label,
+              uint8_t *out) {
+    /* pq_key and out are each SESSION_KEY_LEN bytes. */
     return derive_kdf(psk.data(), psk.size(), pq_key, SESSION_KEY_LEN, label, out);
 }
 
@@ -104,8 +105,7 @@ Client::~Client() {
         OPENSSL_cleanse(psk_.data(), psk_.size());
 }
 
-bool Client::make_init(const uint8_t cookie[COOKIE_LEN], uint64_t client_nonce,
-                       std::vector<uint8_t> &out) {
+bool Client::make_init(const uint8_t *cookie, uint64_t client_nonce, std::vector<uint8_t> &out) {
     if (init_made_)
         return false;
     std::vector<uint8_t> body;
@@ -142,7 +142,7 @@ Step Client::on_response(const uint8_t *pkt, size_t len, std::vector<uint8_t> &r
     return Step::COMPLETE;
 }
 
-bool Client::export_keys(uint8_t tx[SESSION_KEY_LEN], uint8_t rx[SESSION_KEY_LEN]) const {
+bool Client::export_keys(uint8_t *tx, uint8_t *rx) const {
     if (!complete_)
         return false;
     uint8_t pq_tx[SESSION_KEY_LEN], pq_rx[SESSION_KEY_LEN];
@@ -166,7 +166,7 @@ Server::~Server() {
         OPENSSL_cleanse(psk_.data(), psk_.size());
 }
 
-Step Server::on_init(const uint8_t *pkt, size_t len, const uint8_t cookie_secret[HMAC_SECRET_LEN],
+Step Server::on_init(const uint8_t *pkt, size_t len, const uint8_t *cookie_secret,
                      uint32_t src_ip_net, uint64_t window, std::vector<uint8_t> &response_out) {
     if (init_seen_ || complete_)
         return Step::STATE_ERROR;
@@ -217,7 +217,7 @@ Step Server::on_confirm(const uint8_t *pkt, size_t len) {
     return Step::COMPLETE;
 }
 
-bool Server::export_keys(uint8_t tx[SESSION_KEY_LEN], uint8_t rx[SESSION_KEY_LEN]) const {
+bool Server::export_keys(uint8_t *tx, uint8_t *rx) const {
     if (!complete_)
         return false;
     uint8_t pq_tx[SESSION_KEY_LEN], pq_rx[SESSION_KEY_LEN];
