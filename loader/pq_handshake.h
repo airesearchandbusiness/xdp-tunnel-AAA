@@ -82,7 +82,7 @@ class HandshakeBase {
      * tx = this peer's send key, rx = this peer's receive key. The peers'
      * keys mirror: initiator.tx == responder.rx and vice versa. Returns false
      * if the handshake is not complete. */
-    bool export_keys(uint8_t tx[KEY_LEN], uint8_t rx[KEY_LEN]) const;
+    bool export_keys(uint8_t *tx, uint8_t *rx) const; /* each KEY_LEN bytes */
 
   protected:
     explicit HandshakeBase(const StaticIdentity &id);
@@ -96,8 +96,8 @@ class HandshakeBase {
      * the current transcript. Populates k_i2r_, k_r2i_, k_conf_. */
     bool derive_keys(const uint8_t *ss_e, size_t ss_e_len, const uint8_t *ss_ss);
     /* Produce / verify a key-confirmation tag for direction byte `dir`. */
-    bool make_confirm(uint8_t dir, uint8_t tag[TAG_LEN]) const;
-    bool check_confirm(uint8_t dir, const uint8_t tag[TAG_LEN]) const;
+    bool make_confirm(uint8_t dir, uint8_t *tag) const;        /* writes TAG_LEN bytes */
+    bool check_confirm(uint8_t dir, const uint8_t *tag) const; /* reads TAG_LEN bytes  */
 
     StaticIdentity id_;
     uint8_t th_[KEY_LEN];     /* running transcript hash                       */

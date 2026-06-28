@@ -93,7 +93,7 @@ bool HandshakeBase::derive_keys(const uint8_t *ss_e, size_t ss_e_len, const uint
     return true;
 }
 
-bool HandshakeBase::make_confirm(uint8_t dir, uint8_t tag[TAG_LEN]) const {
+bool HandshakeBase::make_confirm(uint8_t dir, uint8_t *tag) const {
     if (!keys_ready_)
         return false;
     uint8_t nonce[TACHYON_AEAD_IV_LEN] = {0};
@@ -104,7 +104,7 @@ bool HandshakeBase::make_confirm(uint8_t dir, uint8_t tag[TAG_LEN]) const {
     return cp_aead_encrypt(k_conf_, &dummy, 0, th_, KEY_LEN, nonce, &dummy, tag);
 }
 
-bool HandshakeBase::check_confirm(uint8_t dir, const uint8_t tag[TAG_LEN]) const {
+bool HandshakeBase::check_confirm(uint8_t dir, const uint8_t *tag) const {
     if (!keys_ready_)
         return false;
     uint8_t nonce[TACHYON_AEAD_IV_LEN] = {0};
@@ -113,7 +113,7 @@ bool HandshakeBase::check_confirm(uint8_t dir, const uint8_t tag[TAG_LEN]) const
     return cp_aead_decrypt(k_conf_, &dummy, 0, th_, KEY_LEN, nonce, tag, &dummy);
 }
 
-bool HandshakeBase::export_keys(uint8_t tx[KEY_LEN], uint8_t rx[KEY_LEN]) const {
+bool HandshakeBase::export_keys(uint8_t *tx, uint8_t *rx) const {
     if (!complete_ || !keys_ready_)
         return false;
     if (is_initiator_) {
