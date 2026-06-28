@@ -19,7 +19,7 @@ static void print_usage(const char *prog) {
             "  %s up <config.conf>     Create tunnel and start daemon\n"
             "  %s down <config.conf>   Tear down tunnel\n"
             "  %s show <config.conf>   Display tunnel statistics\n"
-            "  %s ctl <config.conf> <method>  Query mgmt socket "
+            "  %s ctl <mgmt-socket> <method>  Query mgmt socket "
             "(ping|status|stats|reload|version)\n"
             "  %s genkey               Generate X25519 private key\n"
             "  %s pubkey               Derive public key (reads private from stdin)\n",
@@ -76,8 +76,9 @@ int main(int argc, char **argv) {
      *    socket's 0600 permissions gate access to its owner. ── */
     if (cmd == "ctl") {
         if (argc < 4) {
-            fprintf(stderr, "Usage: %s ctl <config.conf> <method>\n", argv[0]);
+            fprintf(stderr, "Usage: %s ctl <mgmt-socket> <method>\n", argv[0]);
             fprintf(stderr, "  methods: ping | status | stats | reload | version\n");
+            fprintf(stderr, "  <mgmt-socket> is the ManagementSocket path set in your config\n");
             return 1;
         }
         return command_ctl(argv[2], argv[3]);

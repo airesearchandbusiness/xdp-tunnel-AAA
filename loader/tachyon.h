@@ -434,10 +434,10 @@ std::string tunnel_name_from_conf(const std::string &conf_path);
 void command_up(const std::string &conf_file);
 void command_down(const std::string &conf_file);
 void command_show(const std::string &conf_file);
-/* `tachyon ctl <conf> <method>`: query the running daemon's management socket
- * (ManagementSocket in the config) via JSON-RPC and print the reply. Returns a
- * process exit code. */
-int command_ctl(const std::string &conf_file, const std::string &method);
+/* `tachyon ctl <mgmt-socket> <method>`: connect to the running daemon's
+ * JSON-RPC management socket (the ManagementSocket path from its config) and
+ * print the reply. Returns a process exit code. */
+int command_ctl(const std::string &socket_path, const std::string &method);
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Function Declarations - network.cpp
