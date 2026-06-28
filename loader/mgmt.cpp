@@ -467,4 +467,58 @@ bool is_active() {
     return g_listen_fd >= 0;
 }
 
+bool client_call(const std::string &socket_path, const std::string &request,
+                 std::string &response) {
+    response.clear();
+    struct sockaddr_un addr {};
+    if (socket_path.empty() || socket_path.size() >= sizeof(addr.sun_path)) {
+        LOG_ERR("mgmt: invalid socket path");
+        return false;
+    }
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        LOG_ERR("mgmt: client socket() failed: %s", std::strerror(errno));
+        return false;
+    }
+
+    addr.sun_family = AF_UNIX;
+    std::memcpy(addr.sun_path, socket_path.data(), socket_path.size());
+    if (connect(fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
+        LOG_ERR("mgmt: connect(%s) failed: %s", socket_path.c_str(), std::strerror(errno));
+        ::close(fd);
+        return false;
+    }
+
+    // Bound the round-trip; the server services requests cooperatively (~1Hz)
+    // so allow a couple of seconds before giving up.
+    struct timeval to {};
+    to.tv_sec = 2;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &to, sizeof(to));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &to, sizeof(to));
+
+    // Send the request then half-close so the server reads a clean EOF.
+    write_all(fd, request);
+    ::shutdown(fd, SHUT_WR);
+
+    char tmp[1024];
+    for (;;) {
+        ssize_t n = recv(fd, tmp, sizeof(tmp), 0);
+        if (n > 0) {
+            size_t want = kMaxRequest - response.size();
+            size_t take = (static_cast<size_t>(n) < want) ? static_cast<size_t>(n) : want;
+            response.append(tmp, take);
+            if (response.size() >= kMaxRequest)
+                break;
+            continue;
+        }
+        if (n < 0 && errno == EINTR)
+            continue;
+        break; // EOF, timeout, or error
+    }
+
+    ::close(fd);
+    return !response.empty();
+}
+
 } // namespace tachyon::mgmt
