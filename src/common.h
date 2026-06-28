@@ -193,6 +193,13 @@ typedef int32_t __s32;
 #define TACHYON_PKT_KEEPALIVE 0xC4  /* Encrypted keepalive            */
 #define TACHYON_PKT_CIPHER_NEG 0xC5 /* Mid-session cipher renegotiation proposal  */
 #define TACHYON_PKT_CIPHER_ACK 0xC6 /* Cipher renegotiation acknowledgment        */
+/* Post-quantum hybrid handshake (pqc_mode=hybrid). These reuse the classical
+ * stateless cookie round (INIT/COOKIE) for anti-DoS and then carry the
+ * tachyon::pqhs INIT/RESPONSE/CONFIRM payloads. They stay in the 0xC0 control
+ * range so the XDP RX path forwards them to userspace with no kernel change. */
+#define TACHYON_PKT_PQ_INIT 0xC7     /* Hybrid PQ-AKE init (cookie + ephemeral pk) */
+#define TACHYON_PKT_PQ_RESPONSE 0xC8 /* Hybrid PQ-AKE response (KEM ct + auth tag) */
+#define TACHYON_PKT_PQ_CONFIRM 0xC9  /* Hybrid PQ-AKE initiator key confirmation   */
 
 #define TACHYON_CP_FLAG_MASK 0xF0   /* Mask for CP type detection     */
 #define TACHYON_CP_FLAG_PREFIX 0xC0 /* CP packet prefix               */

@@ -101,7 +101,7 @@ LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
                loader/audit.cpp loader/sd_notify.cpp \
                loader/ip_rate_limiter.cpp loader/circuit_breaker.cpp \
                loader/multipath.cpp loader/shutdown.cpp loader/mgmt.cpp \
-               loader/pq_handshake.cpp
+               loader/pq_handshake.cpp loader/pq_session.cpp
 LOADER_BIN  := loader/tachyon
 
 # ── Build Targets ──
