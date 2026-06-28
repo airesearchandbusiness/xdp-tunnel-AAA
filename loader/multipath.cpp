@@ -113,10 +113,15 @@ void PathManager::on_probe_timeout(size_t path_idx) {
 }
 
 void PathManager::on_data_rx(size_t path_idx, uint64_t now_us) {
+    (void)now_us; /* deprecated param: kept for ABI; see below */
     if (path_idx >= paths_.size())
         return;
     PathMetrics &m = paths_[path_idx];
-    m.last_rx_us = now_us;
+    /* Always stamp last_rx_us from the same monotonic source used by add_path()
+     * and on_probe_ack(); accepting a caller-supplied clock here mixed wall and
+     * monotonic time and made liveness comparisons meaningless (could wrap to a
+     * huge delta and judge a live path dead). */
+    m.last_rx_us = mono_us();
     m.consecutive_lost = 0;
     m.active = true;
 }

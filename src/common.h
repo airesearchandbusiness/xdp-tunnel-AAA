@@ -204,7 +204,11 @@ typedef int32_t __s32;
  * KDF Labels (used in HKDF-SHA256 derivation)
  * ────────────────────────────────────────────────────────────────────────── */
 #define TACHYON_KDF_EARLY_SECRET "Tachyon-EarlySecret"
-#define TACHYON_KDF_CP_AEAD "Tachyon-CP-AEAD"
+#define TACHYON_KDF_CP_AEAD "Tachyon-CP-AEAD" /* legacy single-key CP label (deprecated) */
+/* Per-direction control-plane AEAD keys: each direction is keyed independently
+ * so a (key,nonce) pair can never collide across the two directions (CWE-323). */
+#define TACHYON_KDF_CP_I2R "Tachyon-CP-I2R" /* initiator -> responder control key */
+#define TACHYON_KDF_CP_R2I "Tachyon-CP-R2I" /* responder -> initiator control key */
 #define TACHYON_KDF_SESSION_MASTER "Tachyon-Session-Master"
 #define TACHYON_KDF_SERVER_TX "Tachyon-Srv-TX"
 #define TACHYON_KDF_CLIENT_TX "Tachyon-Cli-TX"

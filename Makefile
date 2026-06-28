@@ -98,7 +98,9 @@ LOADER_SRCS := loader/main.cpp loader/crypto.cpp loader/config.cpp \
                loader/transport.cpp loader/quic_mimic.cpp loader/http2_mimic.cpp \
                loader/doh_mimic.cpp loader/stun_mimic.cpp \
                loader/metrics.cpp loader/rate_limiter.cpp \
-               loader/audit.cpp loader/sd_notify.cpp
+               loader/audit.cpp loader/sd_notify.cpp \
+               loader/ip_rate_limiter.cpp loader/circuit_breaker.cpp \
+               loader/multipath.cpp loader/shutdown.cpp loader/mgmt.cpp
 LOADER_BIN  := loader/tachyon
 
 # ── Build Targets ──

@@ -136,6 +136,7 @@ add_library(tachyon_core STATIC
     ${PROJECT_ROOT}/loader/sd_notify.cpp
     ${PROJECT_ROOT}/loader/multipath.cpp
     ${PROJECT_ROOT}/loader/autoconf.cpp
+    ${PROJECT_ROOT}/loader/mgmt.cpp
 )
 
 target_include_directories(tachyon_core PUBLIC
@@ -189,6 +190,7 @@ add_tachyon_test(test_hybrid_kex  unit/test_hybrid_kex.cpp)
 add_tachyon_test(test_transport    unit/test_transport.cpp)
 add_tachyon_test(test_wire_v5     unit/test_wire_v5.cpp)
 add_tachyon_test(test_metrics     unit/test_metrics.cpp)
+add_tachyon_test(test_mgmt        unit/test_mgmt.cpp)
 add_tachyon_test(test_rate_limiter unit/test_rate_limiter.cpp)
 add_tachyon_test(test_integration_v5 unit/test_integration_v5.cpp)
 add_tachyon_test(test_phase23    unit/test_phase23.cpp)

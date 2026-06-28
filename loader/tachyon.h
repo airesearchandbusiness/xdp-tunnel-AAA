@@ -236,6 +236,15 @@ struct TunnelConfig {
     uint8_t kex_type = 0; /* TACHYON_KEX_X25519 (default) or TACHYON_KEX_X448 */
     bool afxdp_enabled = false;
     bool ipv6_enabled = false;
+
+    /* ── Enterprise runtime extensions ──────────────────────────────────────
+     * ManagementSocket : path to the JSON-RPC control socket ("" disables it).
+     * KeyRotationSeconds: control-plane rekey cadence (0 = built-in default).
+     * DrainSeconds      : graceful-shutdown drain budget before exit. */
+    std::string mgmt_socket;
+    uint32_t key_rotation_seconds = 0;
+    uint32_t drain_seconds = 0;
+    std::string config_path; /* source file path, for SIGHUP / mgmt hot-reload */
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -379,6 +388,9 @@ class CipherRenegotiator {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 extern volatile sig_atomic_t g_exiting;
+/* Set by the SIGHUP handler and the mgmt "reload" RPC; the control-plane loop
+ * picks it up and hot-reloads the safe config subset, then clears it. */
+extern volatile sig_atomic_t g_reload_requested;
 extern EVP_MAC *g_mac;
 extern EVP_KDF *g_kdf;
 

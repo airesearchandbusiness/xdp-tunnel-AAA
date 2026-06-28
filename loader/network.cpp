@@ -28,6 +28,11 @@
 #include "transcript.h"
 #include "hybrid_kex.h"
 #include "secmem.h"
+#include "mgmt.h"
+#include "ip_rate_limiter.h"
+#include "circuit_breaker.h"
+#include "audit.h"
+#include "shutdown.h"
 
 template <size_t N> using KeyBuf = tachyon::secmem::KeyBuf<N>;
 
@@ -202,6 +207,76 @@ static int ct_role_compare(const uint8_t *my_pub, const uint8_t *peer_pub) {
     return gt ? 1 : 0;
 }
 
+/* Reload request flag, shared with the SIGHUP handler (tunnel.cpp) and the mgmt
+ * "reload" RPC. The control-plane loop hot-reloads the safe config subset when
+ * it is set, then clears it. */
+volatile sig_atomic_t g_reload_requested = 0;
+
+/* Re-parse the source config file and apply the runtime-safe subset to the
+ * live config. Keys, ports, transport, and sockets need a restart and are
+ * intentionally NOT touched; an invalid new config is rejected and the running
+ * one is kept. Invoked on SIGHUP or the mgmt "reload" RPC. */
+static void hot_reload_config(TunnelConfig &cfg) {
+    if (cfg.config_path.empty())
+        return;
+    TunnelConfig fresh = parse_config(cfg.config_path);
+    if (!validate_config(fresh)) {
+        LOG_WARN("Reload: new config failed validation; keeping current config");
+        return;
+    }
+    cfg.cover_rate_hz = fresh.cover_rate_hz;
+    cfg.padding = fresh.padding;
+    cfg.obfuscation_sni = fresh.obfuscation_sni;
+    cfg.port_hop_seconds = fresh.port_hop_seconds;
+    cfg.ttl_random = fresh.ttl_random;
+    cfg.mac_random = fresh.mac_random;
+    cfg.key_rotation_seconds = fresh.key_rotation_seconds;
+    cfg.drain_seconds = fresh.drain_seconds;
+    LOG_INFO("Configuration hot-reloaded (runtime-safe subset applied)");
+    tachyon::audit::EventInfo ev{};
+    ev.event = tachyon::audit::Event::CONFIG_RELOAD;
+    ev.outcome = "applied";
+    tachyon::audit::emit(ev);
+}
+
+/* Read the per-CPU kernel datapath stats map through `obj` and aggregate it
+ * into a single userspace_stats. Used to feed the Prometheus exporter from the
+ * control-plane loop without re-opening pinned paths. Returns false if the map
+ * is unavailable. */
+static bool read_stats_total(struct bpf_object *obj, userspace_stats &total) {
+    struct bpf_map *m = bpf_object__find_map_by_name(obj, "stats_map");
+    if (!m)
+        return false;
+    int fd = bpf_map__fd(m);
+    if (fd < 0)
+        return false;
+    int ncpus = libbpf_num_possible_cpus();
+    if (ncpus <= 0)
+        return false;
+    std::vector<userspace_stats> per_cpu(static_cast<size_t>(ncpus));
+    uint32_t zero = 0;
+    if (bpf_map_lookup_elem(fd, &zero, per_cpu.data()) != 0)
+        return false;
+    total = userspace_stats{};
+    for (int i = 0; i < ncpus; i++) {
+        total.rx_packets += per_cpu[i].rx_packets;
+        total.rx_bytes += per_cpu[i].rx_bytes;
+        total.tx_packets += per_cpu[i].tx_packets;
+        total.tx_bytes += per_cpu[i].tx_bytes;
+        total.rx_replay_drops += per_cpu[i].rx_replay_drops;
+        total.rx_crypto_errors += per_cpu[i].rx_crypto_errors;
+        total.rx_invalid_session += per_cpu[i].rx_invalid_session;
+        total.rx_malformed += per_cpu[i].rx_malformed;
+        total.rx_ratelimit_drops += per_cpu[i].rx_ratelimit_drops;
+        total.tx_crypto_errors += per_cpu[i].tx_crypto_errors;
+        total.tx_headroom_errors += per_cpu[i].tx_headroom_errors;
+        total.tx_ratelimit_drops += per_cpu[i].tx_ratelimit_drops;
+        total.rx_ratelimit_data_drops += per_cpu[i].rx_ratelimit_data_drops;
+        total.rx_roam_events += per_cpu[i].rx_roam_events;
+    }
+    return true;
+}
+
 void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t session_id,
                        uint32_t peer_ip_net, uint32_t local_ip_net, const uint8_t *peer_mac) {
     LOG_INFO("Booting Tachyon AKE v%d.0...", TACHYON_PROTO_VERSION);
@@ -231,7 +306,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     }
     bool is_initiator = (role == 1);
 
-    uint8_t static_ss[32], early_secret[32], cp_enc_key[32];
+    uint8_t static_ss[32], early_secret[32], cp_tx_key[32], cp_rx_key[32];
     if (!do_ecdh(static_priv, peer_static_pub, static_ss)) {
         LOG_ERR("Static ECDH failed");
         OPENSSL_cleanse(static_priv, 32);
@@ -242,12 +317,16 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     std::string safe_psk = cfg.psk.empty() ? TACHYON_KDF_DEFAULT_PSK : cfg.psk;
     if (!derive_kdf(reinterpret_cast<const uint8_t *>(safe_psk.data()), safe_psk.size(), static_ss,
                     32, TACHYON_KDF_EARLY_SECRET, early_secret) ||
-        !derive_kdf(early_secret, 32, ZERO_IKM, 32, TACHYON_KDF_CP_AEAD, cp_enc_key)) {
+        !derive_kdf(early_secret, 32, ZERO_IKM, 32,
+                    is_initiator ? TACHYON_KDF_CP_I2R : TACHYON_KDF_CP_R2I, cp_tx_key) ||
+        !derive_kdf(early_secret, 32, ZERO_IKM, 32,
+                    is_initiator ? TACHYON_KDF_CP_R2I : TACHYON_KDF_CP_I2R, cp_rx_key)) {
         /* Fail closed: never key the control plane with uninitialized/stale bytes. */
         LOG_ERR("Control-plane key derivation failed");
         OPENSSL_cleanse(static_ss, 32);
         OPENSSL_cleanse(early_secret, 32);
-        OPENSSL_cleanse(cp_enc_key, 32);
+        OPENSSL_cleanse(cp_tx_key, 32);
+        OPENSSL_cleanse(cp_rx_key, 32);
         OPENSSL_cleanse(static_priv, 32);
         free_crypto_globals();
         return;
@@ -299,7 +378,9 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         p_addr.sin_port = htons(cfg.listen_port);
         inet_pton(AF_INET, cfg.peer_endpoint_ip.c_str(), &p_addr.sin_addr);
 
-        tachyon::replay::Window replay_window(1024);
+        /* Control-plane replay window. Width is operator-tunable via
+         * ReplayWindowSize; Window clamps to a multiple of 64 in [64,65536]. */
+        tachyon::replay::Window replay_window(cfg.replay_window_size);
         bool handshake_active = true;
         bool first_boot = true;
 
@@ -334,11 +415,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
         uint64_t last_decoy = monotonic_sec();
         uint64_t decoy_interval = TACHYON_DECOY_BASE;
 
-        /* Unified control-plane AEAD nonce counter: shared across keepalives
-         * AND decoys so no two control packets under the same cp_enc_key can
-         * produce the same (key, nonce) pair.  The lower 3 bytes are carried
-         * in MsgKeepalive.pad[3] so the receiver can reconstruct the nonce.
-         * Resets on every handshake (new cp_enc_key).  CWE-323. */
+        /* Unified control-plane AEAD nonce counter: shared across keepalives AND
+         * decoys so no two control packets under the same per-direction CP key
+         * can produce the same (key, nonce) pair. The lower 3 bytes are carried
+         * in MsgKeepalive.pad[3] so the receiver can reconstruct the nonce. The
+         * counter is monotonic for a CP key's lifetime (it resets only on an
+         * actual key ratchet, where the key changes too), so reuse is
+         * impossible even across a re-handshake. CWE-323. */
         uint32_t ctrl_nonce_ctr = 0;
 
         /* Cookie rotation failure tracking — escalate after persistent RNG failure (CWE-755) */
@@ -352,8 +435,104 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                      static_cast<tachyon::transport::TransportId>(cfg.resolved_transport_id)),
                  cfg.padding.c_str(), cfg.cover_rate_hz, cfg.obfs_flags);
 
-        while (!g_exiting) {
+        /* Prometheus/OpenMetrics exporter (/metrics, /health, /ready). Bound to
+         * the configured port only when enabled; serviced once per second from
+         * this loop so it never blocks the data path. Destroyed (socket closed)
+         * when run_control_plane returns. */
+        tachyon::MetricsExporter exporter;
+        if (cfg.metrics_enabled) {
+            if (exporter.start(cfg.metrics_port))
+                LOG_INFO("Metrics exporter listening on :%u (/metrics /health /ready)",
+                         cfg.metrics_port);
+            else
+                LOG_WARN("Metrics exporter failed to bind port %u (continuing without it)",
+                         cfg.metrics_port);
+        }
+        /* Anti-abuse: a per-source-IP handshake rate limiter (responder side)
+         * blocks flood/brute-force sources, and a circuit breaker backs off
+         * INIT retries to a peer that is not answering (initiator side). */
+        tachyon::rl::IpRateLimiter ip_limiter;
+        tachyon::CircuitBreaker breaker;
+
+        /* JSON-RPC control socket (status / stats / reload) over a 0600 Unix
+         * socket. Handlers close over this loop's state and run synchronously
+         * inside mgmt::poll(), so the captured references are always valid. */
+        const bool mgmt_enabled = !cfg.mgmt_socket.empty();
+        if (mgmt_enabled) {
+            tachyon::mgmt::Handlers h;
+            h.status = [&]() {
+                return std::string("{\"tunnel\":\"") + cfg.name + "\",\"role\":\"" +
+                       (is_initiator ? "initiator" : "responder") +
+                       "\",\"session_id\":" + std::to_string(session_id) +
+                       ",\"handshake_active\":" + (handshake_active ? "true" : "false") +
+                       ",\"transport\":\"" +
+                       tachyon::transport::transport_id_to_string(
+                           static_cast<tachyon::transport::TransportId>(
+                               cfg.resolved_transport_id)) +
+                       "\"}";
+            };
+            h.stats = [&]() {
+                auto s = tachyon::metrics::snapshot();
+                return std::string("{\"tx_packets\":") + std::to_string(s.tx_packets) +
+                       ",\"rx_packets\":" + std::to_string(s.rx_packets) +
+                       ",\"tx_bytes\":" + std::to_string(s.tx_bytes) +
+                       ",\"rx_bytes\":" + std::to_string(s.rx_bytes) +
+                       ",\"hs_completed\":" + std::to_string(s.hs_completed) +
+                       ",\"hs_failed\":" + std::to_string(s.hs_failed) +
+                       ",\"replay_dropped\":" + std::to_string(s.replay_dropped) +
+                       ",\"cover_frames_sent\":" + std::to_string(s.cover_frames_sent) + "}";
+            };
+            h.reload = [&]() {
+                g_reload_requested = 1;
+                return true;
+            };
+            if (tachyon::mgmt::init(cfg.mgmt_socket, h))
+                LOG_INFO("Management socket on %s (JSON-RPC: status/stats/reload)",
+                         cfg.mgmt_socket.c_str());
+        }
+
+        uint64_t last_services_sec = 0;
+        tachyon::shutdown::DrainState drain;
+
+        while (true) {
             uint64_t now = monotonic_sec();
+
+            /* Graceful drain: on SIGTERM keep servicing the session (keepalives,
+             * metrics, in-flight control traffic) for DrainSeconds before
+             * exiting, so peers and scrapers settle. 0 = exit immediately. */
+            if (g_exiting) {
+                if (cfg.drain_seconds == 0)
+                    break;
+                if (!drain.active) {
+                    tachyon::shutdown::enter_drain(drain, cfg.drain_seconds, now);
+                    LOG_INFO("Draining for %us before shutdown...", cfg.drain_seconds);
+                }
+                if (tachyon::shutdown::drain_expired(drain, now))
+                    break;
+            }
+
+            /* Hot config reload (SIGHUP or mgmt "reload"): apply the safe subset. */
+            if (g_reload_requested) {
+                g_reload_requested = 0;
+                hot_reload_config(cfg);
+                tachyon::padding::shaper_init(shaper, cfg.cover_rate_hz);
+            }
+
+            /* Service the metrics and management endpoints ~1Hz: refresh the
+             * Prometheus snapshot, publish readiness, and accept any pending
+             * scrape / health / control connections (all non-blocking). */
+            if (now != last_services_sec) {
+                if (exporter.is_running()) {
+                    userspace_stats st{};
+                    if (read_stats_total(obj, st))
+                        exporter.update(st, cfg.name);
+                    exporter.set_ready(!handshake_active);
+                    exporter.poll();
+                }
+                if (mgmt_enabled)
+                    tachyon::mgmt::poll();
+                last_services_sec = now;
+            }
 
             /* Rotate cookie secret periodically. Failure retains the old secret.
              * After 5 consecutive failures, treat the entropy source as
@@ -404,7 +583,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     LOG_WARN("RAND_bytes failed for keepalive - skipping");
                     continue;
                 }
-                if (!cp_aead_encrypt(cp_enc_key, dummy, 16, k_ad, 12, k_nonce, kmsg.ciphertext,
+                if (!cp_aead_encrypt(cp_tx_key, dummy, 16, k_ad, 12, k_nonce, kmsg.ciphertext,
                                      kmsg.ciphertext + 16)) {
                     LOG_WARN("Keepalive encrypt failed - skipping");
                     continue;
@@ -437,7 +616,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 memcpy(decoy_msg.pad, &ctr_le, 3);
 
                 if (RAND_bytes(d_pt, 16) == 1 &&
-                    cp_aead_encrypt(cp_enc_key, d_pt, 16, d_ad, 12, d_nonce, decoy_msg.ciphertext,
+                    cp_aead_encrypt(cp_tx_key, d_pt, 16, d_ad, 12, d_nonce, decoy_msg.ciphertext,
                                     decoy_msg.ciphertext + 16)) {
                     send_framed(sock, &decoy_msg, sizeof(decoy_msg), &p_addr, cfg);
                 }
@@ -450,22 +629,25 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 }
             }
 
-            if (!handshake_active && (now - last_ratchet > TACHYON_KEY_RATCHET_INTERVAL)) {
-                KeyBuf<32> new_cp_key;
-                if (derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_KEY_RATCHET,
-                               new_cp_key)) {
-                    OPENSSL_cleanse(cp_enc_key, 32);
-                    memcpy(cp_enc_key, new_cp_key, 32);
+            uint64_t ratchet_interval = cfg.key_rotation_seconds > 0 ? cfg.key_rotation_seconds
+                                                                     : TACHYON_KEY_RATCHET_INTERVAL;
+            if (!handshake_active && (now - last_ratchet > ratchet_interval)) {
+                KeyBuf<32> new_tx, new_rx;
+                if (derive_kdf(ratchet_chain, 32, cp_tx_key, 32, TACHYON_KDF_KEY_RATCHET, new_tx) &&
+                    derive_kdf(ratchet_chain, 32, cp_rx_key, 32, TACHYON_KDF_KEY_RATCHET, new_rx)) {
+                    OPENSSL_cleanse(cp_tx_key, 32);
+                    memcpy(cp_tx_key, new_tx, 32);
+                    OPENSSL_cleanse(cp_rx_key, 32);
+                    memcpy(cp_rx_key, new_rx, 32);
                     ctrl_nonce_ctr = 0;
 
                     KeyBuf<32> new_chain;
-                    derive_kdf(ratchet_chain, 32, cp_enc_key, 32, TACHYON_KDF_DECOY_SEED,
-                               new_chain);
+                    derive_kdf(ratchet_chain, 32, cp_tx_key, 32, TACHYON_KDF_DECOY_SEED, new_chain);
                     OPENSSL_cleanse(ratchet_chain, 32);
                     memcpy(ratchet_chain, new_chain, 32);
 
                     last_ratchet = now;
-                    LOG_CRYPTO("Control plane key ratcheted (forward secrecy)");
+                    LOG_CRYPTO("Control plane keys ratcheted (forward secrecy)");
                 }
             }
 
@@ -527,6 +709,13 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
             }
 
             if (is_initiator && handshake_active && (now - last_init_send >= retry_interval)) {
+                /* Each retry firing while still handshaking means the previous
+                 * INIT went unanswered; feed that to the breaker so a dead peer
+                 * trips it OPEN and we stop hammering until its cooldown. */
+                if (last_init_send != 0)
+                    breaker.record_failure(now);
+                bool may_send = breaker.allow_request(now);
+
                 if (my_nonce == 0) {
                     if (RAND_bytes(reinterpret_cast<uint8_t *>(&my_nonce), 8) != 1) {
                         LOG_ERR("Failed to generate handshake nonce");
@@ -541,10 +730,12 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 msg.client_nonce = my_nonce;
                 msg.is_rekey = first_boot ? 0 : 1;
 
-                send_framed(sock, &msg, sizeof(msg), &p_addr, cfg);
-                tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
+                if (may_send) {
+                    send_framed(sock, &msg, sizeof(msg), &p_addr, cfg);
+                    tachyon::padding::shaper_on_real_frame(shaper, monotonic_ns());
+                    last_tx_time = now;
+                }
                 last_init_send = now;
-                last_tx_time = now;
                 {
                     uint32_t _j;
                     if (RAND_bytes(reinterpret_cast<uint8_t *>(&_j), sizeof(_j)) != 1)
@@ -603,7 +794,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 memcpy(&rx_ctr, msg->pad, 3);
                 memcpy(k_nonce + 8, &rx_ctr, 4);
                 uint8_t decrypted[16];
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
+                if (!cp_aead_decrypt(cp_rx_key, msg->ciphertext, 16, k_ad, 12, k_nonce,
                                      msg->ciphertext + 16, decrypted)) {
                     LOG_WARN("Keepalive authentication failed - dropping");
                     continue;
@@ -615,6 +806,14 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 auto *msg = reinterpret_cast<MsgInit *>(buf);
                 if (ntohl(msg->session_id) != session_id)
                     continue;
+
+                /* Anti-flood: drop handshake attempts from a source that has
+                 * been backed off or blocked for repeated bad handshakes. */
+                if (ip_limiter.check(src.sin_addr.s_addr, now) !=
+                    tachyon::rl::IpRateLimiter::Verdict::ALLOW) {
+                    met.rl_rx_drops.fetch_add(1, std::memory_order_relaxed);
+                    continue;
+                }
 
                 LOG_INFO("Received PKT_INIT, sending COOKIE...");
                 MsgCookie cmsg = {};
@@ -649,7 +848,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &my_nonce, 8);
-                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
+                if (!cp_aead_encrypt(cp_tx_key, my_eph_pub, 32, transcript_ad, 44, cp_nonce,
                                      amsg.ciphertext, amsg.ciphertext + 32)) {
                     LOG_ERR("PKT_AUTH encrypt failed");
                     continue;
@@ -676,8 +875,16 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                     continue;
 
                 if (CRYPTO_memcmp(c1, msg->cookie, TACHYON_HMAC_LEN) != 0 &&
-                    CRYPTO_memcmp(c2, msg->cookie, TACHYON_HMAC_LEN) != 0)
+                    CRYPTO_memcmp(c2, msg->cookie, TACHYON_HMAC_LEN) != 0) {
+                    ip_limiter.record_failure(src.sin_addr.s_addr, now);
+                    tachyon::audit::EventInfo ev{};
+                    ev.event = tachyon::audit::Event::COOKIE_INVALID;
+                    ev.peer_ip = src.sin_addr.s_addr;
+                    ev.session_id = session_id;
+                    ev.outcome = "cookie-mismatch";
+                    tachyon::audit::emit(ev);
                     continue;
+                }
 
                 uint8_t peer_eph_pub[32];
                 uint8_t transcript_ad[44];
@@ -686,9 +893,17 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t cp_nonce[12] = {0};
                 memcpy(cp_nonce, &msg->client_nonce, 8);
 
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, transcript_ad, 44, cp_nonce,
-                                     msg->ciphertext + 32, peer_eph_pub))
+                if (!cp_aead_decrypt(cp_rx_key, msg->ciphertext, 32, transcript_ad, 44, cp_nonce,
+                                     msg->ciphertext + 32, peer_eph_pub)) {
+                    ip_limiter.record_failure(src.sin_addr.s_addr, now);
+                    tachyon::audit::EventInfo ev{};
+                    ev.event = tachyon::audit::Event::AUTH_FAIL;
+                    ev.peer_ip = src.sin_addr.s_addr;
+                    ev.session_id = session_id;
+                    ev.outcome = "auth-decrypt-failed";
+                    tachyon::audit::emit(ev);
                     continue;
+                }
 
                 replay_window.check_and_commit(msg->client_nonce);
                 last_rx_time = now;
@@ -725,7 +940,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &srv_nonce, 8);
 
-                if (!cp_aead_encrypt(cp_enc_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
+                if (!cp_aead_encrypt(cp_tx_key, my_eph_pub, 32, f_ad, 12, f_nonce, fmsg.ciphertext,
                                      fmsg.ciphertext + 32)) {
                     LOG_ERR("PKT_FINISH encrypt failed");
                     OPENSSL_cleanse(my_eph_priv, 32);
@@ -740,6 +955,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 OPENSSL_cleanse(my_eph_priv, 32);
                 met.hs_completed.fetch_add(1, std::memory_order_relaxed);
+                ip_limiter.record_success(src.sin_addr.s_addr);
                 LOG_INFO("Handshake complete (responder). Datapath armed.");
             } else if (flag == TACHYON_PKT_FINISH && n >= (int)sizeof(MsgFinish)) {
                 if (!is_initiator || !handshake_active)
@@ -755,7 +971,7 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 uint8_t f_nonce[12] = {0};
                 memcpy(f_nonce, &msg->server_nonce, 8);
 
-                if (!cp_aead_decrypt(cp_enc_key, msg->ciphertext, 32, f_ad, 12, f_nonce,
+                if (!cp_aead_decrypt(cp_rx_key, msg->ciphertext, 32, f_ad, 12, f_nonce,
                                      msg->ciphertext + 32, peer_eph_pub))
                     continue;
 
@@ -773,7 +989,10 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
                 handshake_active = false;
                 first_boot = false;
                 last_rekey_success = now;
-                ctrl_nonce_ctr = 0;
+                /* Do NOT reset ctrl_nonce_ctr here: the per-direction CP keys are
+                 * unchanged across a re-handshake (they derive from the static
+                 * ECDH), so resetting the counter could repeat a (key, nonce).
+                 * The counter resets only on an actual key ratchet. CWE-323. */
 
                 tachyon::ratchet::ratchet_init(send_ratchet, tx_key);
                 tachyon::ratchet::ratchet_init(recv_ratchet, rx_key);
@@ -781,6 +1000,8 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
 
                 OPENSSL_cleanse(my_eph_priv, 32);
                 met.hs_completed.fetch_add(1, std::memory_order_relaxed);
+                breaker.record_success(now);
+                ip_limiter.record_success(src.sin_addr.s_addr);
                 if (!first_boot)
                     met.hs_rekeys.fetch_add(1, std::memory_order_relaxed);
                 LOG_INFO("Handshake complete (initiator). Datapath armed.");
@@ -794,8 +1015,10 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
     close(sock);
 
 cleanup_keys:
+    tachyon::mgmt::shutdown();
     OPENSSL_cleanse(early_secret, 32);
-    OPENSSL_cleanse(cp_enc_key, 32);
+    OPENSSL_cleanse(cp_tx_key, 32);
+    OPENSSL_cleanse(cp_rx_key, 32);
     OPENSSL_cleanse(cookie_secret, 32);
     free_crypto_globals();
     LOG_INFO("Control plane shut down. Keys cleansed.");

@@ -52,6 +52,23 @@ static std::string resolve_secret(const std::string &config_val, const char *env
         }
     }
 
+    /* "env://VARNAME" resolves from an operator-named environment variable
+     * (then clears it), complementing the fixed per-field fallback above so a
+     * config can point any secret at any env var. */
+    static const std::string kEnvScheme = "env://";
+    if (config_val.size() > kEnvScheme.size() &&
+        config_val.compare(0, kEnvScheme.size(), kEnvScheme) == 0) {
+        std::string var = config_val.substr(kEnvScheme.size());
+        const char *env_val = std::getenv(var.c_str());
+        if (env_val != nullptr) {
+            std::string result(env_val);
+            unsetenv(var.c_str());
+            return result;
+        }
+        LOG_WARN("resolve_secret: env var '%s' is not set; returning empty", var.c_str());
+        return std::string();
+    }
+
     static const std::string kFileScheme = "file://";
     if (config_val.size() > kFileScheme.size() &&
         config_val.compare(0, kFileScheme.size(), kFileScheme) == 0) {
@@ -152,6 +169,7 @@ TunnelConfig parse_config(const std::string &filename) {
     TunnelConfig cfg;
 
     cfg.name = tunnel_name_from_conf(filename);
+    cfg.config_path = filename; /* remembered for SIGHUP / mgmt hot-reload */
     cfg.private_key = resolve_secret(get_val(kv, "PrivateKey"), "TACHYON_PRIVATE_KEY");
     cfg.peer_public_key = resolve_secret(get_val(kv, "PeerPublicKey"), "TACHYON_PEER_PUBLIC_KEY");
     cfg.psk = resolve_secret(get_val(kv, "PresharedKey", "Secret"), "TACHYON_PSK");
@@ -269,6 +287,12 @@ TunnelConfig parse_config(const std::string &filename) {
         }
     }
 
+    /* Enterprise runtime extensions: JSON-RPC control socket and the
+     * key-rotation / graceful-drain budgets (0 = built-in defaults). */
+    cfg.mgmt_socket = get_val(kv, "ManagementSocket");
+    set_uint_if(cfg.key_rotation_seconds, "KeyRotationSeconds");
+    set_uint_if(cfg.drain_seconds, "DrainSeconds");
+
     std::string tpps_str = get_val(kv, "TrafficShapingPPS");
     if (!tpps_str.empty()) {
         try {
@@ -311,6 +335,8 @@ TunnelConfig parse_config(const std::string &filename) {
     std::string kex_str = get_val(kv, "KeyExchange");
     if (kex_str == "x448" || kex_str == "X448")
         cfg.kex_type = 1;
+    else if (kex_str == "hybrid" || kex_str == "Hybrid")
+        cfg.kex_type = 2;
 
     set_bool_if(cfg.afxdp_enabled, "AfXdpEnabled");
     set_bool_if(cfg.ipv6_enabled, "IPv6Enabled");
@@ -364,6 +390,17 @@ bool validate_config(const TunnelConfig &cfg) {
           "Peer.EndpointIP must be a valid IPv4 address");
     check(cfg.peer_inner_ip.empty() || is_ipv4(cfg.peer_inner_ip),
           "Peer.InnerIP must be a valid IPv4 address");
+    check(cfg.mgmt_socket.empty() || cfg.mgmt_socket.size() < 108,
+          "ManagementSocket path too long (max 107 chars)");
+    check(cfg.key_rotation_seconds == 0 || cfg.key_rotation_seconds >= 30,
+          "KeyRotationSeconds must be >= 30 (or 0 for the built-in default)");
+    /* Fail loudly instead of silently downgrading: the live handshake wires
+     * only X25519. x448/hybrid need the larger-message PQ handshake variant
+     * (integration-test-gated), so reject them rather than mislead operators
+     * into believing a stronger KEX is active. */
+    check(cfg.kex_type == TACHYON_KEX_X25519,
+          "KeyExchange: this build negotiates only x25519; x448/hybrid require "
+          "the PQ handshake (not yet enabled) — refusing to silently fall back");
     check(!cfg.virtual_ip.empty(), "VirtualIP is required (e.g. 10.8.0.1/24)");
     check(!cfg.local_physical_ip.empty(), "LocalPhysicalIP is required");
     check(!cfg.physical_interface.empty(), "PhysicalInterface is required (e.g. eth0)");

@@ -25,6 +25,13 @@ static void sig_handler(int) {
     g_exiting = 1;
 }
 
+/* SIGHUP requests a configuration hot-reload; the control-plane loop applies
+ * the runtime-safe subset and clears the flag. Async-signal-safe (only sets a
+ * sig_atomic_t flag). */
+static void reload_handler(int) {
+    g_reload_requested = 1;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * command_up - Create tunnel and start control plane
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -213,6 +220,7 @@ void command_up(const std::string &conf_file) {
     /* Install signal handlers and run control plane */
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
+    signal(SIGHUP, reload_handler);
 
     /* ── Enterprise hardening: structured logging, audit, sd_notify ── */
     {
