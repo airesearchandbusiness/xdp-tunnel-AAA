@@ -13,6 +13,16 @@ namespace tachyon::pqsession {
 static_assert(PKT_PQ_INIT == TACHYON_PKT_PQ_INIT, "PQ_INIT wire type drift");
 static_assert(PKT_PQ_RESPONSE == TACHYON_PKT_PQ_RESPONSE, "PQ_RESPONSE wire type drift");
 static_assert(PKT_PQ_CONFIRM == TACHYON_PKT_PQ_CONFIRM, "PQ_CONFIRM wire type drift");
+static_assert(PKT_CLASSICAL_AUTH == TACHYON_PKT_AUTH, "AUTH wire type drift");
+static_assert(PKT_CLASSICAL_FINISH == TACHYON_PKT_FINISH, "FINISH wire type drift");
+
+bool handshake_flag_allowed(uint8_t flag, bool hybrid_mode) {
+    const bool is_pq = (flag == PKT_PQ_INIT || flag == PKT_PQ_RESPONSE || flag == PKT_PQ_CONFIRM);
+    const bool is_classical_kex = (flag == PKT_CLASSICAL_AUTH || flag == PKT_CLASSICAL_FINISH);
+    if (hybrid_mode)
+        return !is_classical_kex; /* hybrid must not run the classical exchange */
+    return !is_pq;                /* classical must not run the PQ exchange      */
+}
 
 namespace {
 

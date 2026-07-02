@@ -121,6 +121,32 @@ TEST(PqSession, AvailabilityMatchesBackend) {
     EXPECT_EQ(pqs::available(), tachyon::hkex::hybrid_available());
 }
 
+TEST(PqSession, DowngradeProtectionPolicy) {
+    /* Hybrid mode refuses the classical key-exchange messages... */
+    EXPECT_FALSE(pqs::handshake_flag_allowed(pqs::PKT_CLASSICAL_AUTH, true));
+    EXPECT_FALSE(pqs::handshake_flag_allowed(pqs::PKT_CLASSICAL_FINISH, true));
+    /* ...but allows the PQ messages. */
+    EXPECT_TRUE(pqs::handshake_flag_allowed(pqs::PKT_PQ_INIT, true));
+    EXPECT_TRUE(pqs::handshake_flag_allowed(pqs::PKT_PQ_RESPONSE, true));
+    EXPECT_TRUE(pqs::handshake_flag_allowed(pqs::PKT_PQ_CONFIRM, true));
+
+    /* Classical mode is the mirror image: PQ messages refused, AUTH/FINISH ok. */
+    EXPECT_FALSE(pqs::handshake_flag_allowed(pqs::PKT_PQ_INIT, false));
+    EXPECT_FALSE(pqs::handshake_flag_allowed(pqs::PKT_PQ_RESPONSE, false));
+    EXPECT_FALSE(pqs::handshake_flag_allowed(pqs::PKT_PQ_CONFIRM, false));
+    EXPECT_TRUE(pqs::handshake_flag_allowed(pqs::PKT_CLASSICAL_AUTH, false));
+    EXPECT_TRUE(pqs::handshake_flag_allowed(pqs::PKT_CLASSICAL_FINISH, false));
+
+    /* The shared cookie round, keepalives, and cipher-reneg are always allowed. */
+    for (bool hybrid : {false, true}) {
+        EXPECT_TRUE(pqs::handshake_flag_allowed(0xC0, hybrid)); /* INIT       */
+        EXPECT_TRUE(pqs::handshake_flag_allowed(0xC1, hybrid)); /* COOKIE     */
+        EXPECT_TRUE(pqs::handshake_flag_allowed(0xC4, hybrid)); /* KEEPALIVE  */
+        EXPECT_TRUE(pqs::handshake_flag_allowed(0xC5, hybrid)); /* CIPHER_NEG */
+        EXPECT_TRUE(pqs::handshake_flag_allowed(0xC6, hybrid)); /* CIPHER_ACK */
+    }
+}
+
 TEST(PqSession, FullHandshakeAgreesOnKeys) {
     REQUIRE_PQ_BACKEND();
     Peer i = make_peer(), r = make_peer();

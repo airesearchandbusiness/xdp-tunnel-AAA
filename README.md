@@ -124,7 +124,7 @@ The project includes a multi-tier test suite:
 - **Unit tests** (114 tests) -- crypto, config, protocol, nonce cache, utilities
 - **XDP tests** -- BPF_PROG_TEST_RUN based functional tests
 - **Integration tests** -- network namespace based end-to-end tests
-- **Fuzz tests** -- libFuzzer harnesses for config parser and crypto
+- **Fuzz tests** -- libFuzzer harnesses for config parser, crypto, and the post-quantum handshake message parsers
 
 ```bash
 # Run unit tests (fast, no privileges needed)
