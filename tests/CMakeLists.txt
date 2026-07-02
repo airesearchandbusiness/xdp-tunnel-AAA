@@ -291,6 +291,13 @@ if(BUILD_FUZZ_TESTS)
             -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
         target_link_options(fuzz_crypto PRIVATE
             -fsanitize=fuzzer,address,undefined)
+
+        add_executable(fuzz_pq_handshake fuzz/fuzz_pq_handshake.cpp)
+        target_link_libraries(fuzz_pq_handshake PRIVATE tachyon_core)
+        target_compile_options(fuzz_pq_handshake PRIVATE
+            -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+        target_link_options(fuzz_pq_handshake PRIVATE
+            -fsanitize=fuzzer,address,undefined)
     endif()
 endif()
 

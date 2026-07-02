@@ -55,6 +55,20 @@ constexpr uint8_t PKT_PQ_INIT = 0xC7;
 constexpr uint8_t PKT_PQ_RESPONSE = 0xC8;
 constexpr uint8_t PKT_PQ_CONFIRM = 0xC9;
 
+/* Classical key-exchange packet types (mirror TACHYON_PKT_AUTH/FINISH). They
+ * are the messages a hybrid node must refuse — see handshake_flag_allowed. */
+constexpr uint8_t PKT_CLASSICAL_AUTH = 0xC2;
+constexpr uint8_t PKT_CLASSICAL_FINISH = 0xC3;
+
+/* Downgrade protection. Decide whether a control-plane handshake packet of type
+ * `flag` may be processed under the active mode. A hybrid node rejects the
+ * classical key-exchange messages (AUTH/FINISH); a classical node rejects the
+ * PQ messages. The shared stateless cookie round (INIT/COOKIE), keepalives, and
+ * cipher-renegotiation are always allowed. This closes the "strip the PQ
+ * packets to force a classical, non-quantum-resistant handshake" downgrade path
+ * and makes a mode mismatch fail closed instead of silently degrading. */
+bool handshake_flag_allowed(uint8_t flag, bool hybrid_mode);
+
 /* Wire packet sizes: a small framing header followed by the raw pqhs message.
  *   PQ_INIT    : hdr(8) || client_nonce(8) || cookie(32) || pqhs INIT      */
 constexpr size_t PQ_HDR_LEN = 8; /* flags||pad3||session_id */

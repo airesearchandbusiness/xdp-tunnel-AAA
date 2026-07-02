@@ -821,6 +821,25 @@ void run_control_plane(struct bpf_object *obj, TunnelConfig &cfg, uint32_t sessi
             uint8_t flag = buf[0];
             uint64_t current_window = static_cast<uint64_t>(time(nullptr)) / 60;
 
+            /* Downgrade protection: refuse a handshake message that belongs to
+             * the other pqc_mode. A hybrid node must never complete a classical
+             * (non-quantum-resistant) exchange, and a classical node must not be
+             * dragged into a PQ one — fail closed and record the attempt rather
+             * than silently degrade. The shared cookie round and keepalives are
+             * always permitted. */
+            if (!tachyon::pqsession::handshake_flag_allowed(flag, pq_hybrid)) {
+                LOG_WARN("Dropped handshake packet 0x%02x disallowed under pqc_mode=%s "
+                         "(possible downgrade attempt)",
+                         flag, cfg.pqc_mode.c_str());
+                tachyon::audit::EventInfo ev{};
+                ev.event = tachyon::audit::Event::AUTH_FAIL;
+                ev.peer_ip = src.sin_addr.s_addr;
+                ev.session_id = session_id;
+                ev.outcome = pq_hybrid ? "downgrade-classical-rejected" : "unexpected-pq-rejected";
+                tachyon::audit::emit(ev);
+                continue;
+            }
+
             if (flag == TACHYON_PKT_KEEPALIVE && n >= (int)sizeof(MsgKeepalive)) {
                 auto *msg = reinterpret_cast<MsgKeepalive *>(buf);
                 if (ntohl(msg->session_id) != session_id)
